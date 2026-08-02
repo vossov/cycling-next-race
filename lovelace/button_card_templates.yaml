@@ -1,0 +1,153 @@
+button_card_templates:
+  worldtour_profile:
+    show_icon: false
+    show_name: false
+    show_state: false
+    show_label: false
+    styles:
+      grid:
+        - grid-template-areas: '"profile"'
+        - grid-template-columns: 1fr
+      custom_fields:
+        profile:
+          - width: 100%
+    custom_fields:
+      profile: |
+        [[[
+        const a=entity.attributes||{}, dist=Number(a.distance_km)||1;
+        const RID='#AFC3D6',FIL='#5B7A99',ACC='#E4572E';
+        const cl=(a.climbs||[]).filter(c=>Number(c.top_m)>0).map(c=>({k:String(c.category||'').toUpperCase(),f:Number(c.km_to_finish)||0})).sort((p,q)=>q.f-p.f);
+        const ele=(a.elevation||[]).map(p=>[Number(p[0]),Number(p[1])]).filter(p=>isFinite(p[0])&&isFinite(p[1]));
+        const hasEle=ele.length>1;
+        const W=440,L=16,R=16,T=54,BAND=hasEle?58:0,fl=T+BAND,H=fl+(hasEle?14:4);
+        const E=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" xmlns="http://www.w3.org/2000/svg" style="display:block;font-family:-apple-system,Roboto,sans-serif;color:var(--primary-text-color,#E8EEF4)">';
+        s+='<defs><linearGradient id="wt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+FIL+'" stop-opacity=".5"/><stop offset="1" stop-color="'+FIL+'" stop-opacity=".03"/></linearGradient></defs>';
+        s+='<text x="'+L+'" y="25" fill="currentColor" font-size="15" font-weight="700">'+E(a.eyebrow||'WorldTour')+'</text>';
+        let b=[Math.round(dist)+' km']; if(a.vertical_m)b.push(Math.round(a.vertical_m)+' hm'); const _w=Number(a.watchability)||0; if(_w)b.push('Watchscore '+_w+'/10');
+        s+='<text x="'+L+'" y="42" fill="currentColor" opacity=".6" font-size="13.5">'+E(b.join('  ·  '))+'</text>';
+        const st=(a.show_state||'')+''; if(st){const lv=st.toUpperCase()=='LIVE',bt=lv?('LIVE'+(a.finish_est?'  ·  '+a.finish_est:'')):((st==='Vandaag'||st==='Morgen')&&a.start_time?(st+' '+String(a.start_time).trim()+(a.finish_est?'-'+a.finish_est:'')):st.toUpperCase()),tw=bt.length*8.2+22,px=W-R-tw; s+='<rect x="'+px.toFixed(1)+'" y="16" width="'+tw.toFixed(1)+'" height="24" rx="12" fill="'+(lv?ACC:'none')+'" stroke="'+(lv?ACC:'currentColor')+'" stroke-opacity="'+(lv?0:.5)+'"/><text x="'+(px+tw/2).toFixed(1)+'" y="32.5" text-anchor="middle" font-size="12.5" font-weight="700" fill="'+(lv?'#fff':'currentColor')+'" opacity="'+(lv?1:.7)+'">'+E(bt)+'</text>';}
+        if(hasEle){
+        const xmax=ele[ele.length-1][0]||dist, ys=ele.map(p=>p[1]), emin=Math.min(...ys), emax=Math.max(...ys), rng=Math.max(emax-emin,1);
+        const y0=emin-rng*.12, y1=emax+rng*.10;
+        const X=k=>L+(k/xmax)*(W-L-R), Y=v=>fl-((v-y0)/Math.max(y1-y0,1))*(fl-T);
+        let d='M '+ele.map(p=>X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)).join(' L ');
+        s+='<path d="'+d+' L '+X(xmax).toFixed(1)+','+fl+' L '+X(ele[0][0]).toFixed(1)+','+fl+' Z" fill="url(#wt)"/><path d="'+d+'" fill="none" stroke="'+RID+'" stroke-width="1.8" stroke-linejoin="round"/>';
+        const eleAt=k=>{if(k<=ele[0][0])return ele[0][1];if(k>=xmax)return ele[ele.length-1][1];for(let i=1;i<ele.length;i++){if(ele[i][0]>=k){const t=(k-ele[i-1][0])/((ele[i][0]-ele[i-1][0])||1);return ele[i-1][1]+t*(ele[i][1]-ele[i-1][1]);}}return ele[ele.length-1][1];};
+        (a.sprints||[]).forEach(v=>{const f=Number(v);if(!isFinite(f)||f<=0||f>=xmax)return;const km=xmax-f,sx=X(km).toFixed(1),sy=Y(eleAt(km));s+='<circle cx="'+sx+'" cy="'+sy.toFixed(1)+'" r="3.2" fill="currentColor" opacity=".85"/><text x="'+sx+'" y="'+(sy-8).toFixed(1)+'" text-anchor="middle" font-size="11.5" font-weight="700" fill="currentColor" opacity=".85">S</text>';});
+        cl.forEach(c=>{if(!c.k)return;const km=xmax-c.f,cx=X(km),cy=Y(eleAt(km));s+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="3.2" fill="currentColor" opacity=".85"/>';s+='<text x="'+cx.toFixed(1)+'" y="'+(cy-8).toFixed(1)+'" text-anchor="middle" font-size="11.5" font-weight="700" fill="currentColor" opacity=".85">'+E(c.k)+'</text>';});
+        const lkm=Number(a.live_km_to_go);if(isFinite(lkm)&&lkm>0&&lkm<xmax){const lx=X(xmax-lkm).toFixed(1),ly=Y(eleAt(xmax-lkm)).toFixed(1);s+='<circle cx="'+lx+'" cy="'+ly+'" r="5" fill="#E4572E" stroke="#fff" stroke-width="1.8"><animate attributeName="r" values="5;7;5" dur="1.4s" repeatCount="indefinite"/></circle>';}
+        } else {
+        const sc=Number(a.profile_score)||0, vm=Number(a.vertical_m)||0;
+        const terr=(sc>=150||vm>=3000)?'Bergrit':(sc>=50||vm>=1500)?'Heuvelachtig':(sc||vm||cl.length)?'Vlakke etappe':'Profiel nog niet bekend';
+        s+='<text x="'+L+'" y="'+(T+2)+'" font-size="13" fill="currentColor" opacity=".55">'+E(terr+(cl.length?'  ·  '+cl.length+' cols':''))+'</text>';
+        }
+        s+='</svg>'; return s;
+        ]]]
+  worldtour_detail:
+    show_icon: false
+    show_name: false
+    show_state: false
+    show_label: false
+    styles:
+      grid:
+        - grid-template-areas: '"profile"'
+        - grid-template-columns: 1fr
+      custom_fields:
+        profile:
+          - width: 100%
+    custom_fields:
+      profile: |
+        [[[
+        const a=entity.attributes||{}, dist=Number(a.distance_km)||1;
+        const CAT={HC:'#E4572E','1':'#F2A03D','2':'#EBD24A','3':'#7FB069','4':'#5FA8A0'};
+        const RID='#AFC3D6',FIL='#5B7A99',ACC='#E4572E';
+        const cl=(a.climbs||[]).filter(c=>Number(c.top_m)>0).map(c=>({n:c.name||'',k:String(c.category||'').toUpperCase(),x:dist-(Number(c.km_to_finish)||0),t:Number(c.top_m),f:Number(c.km_to_finish)||0,l:Number(c.length_km)||0,s:Number(c.steepness_pct)||0})).sort((p,q)=>p.x-q.x);
+        const ele=(a.elevation||[]).map(p=>[Number(p[0]),Number(p[1])]).filter(p=>isFinite(p[0])&&isFinite(p[1]));
+        const hasEle=ele.length>1;
+        const W=440,L=16,R=16,T=74,rows=Math.min(6,cl.length),PH=hasEle?85:0,legH=cl.length?12+rows*30:0,B=cl.length?legH+14:18,H=T+PH+B,fl=T+PH;
+        const E=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'), N=x=>x==null?'':String(Math.round(x*10)/10).replace('.',',');
+        let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" xmlns="http://www.w3.org/2000/svg" style="display:block;font-family:-apple-system,Roboto,sans-serif;color:var(--primary-text-color,#E8EEF4)">';
+        s+='<defs><linearGradient id="wt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+FIL+'" stop-opacity=".55"/><stop offset="1" stop-color="'+FIL+'" stop-opacity=".03"/></linearGradient></defs>';
+        s+='<text x="'+L+'" y="20" fill="currentColor" opacity=".6" font-size="11" font-weight="700" letter-spacing="1.3">'+E((a.eyebrow||'WorldTour').toUpperCase())+'</text>';
+        s+='<text x="'+L+'" y="45" fill="currentColor" font-size="20" font-weight="700">'+E((a.departure&&a.arrival)?a.departure+' → '+a.arrival:(a.eyebrow||''))+'</text>';
+        let b=[Math.round(dist)+' km']; if(a.vertical_m)b.push(Math.round(a.vertical_m)+' hm'); const _w=Number(a.watchability)||0; if(_w)b.push('Watchscore '+_w+'/10');
+        s+='<text x="'+L+'" y="65" fill="currentColor" opacity=".6" font-size="13.5">'+E(b.join('  ·  '))+'</text>';
+        const st=(a.show_state||'')+''; if(st){const lv=st.toUpperCase()=='LIVE',bt=lv?('LIVE'+(a.finish_est?'  ·  '+a.finish_est:'')):((st==='Vandaag'||st==='Morgen')&&a.start_time?(st+' '+String(a.start_time).trim()+(a.finish_est?'-'+a.finish_est:'')):st.toUpperCase()),tw=bt.length*8.2+22,px=W-R-tw; s+='<rect x="'+px.toFixed(1)+'" y="16" width="'+tw.toFixed(1)+'" height="24" rx="12" fill="'+(lv?ACC:'none')+'" stroke="'+(lv?ACC:'currentColor')+'" stroke-opacity="'+(lv?0:.5)+'"/><text x="'+(px+tw/2).toFixed(1)+'" y="32.5" text-anchor="middle" font-size="12.5" font-weight="700" fill="'+(lv?'#fff':'currentColor')+'" opacity="'+(lv?1:.7)+'">'+E(bt)+'</text>';}
+        if(hasEle){
+        const xmax=ele[ele.length-1][0]||dist;
+        const ys=ele.map(p=>p[1]), emin=Math.min(...ys), emax=Math.max(...ys), rng=Math.max(emax-emin,1);
+        const y0=emin-rng*0.12, y1=emax+rng*0.08;
+        const X=k=>L+(k/xmax)*(W-L-R), Y=v=>fl-((v-y0)/Math.max(y1-y0,1))*(fl-T);
+        let d='M '+ele.map(p=>X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)).join(' L ');
+        s+='<path d="'+d+' L '+X(xmax).toFixed(1)+','+fl+' L '+X(ele[0][0]).toFixed(1)+','+fl+' Z" fill="url(#wt)"/><path d="'+d+'" fill="none" stroke="'+RID+'" stroke-width="2" stroke-linejoin="round"/>';
+        const eleAt=k=>{if(k<=ele[0][0])return ele[0][1];if(k>=xmax)return ele[ele.length-1][1];for(let i=1;i<ele.length;i++){if(ele[i][0]>=k){const t=(k-ele[i-1][0])/((ele[i][0]-ele[i-1][0])||1);return ele[i-1][1]+t*(ele[i][1]-ele[i-1][1]);}}return ele[ele.length-1][1];};
+        (a.sprints||[]).forEach(v=>{const f=Number(v);if(!isFinite(f)||f<=0||f>=xmax)return;const km=xmax-f,sx=X(km).toFixed(1),sy=Y(eleAt(km));s+='<circle cx="'+sx+'" cy="'+sy.toFixed(1)+'" r="4" fill="currentColor" opacity=".85"/><text x="'+sx+'" y="'+(sy-9).toFixed(1)+'" text-anchor="middle" font-size="12" font-weight="700" fill="currentColor" opacity=".85">S</text>';});
+        cl.forEach((c,i)=>{const km=xmax-(Number(c.f)||0),cx=X(km).toFixed(1),cy=Y(eleAt(km)).toFixed(1);s+='<circle cx="'+cx+'" cy="'+cy+'" r="11" fill="'+(CAT[c.k]||RID)+'" stroke="#0E1520" stroke-width="1.6"/><text x="'+cx+'" y="'+(Number(cy)+4.5).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="700" fill="#0E1520">'+(i+1)+'</text>';});
+        const lkm=Number(a.live_km_to_go);if(isFinite(lkm)&&lkm>0&&lkm<xmax){const lx=X(xmax-lkm).toFixed(1),ly=Y(eleAt(xmax-lkm)).toFixed(1);s+='<line x1="'+lx+'" y1="'+ly+'" x2="'+lx+'" y2="'+fl+'" stroke="'+ACC+'" stroke-width="1.5" stroke-dasharray="2 3" opacity=".65"/><circle cx="'+lx+'" cy="'+ly+'" r="6" fill="'+ACC+'" stroke="#fff" stroke-width="2"><animate attributeName="r" values="6;8.5;6" dur="1.4s" repeatCount="indefinite"/></circle>';}
+        } else {
+        const sc=Number(a.profile_score)||0, vm=Number(a.vertical_m)||0;
+        const terr=(sc>=150||vm>=3000)?'Bergrit':(sc>=50||vm>=1500)?'Heuvelachtig':(sc||vm||cl.length)?'Vlakke etappe':'Profiel nog niet bekend';
+        s+='<text x="'+L+'" y="'+(T+12)+'" font-size="14" fill="currentColor" opacity=".6">'+E(terr+(cl.length?'  ·  geen hoogtelijn beschikbaar':''))+'</text>';
+        }
+        if(cl.length){const ly=fl+26; cl.slice(0,6).forEach((c,i)=>{const col=CAT[c.k]||RID,y=ly+i*30,nm=(c.n||'').length>22?c.n.slice(0,21)+'…':c.n; let m=[]; if(c.f!=null)m.push('op '+Math.round(c.f)+' km'); if(c.l)m.push(N(c.l)+' km @ '+N(c.s)+'%'); s+='<circle cx="'+(L+10)+'" cy="'+(y-5)+'" r="9" fill="'+col+'"/><text x="'+(L+10)+'" y="'+(y-1)+'" text-anchor="middle" font-size="11" font-weight="700" fill="#0E1520">'+(i+1)+'</text><text x="'+(L+27)+'" y="'+y+'" font-size="15" font-weight="600" fill="currentColor">'+E(nm)+'</text><text x="'+(W-R)+'" y="'+y+'" text-anchor="end" font-size="12" fill="currentColor" opacity=".6">'+E(m.join(' · '))+'</text>';});}
+        s+='</svg>'; return s;
+        ]]]
+  worldtour_upcoming:
+    show_icon: false
+    show_name: false
+    show_state: false
+    show_label: false
+    styles:
+      grid:
+        - grid-template-areas: '"profile"'
+        - grid-template-columns: 1fr
+      custom_fields:
+        profile:
+          - width: 100%
+    custom_fields:
+      profile: |
+        [[[
+        const up=entity.attributes.upcoming||[];
+        const RID='#AFC3D6',FIL='#5B7A99';
+        const CAT={HC:'#E4572E','1':'#F2A03D','2':'#EBD24A','3':'#7FB069','4':'#5FA8A0'};
+        const W=440,L=16,R=16,BAND=52,RANGE_MAX=2200,MPU=BAND/RANGE_MAX;
+        const E=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'), N=x=>x==null?'':String(Math.round(x*10)/10).replace('.',',');
+        if(!up.length) return '<svg viewBox="0 0 '+W+' 40" width="100%" xmlns="http://www.w3.org/2000/svg" style="font-family:-apple-system,Roboto,sans-serif;color:var(--primary-text-color,#E8EEF4)"><text x="'+L+'" y="24" font-size="13" fill="currentColor" opacity=".6">Geen komende etappes</text></svg>';
+        const items=up.map(u=>{const cl=(u.climbs||[]).filter(c=>Number(c.top_m)>0).sort((a,b)=>(Number(b.km_to_finish)||0)-(Number(a.km_to_finish)||0));const nc=Math.min(4,cl.length);const he=(u.elevation||[]).length>1;const bh=he?BAND:18;return {u,cl,nc,he,bh,h:42+bh+(nc?6+nc*15:0)+14};});
+        const H=items.reduce((a,it)=>a+it.h,0)+6;
+        let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" xmlns="http://www.w3.org/2000/svg" style="display:block;font-family:-apple-system,Roboto,sans-serif;color:var(--primary-text-color,#E8EEF4)">';
+        s+='<defs><linearGradient id="uw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+FIL+'" stop-opacity=".5"/><stop offset="1" stop-color="'+FIL+'" stop-opacity=".03"/></linearGradient></defs>';
+        let oy=4;
+        for(const it of items){
+        const u=it.u, dist=Number(u.distance_km)||1, cl=it.cl;
+        const sc=Number(u.profile_score)||0, vm=Number(u.vertical_m)||0;
+        const onbekend=!it.he&&!cl.length&&!sc&&!vm;
+        s+='<text x="'+L+'" y="'+(oy+16)+'" font-size="14" font-weight="700" fill="currentColor">'+E(u.eyebrow||'')+'</text>';
+        const ss=(u.show_state||'')+''; s+='<text x="'+(W-R)+'" y="'+(oy+16)+'" text-anchor="end" font-size="11.5" font-weight="700" fill="currentColor" opacity=".55">'+E(ss.toUpperCase())+'</text>';
+        let meta=[]; if(u.departure&&u.arrival)meta.push(u.departure+' → '+u.arrival); meta.push(Math.round(dist)+' km'); if(u.vertical_m)meta.push(Math.round(u.vertical_m)+' hm'); const _w=Number(u.watchability)||0; if(_w&&!onbekend)meta.push('Watchscore '+_w+'/10');
+        s+='<text x="'+L+'" y="'+(oy+33)+'" font-size="12" fill="currentColor" opacity=".6">'+E(meta.join(' · '))+'</text>';
+        const bT=oy+42, bB=oy+42+it.bh;
+        const ele=(u.elevation||[]).map(p=>[Number(p[0]),Number(p[1])]).filter(p=>isFinite(p[0])&&isFinite(p[1]));
+        if(ele.length>1){
+        const xmax=ele[ele.length-1][0]||dist, ys=ele.map(p=>p[1]), emin=Math.min(...ys);
+        const X=k=>L+(k/xmax)*(W-L-R), Y=v=>Math.max(bB-(v-emin)*MPU,bT);
+        let d='M '+ele.map(p=>X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1)).join(' L ');
+        s+='<path d="'+d+' L '+X(xmax).toFixed(1)+','+bB+' L '+X(ele[0][0]).toFixed(1)+','+bB+' Z" fill="url(#uw)"/><path d="'+d+'" fill="none" stroke="'+RID+'" stroke-width="1.6" stroke-linejoin="round"/>';
+        const eleAt=k=>{if(k<=ele[0][0])return ele[0][1];if(k>=xmax)return ele[ele.length-1][1];for(let i=1;i<ele.length;i++){if(ele[i][0]>=k){const t=(k-ele[i-1][0])/((ele[i][0]-ele[i-1][0])||1);return ele[i-1][1]+t*(ele[i][1]-ele[i-1][1]);}}return ele[ele.length-1][1];};
+        (u.sprints||[]).forEach(v=>{const f=Number(v);if(!isFinite(f)||f<=0||f>=xmax)return;const km=xmax-f,sx=X(km).toFixed(1),sy=Y(eleAt(km));s+='<circle cx="'+sx+'" cy="'+sy.toFixed(1)+'" r="2.6" fill="currentColor" opacity=".8"/><text x="'+sx+'" y="'+(sy-6).toFixed(1)+'" text-anchor="middle" font-size="9" font-weight="700" fill="currentColor" opacity=".8">S</text>';});
+        cl.forEach((c,i)=>{const km=xmax-(Number(c.km_to_finish)||0),cx=X(km).toFixed(1),cy=Y(eleAt(km)).toFixed(1),col=CAT[String(c.category||'').toUpperCase()]||RID;s+='<circle cx="'+cx+'" cy="'+cy+'" r="6.5" fill="'+col+'" stroke="#0E1520" stroke-width="1.2"/><text x="'+cx+'" y="'+(Number(cy)+2.7).toFixed(1)+'" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0E1520">'+(i+1)+'</text>';});
+        } else {
+        const terr=onbekend?'Profiel nog niet bekend':((sc>=150||vm>=3000)?'Bergrit':(sc>=50||vm>=1500)?'Heuvelachtig':'Vlak');
+        s+='<text x="'+L+'" y="'+(bT+12)+'" font-size="11" fill="currentColor" opacity=".45">'+E(terr+(cl.length?'  ·  '+cl.length+' cols':''))+'</text>';
+        }
+        const HV=cl.map((c,i)=>i).sort((x,y)=>((Number(cl[y].length_km)||0)*(Number(cl[y].steepness_pct)||0))-((Number(cl[x].length_km)||0)*(Number(cl[x].steepness_pct)||0))).slice(0,4).sort((x,y)=>x-y);
+        HV.forEach((ci,row)=>{const c=cl[ci], ty=bB+18+row*15, col=CAT[String(c.category||'').toUpperCase()]||RID, nm=(c.name||'').length>28?c.name.slice(0,27)+'…':c.name, l=Number(c.length_km)||0, st=Number(c.steepness_pct)||0;
+        s+='<circle cx="'+(L+6)+'" cy="'+(ty-4)+'" r="6" fill="'+col+'"/><text x="'+(L+6)+'" y="'+(ty-1.2)+'" text-anchor="middle" font-size="8" font-weight="700" fill="#0E1520">'+(ci+1)+'</text>';
+        if(nm)s+='<text x="'+(L+18)+'" y="'+ty+'" font-size="12" fill="currentColor" opacity=".85">'+E(nm)+'</text>';
+        if(l)s+='<text x="'+(W-R)+'" y="'+ty+'" text-anchor="end" font-size="11" fill="currentColor" opacity=".5">'+E(N(l)+' km @ '+N(st)+'%')+'</text>';});
+        s+='<line x1="'+L+'" y1="'+(oy+it.h-1)+'" x2="'+(W-R)+'" y2="'+(oy+it.h-1)+'" stroke="currentColor" stroke-opacity=".08"/>';
+        oy+=it.h;
+        }
+        s+='</svg>'; return s;
+        ]]]
