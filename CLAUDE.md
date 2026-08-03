@@ -11,7 +11,7 @@ tv-zenders. Zowel mannen- als vrouwen-WorldTour.
 - Domein: `cycling_next_race`
 - Entiteit: `sensor.volgende_wielerkoers`
 - Installatie: HACS (custom repository) of handmatig kopiëren
-- Configuratie: YAML-platform (`sensor: - platform: cycling_next_race`)
+- Configuratie: config flow; het oude YAML-platform wordt geïmporteerd
 
 ## Werkafspraken
 
@@ -26,11 +26,20 @@ tv-zenders. Zowel mannen- als vrouwen-WorldTour.
 
 ## Architectuur
 
-Eén bestand: `custom_components/cycling_next_race/sensor.py`.
+Het werk zit in `custom_components/cycling_next_race/sensor.py`; daaromheen
+staan `const.py` (sleutels en standaardwaarden), `config_flow.py` (toevoegen
+en het optiescherm) en `__init__.py` (config entry opzetten en herladen).
 
-- `CyclingCoordinator(DataUpdateCoordinator)` haalt alles op.
-- `SCAN_INTERVAL` 30 min, `LIVE_SCAN_INTERVAL` 5 min. De coordinator zet
-  `self.update_interval` dynamisch op basis van `show_state == "LIVE"`.
+- `CyclingCoordinator(DataUpdateCoordinator)` haalt alles op en krijgt de
+  opties uit de config entry mee. `self._opt(sleutel)` leest er één, met de
+  waarde uit `OPTION_DEFAULTS` als terugval — ook bij onzin in de opslag.
+- Verversen standaard elke 30 min, 5 min tijdens een live etappe; beide zijn
+  instelbaar. De coordinator zet `self.update_interval` dynamisch op basis
+  van `show_state == "LIVE"`.
+- Wie een instelling toevoegt raakt vier plekken: `const.py` (`CONF_*`,
+  `DEFAULT_*`, `OPTION_DEFAULTS`), het schema in `config_flow.py`,
+  `strings.json` plus elke vertaling, en de plek in `sensor.py` die hem
+  gebruikt. `tests/test_repo.py` faalt als er één achterblijft.
 - Alle netwerk-/parse-werk loopt via `self._job(...)` →
   `async_add_executor_job`, want procyclingstats en urllib zijn blokkerend.
 - Caches op de coordinator (per dag of per koers geleegd bij een nieuwe dag):
@@ -159,5 +168,7 @@ thema volgt, categoriekleuren `CAT={HC:'#E4572E','1':'#F2A03D','2':'#EBD24A',
   afloop via het bergklassement). Uitzoeken of het elders vooraf beschikbaar is.
 - Een aantal cyclingstage-namen voor vrouwenklassiekers is een educated guess
   (`CYCLINGSTAGE_ONEDAY`); daarom staan er meerdere kandidaten per koers.
-- Geen config flow; instellen gaat via YAML.
+- De config flow is niet in een draaiende Home Assistant beproefd: de tests
+  bouwen het optieschema op met gestubde HA-modules, wat niets zegt over de
+  vraag of het scherm verschijnt en de entry laadt.
 - Overweeg de diagnose-attributen te verwijderen zodra alles stabiel draait.

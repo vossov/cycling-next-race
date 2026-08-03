@@ -45,14 +45,38 @@ Kopieer `custom_components/cycling_next_race/` naar de map
 
 ## Configuratie
 
-In `configuration.yaml`:
+Ga naar **Instellingen → Apparaten & Services → Integratie toevoegen**, zoek
+op *Cycling Next Race* en bevestig. Er valt niets in te vullen: de
+integratie heeft geen sleutel of adres nodig.
+
+De sensor heet daarna `sensor.volgende_wielerkoers`.
+
+### Instellingen
+
+Achter **Configureren** bij de integratie stel je in:
+
+| Instelling | Standaard |
+|---|---|
+| Aantal renners in de uitslag | 10 |
+| Aantal renners in het klassement | 10 |
+| Maximaal aantal komende etappes | 10 |
+| Komende etappes tonen tot (dagen vooruit) | 7 |
+| Verversen elke (minuten) | 30 |
+| Verversen tijdens een koers (minuten) | 5 |
+
+Wijzigingen gaan meteen in; de integratie herlaadt zichzelf.
+
+### Overstappen vanaf de YAML-configuratie
+
+Stond dit in je `configuration.yaml`?
 
 ```yaml
 sensor:
   - platform: cycling_next_race
 ```
 
-Dat is alles. De sensor heet `sensor.volgende_wielerkoers`.
+Dan wordt die bij de eerstvolgende herstart automatisch omgezet naar een
+integratie in de interface. Haal de regels daarna weg.
 
 ## Dashboard
 
@@ -101,14 +125,12 @@ dashboardindeling; zie de documentatie van Bubble Card.
 
 ## Instellingen in de code
 
-Bovenin `sensor.py` staan een paar constanten die je kunt aanpassen:
+Wat niet in de interface staat, staat bovenin `sensor.py`:
 
 | Constante | Betekenis |
 |---|---|
-| `RESULT_N`, `GC_N` | aantal renners in uitslag en klassement |
-| `UPCOMING_N`, `UPCOMING_DAYS` | omvang van het overzicht "Komende dagen" |
-| `SCAN_INTERVAL`, `LIVE_SCAN_INTERVAL` | verversfrequentie (normaal / tijdens de koers) |
 | `GPX_OVERRIDE` | eigen GPX-adres per koers, als er geen publieke is |
+| `CYCLINGSTAGE_ROUTE`, `CYCLINGSTAGE_ONEDAY` | adressen van de etappeteksten per koers |
 
 ## Bronnen
 
