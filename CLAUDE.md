@@ -46,6 +46,12 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
 - Caches op de coordinator (per dag of per koers geleegd bij een nieuwe dag):
   `_elev_cache`, `_names_cache`, `_channels_cache`, `_sprints_cache`,
   `_prevrank_cache`, `_roster_cache` (dict per koers), `_other_cache`.
+  `_elev_cache` heeft `(etappe, aantal punten)` als sleutel: dezelfde etappe
+  wordt als komende dag met 60 punten opgehaald en als getoonde etappe met
+  200. Stond alleen de URL in de sleutel, dan kreeg het grote profiel de
+  kleine versie terug. `_gpx_beschikbaar` houdt los bij of een etappe een
+  profiel heeft, want `_gpx_rang` heeft dat nodig om te kiezen wélke koers
+  getoond wordt.
 
 ### Keuze van de getoonde koers
 
@@ -140,6 +146,20 @@ niet bereiken**. Verifieer daarom zo:
   of de uitvoer met `<svg` begint en op `</svg>` eindigt.
 - `python3 -m py_compile` na elke wijziging.
 - Echte verificatie gebeurt pas in een draaiende Home Assistant.
+
+## Omvang van de attributen
+
+De recorder weigert attributen boven `MAX_STATE_ATTRS_BYTES` (16 kB) en logt
+daarbij een waarschuwing; de volledige state gaat bovendien bij elke update
+over de websocket naar élke verbonden client. De hoogteprofielen wegen het
+zwaarst: `elevation` van de getoonde etappe (200 punten) plus een profiel per
+komende etappe. Die laatste stonden op 150 punten, wat de state op ruim 34 kB
+bracht; met 60 punten is dat 24 kB en visueel niet te onderscheiden — de
+profieltjes in "Komende dagen" zijn maar een paar pixels hoog.
+
+Onder de 16 kB komt alleen door `upcoming` verder in te perken: minder
+etappes, of de profieltjes eruit. Beide kosten iets zichtbaars, dus dat is
+een keuze en geen vanzelfsprekendheid.
 
 ## Diagnose-attributen
 
