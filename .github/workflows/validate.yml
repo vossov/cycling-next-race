@@ -39,5 +39,11 @@ jobs:
         run: python -m compileall -q custom_components/cycling_next_race
       - name: Syntaxcontrole van de kaart
         run: node --check custom_components/cycling_next_race/www/cycling-next-race-card.js
+      - name: Kaart moet op oude WebViews parsen
+        # de kaart wordt op élke frontend-pagina geladen; te nieuwe syntax
+        # legt daarmee het hele dashboard van zo'n apparaat plat
+        run: |
+          npm install --no-save --no-audit --no-fund acorn
+          node tests/browser/syntax_test.mjs
       - name: Tests draaien
         run: python -m pytest tests/ -q

@@ -213,6 +213,26 @@ voor. Wijzig je de een, wijzig dan de ander.
 Registratie faalt zacht: lukt het serveren niet, dan logt het een
 waarschuwing en draait de sensor gewoon door.
 
+**De kaart moet op oude WebViews draaien.** `add_extra_js_url` zet het
+script op **elke** frontend-pagina, ook op de loginpagina en op dashboards
+zonder onze kaart. Eén stuk te nieuwe syntax is een SyntaxError bij het
+parsen en legt daarmee de hele frontend van dat apparaat plat; de gebruiker
+kan er alleen omheen door de integratie uit te zetten. Wandpanelen (Sonoff
+en dergelijke) draaien vaak de WebView van Android 8, oftewel Chrome 60/61.
+
+Vandaar de ondergrens ES2018 / Chrome 61. Niet gebruiken: `?.` en `??`
+(Chrome 80, SyntaxError), `replaceChildren` (86), `gap` in flexbox (84,
+wordt stil genegeerd waardoor de opmaak in elkaar valt), `inset`, `:is()`,
+`:where()`, `clamp()`. `tests/test_browsercompat.py` scant daarop en
+`tests/browser/syntax_test.mjs` parseert het bestand met acorn als ES2018.
+
+Let op: `esbuild --target=chrome61` is hiervoor géén controle — dat
+transpileert de syntax weg en meldt niets. Een parser die weigert is wat je
+wilt.
+
+De browsertests draaien op een moderne Chromium en zouden dit dus nooit
+vangen; die controleren of het beeld klopt, niet of het ergens laadt.
+
 `tests/test_dashboard.py` controleert dat elk attribuut dat een kaart
 opvraagt ook echt door `sensor.py` wordt gezet, dat gebruikte templates
 bestaan, en dat tegel en pop-up dezelfde hash delen.
