@@ -9,7 +9,7 @@ dashboard zet: hoogteprofiel, cols, tussensprint, uitslagen, klassementen,
 tv-zenders. Zowel mannen- als vrouwen-WorldTour.
 
 - Domein: `cycling_next_race`
-- Entiteit: `sensor.volgende_wielerkoers`
+- Entiteit: `sensor.cycling_next_race`
 - Installatie: HACS (custom repository) of handmatig kopiëren
 - Configuratie: config flow; het oude YAML-platform wordt geïmporteerd
 

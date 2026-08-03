@@ -19,13 +19,13 @@
 - type: conditional
   conditions:
     - condition: numeric_state
-      entity: sensor.volgende_wielerkoers
+      entity: sensor.cycling_next_race
       attribute: days_until
       below: 2
   card:
     type: custom:button-card
     template: cycling_profile
-    entity: sensor.volgende_wielerkoers
+    entity: sensor.cycling_next_race
     tap_action:
       action: navigate
       navigation_path: "#cycling"
@@ -57,7 +57,7 @@
     # Groot hoogteprofiel met colnamen, tussensprint en finishtijd
     - type: custom:button-card
       template: cycling_detail
-      entity: sensor.volgende_wielerkoers
+      entity: sensor.cycling_next_race
       grid_options:
         columns: 12
         rows: auto
@@ -71,7 +71,7 @@
           ha-markdown img { height: 20px; width: auto; border-radius: 3px;
                             vertical-align: middle; margin-right: 5px; }
       content: >
-        {%- set ch = state_attr('sensor.volgende_wielerkoers','channels_detail') or [] -%}
+        {%- set ch = state_attr('sensor.cycling_next_race','channels_detail') or [] -%}
 
         {%- for c in ch %}{% if not loop.first %} &nbsp;&middot;&nbsp; {% endif %}{% if c.logo %}<img
         src="{{ c.logo }}" alt="{{ c.name }}" height="20"
@@ -84,7 +84,7 @@
         style: |
           ha-card { background: none; border: none; box-shadow: none; padding: 4px 8px 0; }
       content: >
-        {%- set up = state_attr('sensor.volgende_wielerkoers','upcoming') or [] -%}
+        {%- set up = state_attr('sensor.cycling_next_race','upcoming') or [] -%}
 
         {%- if up %}**Komende dagen**{%- endif %}
       grid_options:
@@ -94,7 +94,7 @@
     # De komende etappes als staafjes
     - type: custom:button-card
       template: cycling_upcoming
-      entity: sensor.volgende_wielerkoers
+      entity: sensor.cycling_next_race
       styles:
         card:
           - background: none
@@ -111,7 +111,7 @@
         style: |
           ha-card { background: none; border: none; box-shadow: none; }
       content: >
-        {%- set e = 'sensor.volgende_wielerkoers' -%}
+        {%- set e = 'sensor.cycling_next_race' -%}
         {%- set rs = state_attr(e,'last_result') or [] -%}
 
         {%- macro secs(t) -%}
@@ -139,7 +139,7 @@
         style: |
           ha-card { background: none; border: none; box-shadow: none; }
       content: >
-        {%- set e = 'sensor.volgende_wielerkoers' -%}
+        {%- set e = 'sensor.cycling_next_race' -%}
         {%- set gc = state_attr(e,'gc_top') or [] -%}
 
         {%- macro secs(t) -%}
@@ -177,7 +177,7 @@
         style: |
           ha-card { background: none; border: none; box-shadow: none; }
       content: >
-        {%- set e = 'sensor.volgende_wielerkoers' -%}
+        {%- set e = 'sensor.cycling_next_race' -%}
 
         {%- macro mv(m) -%}
         {%- if m and m > 0 %} <font color='#7FB069'>&#9650;{{ m }}</font>{% elif m and m < 0 %}
@@ -204,7 +204,7 @@
         style: |
           ha-card { background: none; border: none; box-shadow: none; }
       content: >
-        {%- set e = 'sensor.volgende_wielerkoers' -%}
+        {%- set e = 'sensor.cycling_next_race' -%}
         {%- set yt = state_attr(e,'youth_top') or [] -%}
 
         {%- macro secs(t) -%}
@@ -242,7 +242,7 @@
         style: |
           ha-card { background: none; border: none; box-shadow: none; }
       content: >
-        {%- set e = 'sensor.volgende_wielerkoers' -%}
+        {%- set e = 'sensor.cycling_next_race' -%}
         {%- set rs = state_attr(e,'other_result') or [] -%}
 
         {%- macro secs(t) -%}
