@@ -118,3 +118,25 @@ def test_sensor_gebruikt_dezelfde_standaarden(wt, const):
     assert wt.UPCOMING_DAYS == const.DEFAULT_UPCOMING_DAYS
     assert wt.SCAN_INTERVAL.total_seconds() == const.DEFAULT_SCAN_MINUTES * 60
     assert wt.LIVE_SCAN_INTERVAL.total_seconds() == const.DEFAULT_LIVE_SCAN_MINUTES * 60
+
+
+# ── uitbrengen ──────────────────────────────────────────────────────
+
+RELEASE_WORKFLOW = WORTEL / ".github" / "workflows" / "release.yml"
+
+
+def test_release_workflow_bestaat():
+    """Zonder release toont HACS een commit-hash in plaats van een versie."""
+    assert RELEASE_WORKFLOW.is_file()
+
+
+def test_release_workflow_bewaakt_de_versie():
+    """De tag en de manifest moeten hetzelfde zeggen.
+
+    Anders installeert HACS v0.5.0 terwijl Home Assistant 0.4.0 rapporteert
+    en klopt de updatemelding niet meer.
+    """
+    tekst = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    assert "manifest.json" in tekst, "de workflow leest de manifest niet"
+    assert "exit 1" in tekst, "de workflow faalt niet bij een verschil"
+    assert "gh release create" in tekst
