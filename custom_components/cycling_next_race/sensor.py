@@ -1514,7 +1514,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._stages_cache: dict[str, tuple[date, list[dict]]] = {}
         self._climbs_cache: dict[str, dict] = {}
         self._upcoming_cache: dict[str, dict] = {}
-        self._elev_cache: dict[str, list] = {}
+        self._elev_cache: dict[tuple[str, int], tuple] = {}
+        self._gpx_beschikbaar: dict[str, bool] = {}
         self._channels_cache = None
         self._sprints_cache = None
         self._roster_cache: dict = {}
@@ -1597,17 +1598,27 @@ class CyclingCoordinator(DataUpdateCoordinator):
 
     def _gpx_rang(self, s):
         """0 = hoogteprofiel beschikbaar, 1 = (waarschijnlijk) niet."""
-        gecached = self._elev_cache.get(s["stage_url"])
-        if gecached is not None:
-            return 0 if gecached[0] else 1
+        bekend = self._gpx_beschikbaar.get(s["stage_url"])
+        if bekend is not None:
+            return 0 if bekend else 1
         return 0 if _gpx_urls(s["race_url"], s.get("idx"), s.get("one_day")) else 1
 
-    async def _gpx_for(self, stage_url, gpx_url, n_out=150):
-        if stage_url in self._elev_cache:
-            return self._elev_cache[stage_url]
+    # 60 punten voor de kleine profieltjes in "Komende dagen"; de getoonde
+    # etappe vraagt er expliciet 200. Meer punten kosten alleen ruimte in de
+    # attributen: bij 150 werd de state ruim 37 kB, boven de grens van de
+    # recorder (MAX_STATE_ATTRS_BYTES = 16384).
+    async def _gpx_for(self, stage_url, gpx_url, n_out=60):
+        # de cache staat op (etappe, aantal punten): dezelfde etappe wordt
+        # eerst als komende dag opgehaald met 60 punten en later, als hij de
+        # getoonde etappe is, met 200. Zonder het aantal in de sleutel kreeg
+        # het grote profiel de kleine versie uit de cache.
+        sleutel = (stage_url, n_out)
+        if sleutel in self._elev_cache:
+            return self._elev_cache[sleutel]
         elev, climbs = await self._job(_fetch_gpx, gpx_url, n_out)
         if elev:
-            self._elev_cache[stage_url] = (elev, climbs)
+            self._elev_cache[sleutel] = (elev, climbs)
+        self._gpx_beschikbaar[stage_url] = bool(elev)
         return elev, climbs
 
     async def _names_for(self, stage_url, art_url, distance=None):
@@ -1744,6 +1755,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._stages_cache.clear()
                 self._upcoming_cache.clear()
                 self._elev_cache.clear()
+                self._gpx_beschikbaar.clear()
                 self._channels_cache = None
                 self._sprints_cache = None
                 self._prevrank_cache = None
