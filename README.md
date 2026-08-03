@@ -73,28 +73,68 @@ templates in de raw-config te plakken en geen extra frontend-kaarten te
 installeren.
 
 **Voeg hem toe zoals elke andere kaart.** Bewerk je dashboard, kies *Kaart
-toevoegen* en zoek op *Cycling Next Race*. In YAML is het:
+toevoegen* en zoek op *Cycling Next Race*. Wie liever YAML typt, plakt dit
+in een view:
 
 ```yaml
 type: custom:cycling-next-race-card
 ```
 
-Meer valt er niet in te stellen, maar het kan:
+Dat is de hele configuratie. De sensor wordt vanzelf gevonden.
 
 | Optie | Standaard | Betekenis |
 |---|---|---|
-| `entity` | `sensor.cycling_next_race` | de sensor |
-| `details` | `true` | een tik opent het volledige overzicht |
+| `entity` | `sensor.cycling_next_race` | welke sensor de kaart uitleest |
+| `details` | `true` | een tik opent het detailvenster |
 | `always_show` | `false` | ook tonen als de koers verder weg is dan morgen |
 
-De kaart toont het hoogteprofiel met de cols, de tussensprint, de
-start- en verwachte finishtijd en de watchscore. Tikken opent een venster
-met het grote profiel, de tv-zenders, de komende dagen, de dag-uitslag en
-de klassementen. Onderdelen zonder gegevens blijven weg — buiten een ronde
-is het venster vanzelf kort.
+### Voorbeelden
 
-Standaard verschijnt de kaart pas als de koers vandaag of morgen is. Wil je
-hem het hele seizoen zien, zet dan `always_show: true`.
+Alles wat je kunt instellen, met de standaardwaarden expliciet erbij:
+
+```yaml
+type: custom:cycling-next-race-card
+entity: sensor.cycling_next_race   # welke sensor
+details: true                      # tik opent het detailvenster
+always_show: false                 # alleen tonen bij een koers vandaag of morgen
+```
+
+Het hele seizoen zichtbaar, ook als de eerstvolgende koers nog dagen weg is:
+
+```yaml
+type: custom:cycling-next-race-card
+always_show: true
+```
+
+Alleen de tegel, zonder venster — handig op een tablet waar je niet wilt
+dat er iets opengaat bij een aanraking:
+
+```yaml
+type: custom:cycling-next-race-card
+details: false
+```
+
+De kaart binnen een sectie of grid, met een vaste breedte:
+
+```yaml
+type: custom:cycling-next-race-card
+grid_options:
+  columns: 12
+  rows: auto
+```
+
+Wil je hem in een eigen pop-up of naast andere kaarten, dan gedraagt hij
+zich als elke gewone kaart en kun je hem in `vertical-stack`, `grid` of een
+Bubble Card-pop-up zetten:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: custom:cycling-next-race-card
+    details: false
+  - type: markdown
+    content: Volg de koers live op procyclingstats.com
+```
 
 ### Zo ziet het eruit
 
@@ -132,6 +172,29 @@ NPO 1 14:15  ·  Eurosport 1 12:45
 
 Alleen Nederlandse uitzendingen, en alleen als de koers binnen zes dagen
 begint — verder vooruit publiceert de gids niets.
+
+### De kaart verschijnt niet
+
+De integratie meldt de kaart aan zodra hij geladen wordt. Loopt dat mis, dan
+werkt de sensor gewoon door en zie je alleen de kaart niet. Loop dit na:
+
+1. **Staat de integratie er?** Instellingen → Apparaten & Services. Zonder
+   toegevoegde integratie draait de aanmelding niet. De sensor
+   `sensor.cycling_next_race` hoort te bestaan.
+2. **Kun je het bestand ophalen?** Open
+   `http://<jouw-ha>:8123/cycling_next_race/cycling-next-race-card.js` in je
+   browser. Zie je JavaScript, dan is de aanmelding gelukt en zit het
+   probleem in de browser (stap 4). Krijg je een 404, dan is het bestand niet
+   geserveerd — ga naar stap 3.
+3. **Wat zegt het logboek?** Zoek op `cycling_next_race`. Bij succes staat er
+   `Lovelace-kaart aangemeld op /cycling_next_race/...`. Staat er in plaats
+   daarvan `Kaartbestand niet gevonden`, dan mist `www/` in je installatie:
+   controleer of `custom_components/cycling_next_race/www/` bestaat en
+   installeer anders opnieuw via HACS.
+4. **Leeg de browsercache.** De frontend bewaart scripts hardnekkig. Een
+   harde herlaad (Ctrl+Shift+R, op mobiel de app-cache legen) haalt de kaart
+   alsnog op. Dit is verreweg de meest voorkomende oorzaak vlak na een
+   installatie.
 
 ### De oude opzet met button-card
 

@@ -97,3 +97,18 @@ def test_manifest_vraagt_de_benodigde_onderdelen():
 
 def test_kaart_gebruikt_de_juiste_standaardentiteit(const):
     assert f"'sensor.{const.DOMAIN}'" in _kaart()
+
+
+def test_readme_beschrijft_dezelfde_opties():
+    """Een optie die alleen in de kaart of alleen in de README staat."""
+    kaart = _kaart()
+    # de sleutels uit setConfig, tussen de standaardwaarden
+    blok = kaart[kaart.index("this._config = {"):kaart.index("this._vorigeStatus")]
+    opties = set(re.findall(r"^\s*(\w+):", blok, re.M))
+
+    readme = (WORTEL / "README.md").read_text(encoding="utf-8")
+    tabel = readme[readme.index("| Optie |"):readme.index("### Voorbeelden")]
+    beschreven = set(re.findall(r"\|\s*`(\w+)`\s*\|", tabel))
+
+    assert opties == beschreven, (
+        f"kaart en README lopen uiteen: {opties ^ beschreven}")

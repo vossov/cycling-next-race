@@ -71,4 +71,6 @@ async def _registreer_kaart(hass: HomeAssistant) -> None:
         return
 
     hass.data[_KAART_GEREGISTREERD] = True
-    _LOGGER.debug("Lovelace-kaart geregistreerd op %s", KAART_URL)
+    # op info-niveau: zonder deze regel in het log is de kaart niet aangemeld,
+    # en dat is precies wat je wilt weten als hij niet verschijnt
+    _LOGGER.info("Lovelace-kaart aangemeld op %s?v=%s", KAART_URL, VERSION)
