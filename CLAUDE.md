@@ -6,7 +6,7 @@ Context voor Claude Code. Lees dit vóór je iets wijzigt.
 
 Home Assistant custom component die de eerstvolgende WorldTour-wielerkoers op een
 dashboard zet: hoogteprofiel, cols, tussensprint, uitslagen, klassementen,
-tv-zenders. Draait op een Raspberry Pi 5. Zowel mannen- als vrouwen-WorldTour.
+tv-zenders. Zowel mannen- als vrouwen-WorldTour.
 
 - Domein: `worldtour_next_race`
 - Entiteit: `sensor.volgende_worldtour_wedstrijd`
@@ -18,8 +18,8 @@ tv-zenders. Draait op een Raspberry Pi 5. Zowel mannen- als vrouwen-WorldTour.
 - **Alle communicatie en codecommentaar in het Nederlands.**
 - **Nooit data verzinnen.** Ontbreekt een bron, laat het veld leeg en laat de
   kaart dat onderdeel weglaten. Geen gereconstrueerde profielen, geen
-  watchscore zonder onderbouwing, geen geraden tv-zenders. Dit is een harde eis
-  van de eigenaar en er is meerdere keren op teruggekomen.
+  watchscore zonder onderbouwing, geen geraden tv-zenders. Dit is een harde
+  regel van het project; er is meerdere keren op teruggekomen.
 - **Benoem onzekerheid expliciet.** Wat niet getest is, zeg je erbij.
 - Degradeer netjes: een mislukte scrape logt op debug-niveau en geeft een lege
   lijst terug, nooit een exception naar boven.
@@ -129,7 +129,7 @@ niet bereiken**. Verifieer daarom zo:
   draaien tegen synthetische attributen; controleren op `NaN`, `undefined` en
   of de uitvoer met `<svg` begint en op `</svg>` eindigt.
 - `python3 -m py_compile` na elke wijziging.
-- Echte verificatie gebeurt op de Pi van de eigenaar.
+- Echte verificatie gebeurt pas in een draaiende Home Assistant.
 
 ## Diagnose-attributen
 
@@ -139,8 +139,8 @@ Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:
 
 ## Dashboard
 
-De Lovelace-kaarten staan in `lovelace/` en vallen **buiten HACS**; die zet de
-eigenaar zelf in de raw-config van het dashboard.
+De Lovelace-kaarten staan in `lovelace/` en vallen **buiten HACS**; die zet je
+zelf in de raw-config van het dashboard.
 
 - `button_card_templates.yaml` → drie button-card-templates
   (`worldtour_profile` tegel, `worldtour_detail` pop-up, `worldtour_upcoming`)

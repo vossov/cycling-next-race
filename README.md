@@ -19,7 +19,8 @@ zijn dag-uitslag in de pop-up.
 - **Uitslag en klassementen** (algemeen, punten, berg, jongeren) met
   positieverandering en dagwinst
 - **Live positie** van het peloton tijdens de koers
-- **Tv-zenders** met uitzendtijden (wielerflits)
+- **Tv-zenders** met uitzendtijden (wielerflits; alleen de Nederlandse
+  uitzendingen worden getoond)
 - **Watchscore** 1–10: een inschatting van hoe de moeite waard een etappe is
 
 Is er geen data, dan toont de integratie niets in plaats van iets verzonnens.
@@ -86,7 +87,8 @@ leeg in plaats van te raden.
 
 ## Licentie
 
-MIT
+MIT — zie [LICENSE](LICENSE). Gebruik, aanpassen en doorgeven mag, ook
+commercieel; de licentietekst moet meeliften en er is geen garantie.
 
 ## Ontwikkelen
 
