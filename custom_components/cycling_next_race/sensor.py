@@ -45,6 +45,7 @@ from .const import (
     DEFAULT_UPCOMING_DAYS,
     DEFAULT_UPCOMING_N,
     DOMAIN,
+    NAME,
     OPTION_DEFAULTS,
 )
 
@@ -2128,8 +2129,12 @@ async def async_setup_platform(
 
 
 class CyclingNextRaceSensor(CoordinatorEntity, SensorEntity):
-    _attr_name = "Volgende Wielerkoers"
-    _attr_unique_id = "cycling_next_race"
+    # Engelse naam, gelijk aan het domein, zodat de entiteit
+    # sensor.cycling_next_race heet. De unique_id blijft ongewijzigd: wie de
+    # integratie al had houdt zijn registratie en kan de entiteit-id zelf
+    # aanpassen zonder dat er een tweede entiteit bijkomt.
+    _attr_name = NAME
+    _attr_unique_id = DOMAIN
     _attr_icon = "mdi:bike-fast"
 
     @property

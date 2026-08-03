@@ -15,7 +15,7 @@ LOVELACE = WORTEL / "lovelace"
 SENSOR = (WORTEL / "custom_components" / "cycling_next_race" / "sensor.py").read_text()
 KAARTBESTANDEN = sorted(LOVELACE.glob("*.yaml"))
 
-ENTITEIT = "sensor.volgende_wielerkoers"
+ENTITEIT = "sensor.cycling_next_race"
 
 
 def _tekst(pad):

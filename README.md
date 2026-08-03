@@ -49,7 +49,7 @@ Ga naar **Instellingen → Apparaten & Services → Integratie toevoegen**, zoek
 op *Cycling Next Race* en bevestig. Er valt niets in te vullen: de
 integratie heeft geen sleutel of adres nodig.
 
-De sensor heet daarna `sensor.volgende_wielerkoers`.
+De sensor heet daarna `sensor.cycling_next_race`.
 
 ### Instellingen
 
@@ -99,17 +99,17 @@ uit de sensor haalt:
 # hoogteprofiel-tegel
 type: custom:button-card
 template: cycling_profile
-entity: sensor.volgende_wielerkoers
+entity: sensor.cycling_next_race
 
 # groter profiel met colnamen, voor in de pop-up
 type: custom:button-card
 template: cycling_detail
-entity: sensor.volgende_wielerkoers
+entity: sensor.cycling_next_race
 
 # overzicht "Komende dagen"
 type: custom:button-card
 template: cycling_upcoming
-entity: sensor.volgende_wielerkoers
+entity: sensor.cycling_next_race
 ```
 
 **3. De kaarten zelf.** De complete opstelling staat in
