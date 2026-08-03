@@ -21,6 +21,9 @@ tv-zenders. Zowel mannen- als vrouwen-WorldTour.
   watchscore zonder onderbouwing, geen geraden tv-zenders. Dit is een harde
   regel van het project; er is meerdere keren op teruggekomen.
 - **Benoem onzekerheid expliciet.** Wat niet getest is, zeg je erbij.
+- **Uitbrengen gaat met een versienummer, nooit met een commit-hash.** Zie
+  "Uitbrengen" verderop. Dit is een algemene voorkeur van de eigenaar en
+  geldt voor al zijn projecten.
 - Degradeer netjes: een mislukte scrape logt op debug-niveau en geeft een lege
   lijst terug, nooit een exception naar boven.
 
