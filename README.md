@@ -1,4 +1,4 @@
-# WCycling next race
+# Cycling next race
 
 Home Assistant-integratie die de eerstvolgende WorldTour-wielerwedstrijd op je
 dashboard zet — met hoogteprofiel, cols, tussensprint, uitslagen, klassementen
