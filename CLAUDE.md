@@ -156,9 +156,17 @@ De kaart hoort bij de integratie: `www/cycling-next-race-card.js` wordt in
 `type: custom:cycling-next-race-card` toe; geen resources, geen templates,
 geen button-card of Bubble Card.
 
-Achter de URL hangt `?v={VERSION}`; die constante in `const.py` moet gelijk
-blijven aan `version` in de manifest, anders blijft de browser na een update
-de oude kaart tonen. `tests/test_kaart.py` bewaakt dat.
+Achter de URL hangt `?v={VERSION}-{hash}`, waarbij de hash uit de inhoud van
+het kaartbestand komt (`_bestandsstempel`). Dat is bewust niet alleen
+`VERSION`: die werd drie kaartwijzigingen lang vergeten op te hogen, waardoor
+browsers een oude kaart bleven tonen. `VERSION` in `const.py` moet nog steeds
+gelijk zijn aan `version` in de manifest; `tests/test_kaart.py` bewaakt beide.
+
+Home Assistant kan de kaart willen tekenen voordat het script geladen is;
+dan verschijnt kort een foutkaart die na verversen weg is. Dat is een
+eigenschap van `add_extra_js_url`, geen fout in de kaart. Wie dat helemaal
+wil uitsluiten moet de kaart als Lovelace-resource registreren, maar dat
+schrijft in de gebruikersopslag en werkt niet in YAML-modus.
 
 De kaart kent twee weergaven: `view: profile` tekent het hoogteprofiel,
 `view: countdown` een compacte regel met koers, datum en `countdown` uit de

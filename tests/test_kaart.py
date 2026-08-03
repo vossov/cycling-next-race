@@ -146,3 +146,29 @@ def test_readme_beschrijft_dezelfde_opties():
 
     assert opties == beschreven, (
         f"kaart en README lopen uiteen: {opties ^ beschreven}")
+
+
+def test_stempel_verandert_mee_met_het_bestand(wt, const):
+    """De cache-buster mag niet afhangen van het ophogen van VERSION.
+
+    Blijft hij gelijk terwijl de kaart wijzigt, dan houdt een browser de
+    oude versie vast — precies wat er eerder misging.
+    """
+    import importlib
+
+    init = importlib.import_module("cycling_next_race")
+    pad = COMPONENT / "www" / KAART.name
+
+    eerste = init._bestandsstempel(pad)
+    assert eerste and eerste.startswith(const.VERSION)
+
+    origineel = pad.read_bytes()
+    try:
+        pad.write_bytes(origineel + b"\n// proef\n")
+        gewijzigd = init._bestandsstempel(pad)
+    finally:
+        pad.write_bytes(origineel)
+
+    assert gewijzigd != eerste, "stempel beweegt niet mee met de inhoud"
+    assert init._bestandsstempel(pad) == eerste, "stempel is niet stabiel"
+    assert init._bestandsstempel(COMPONENT / "www" / "bestaat-niet.js") is None
