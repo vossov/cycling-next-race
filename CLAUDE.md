@@ -160,6 +160,12 @@ Achter de URL hangt `?v={VERSION}`; die constante in `const.py` moet gelijk
 blijven aan `version` in de manifest, anders blijft de browser na een update
 de oude kaart tonen. `tests/test_kaart.py` bewaakt dat.
 
+De kaart heeft een visuele editor (`cycling-next-race-card-editor`) achter
+`getConfigElement()`. Die gebruikt `ha-form` als dat element bestaat en valt
+anders terug op een eigen formulier. Wie een kaartoptie toevoegt raakt drie
+plekken: `setConfig`, de lijst `VELDEN` in de editor, en de optietabel in de
+README; `tests/test_kaart.py` faalt als er één achterblijft.
+
 **De tekencode staat op twee plekken.** De drie SVG-functies (`svgTegel`,
 `svgDetail`, `svgKomend`) zijn letterlijk overgenomen uit de
 button-card-templates in `lovelace/`, die er nog staan voor de oude opzet.

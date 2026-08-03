@@ -277,7 +277,7 @@ class CyclingNextRaceCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { entity: 'sensor.cycling_next_race' };
+    return { entity: 'sensor.cycling_next_race', details: true, always_show: false };
   }
 
   setConfig(config) {
@@ -369,6 +369,119 @@ class CyclingNextRaceCard extends HTMLElement {
 }
 
 customElements.define('cycling-next-race-card', CyclingNextRaceCard);
+
+/* ── visuele editor ──────────────────────────────────────────────── */
+
+/* Wat de gebruiker te zien krijgt achter de knop Bewerken. Home Assistant
+ * levert ha-form mee; is dat er onverhoopt niet, dan volgt een eenvoudig
+ * formulier met dezelfde velden. */
+
+const VELDEN = [
+  {
+    name: 'entity',
+    label: 'Sensor',
+    uitleg: 'De sensor van Cycling Next Race.',
+    selector: { entity: { domain: 'sensor', integration: 'cycling_next_race' } },
+  },
+  {
+    name: 'details',
+    label: 'Detailvenster bij aantikken',
+    uitleg: 'Opent uitslag, klassementen en tv-zenders.',
+    selector: { boolean: {} },
+  },
+  {
+    name: 'always_show',
+    label: 'Altijd tonen',
+    uitleg: 'Ook als de eerstvolgende koers verder weg is dan morgen.',
+    selector: { boolean: {} },
+  },
+];
+
+const EDITOR_STIJL = `
+  .eigen { display: flex; flex-direction: column; gap: 14px; padding: 8px 0; }
+  .eigen label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+  .eigen .uitleg { font-size: 12px; opacity: .6; }
+  .eigen .schakel { flex-direction: row; align-items: center; gap: 10px; }
+  .eigen input[type="text"] {
+    padding: 8px; border-radius: 8px; border: 1px solid var(--divider-color, #444);
+    background: var(--card-background-color, #1c1c1c); color: inherit; font: inherit;
+  }
+`;
+
+class CyclingNextRaceCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = { entity: 'sensor.cycling_next_race', details: true, always_show: false, ...(config || {}) };
+    if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
+    this._teken();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (this._form) this._form.hass = hass;
+    else this._teken();
+  }
+
+  _wijzig(config) {
+    this._config = config;
+    this.dispatchEvent(
+      new CustomEvent('config-changed', {
+        detail: { config },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  _teken() {
+    if (!this.shadowRoot || !this._config) return;
+
+    if (customElements.get('ha-form')) {
+      if (this._form) return; // al opgebouwd; alleen data bijwerken
+      const form = document.createElement('ha-form');
+      form.hass = this._hass;
+      form.data = this._config;
+      form.schema = VELDEN.map(({ name, selector }) => ({ name, selector }));
+      form.computeLabel = (veld) =>
+        (VELDEN.find((v) => v.name === veld.name) || {}).label || veld.name;
+      form.computeHelper = (veld) =>
+        (VELDEN.find((v) => v.name === veld.name) || {}).uitleg || '';
+      form.addEventListener('value-changed', (e) => {
+        e.stopPropagation();
+        this._wijzig({ type: 'custom:cycling-next-race-card', ...e.detail.value });
+      });
+      this.shadowRoot.replaceChildren(form);
+      this._form = form;
+      return;
+    }
+
+    // terugval zonder ha-form
+    const c = this._config;
+    const stijl = document.createElement('style');
+    stijl.textContent = EDITOR_STIJL;
+    const doos = document.createElement('div');
+    doos.className = 'eigen';
+    doos.innerHTML = `
+      <label>Sensor<span class="uitleg">De sensor van Cycling Next Race.</span>
+        <input type="text" name="entity" value="${esc(c.entity)}"></label>
+      <label class="schakel"><input type="checkbox" name="details" ${c.details ? 'checked' : ''}>
+        Detailvenster bij aantikken</label>
+      <label class="schakel"><input type="checkbox" name="always_show" ${c.always_show ? 'checked' : ''}>
+        Altijd tonen</label>
+    `;
+    doos.addEventListener('change', () => {
+      const lees = (n) => doos.querySelector(`[name="${n}"]`);
+      this._wijzig({
+        type: 'custom:cycling-next-race-card',
+        entity: lees('entity').value.trim() || 'sensor.cycling_next_race',
+        details: lees('details').checked,
+        always_show: lees('always_show').checked,
+      });
+    });
+    this.shadowRoot.replaceChildren(stijl, doos);
+  }
+}
+
+customElements.define('cycling-next-race-card-editor', CyclingNextRaceCardEditor);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
