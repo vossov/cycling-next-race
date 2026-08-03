@@ -99,6 +99,30 @@ def test_kaart_gebruikt_de_juiste_standaardentiteit(const):
     assert f"'sensor.{const.DOMAIN}'" in _kaart()
 
 
+def test_editor_bestaat_en_wordt_aangeboden():
+    """getConfigElement verwijst naar een element dat er ook echt is."""
+    tekst = _kaart()
+    verwezen = re.search(r"createElement\('([\w-]+-editor)'\)", tekst)
+    assert verwezen, "de kaart biedt geen visuele editor aan"
+    naam = verwezen.group(1)
+    assert f"customElements.define('{naam}'" in tekst, (
+        f"{naam} wordt opgevraagd maar nergens gedefinieerd; "
+        "de bewerkknop levert dan geen editor op"
+    )
+
+
+def test_editor_kent_dezelfde_opties_als_de_kaart():
+    """Een veld dat de editor niet aanbiedt is via de interface onbereikbaar."""
+    tekst = _kaart()
+    blok = tekst[tekst.index("this._config = {"):tekst.index("this._vorigeStatus")]
+    opties = set(re.findall(r"^\s*(\w+):", blok, re.M))
+
+    velden = tekst[tekst.index("const VELDEN = ["):tekst.index("const EDITOR_STIJL")]
+    aangeboden = set(re.findall(r"name:\s*'(\w+)'", velden))
+
+    assert opties == aangeboden, f"editor en kaart lopen uiteen: {opties ^ aangeboden}"
+
+
 def test_readme_beschrijft_dezelfde_opties():
     """Een optie die alleen in de kaart of alleen in de README staat."""
     kaart = _kaart()

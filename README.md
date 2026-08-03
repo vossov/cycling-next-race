@@ -73,14 +73,17 @@ templates in de raw-config te plakken en geen extra frontend-kaarten te
 installeren.
 
 **Voeg hem toe zoals elke andere kaart.** Bewerk je dashboard, kies *Kaart
-toevoegen* en zoek op *Cycling Next Race*. Wie liever YAML typt, plakt dit
-in een view:
+toevoegen* en zoek op *Cycling Next Race*. De kaart heeft een eigen
+instelscherm: de sensor staat er al in en de twee schakelaars zet je met een
+klik. YAML komt er niet aan te pas.
+
+Liever toch typen? Dit volstaat:
 
 ```yaml
 type: custom:cycling-next-race-card
 ```
 
-Dat is de hele configuratie. De sensor wordt vanzelf gevonden.
+De sensor wordt vanzelf gevonden.
 
 | Optie | Standaard | Betekenis |
 |---|---|---|
