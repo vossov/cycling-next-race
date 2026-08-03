@@ -364,6 +364,21 @@ class CyclingNextRaceCard extends HTMLElement {
     this._teken(st);
   }
 
+  /* Home Assistant zet dit op kaarten in de kaartkiezer en het
+   * bewerkscherm. Wordt het later gezet dan hass, dan moet de kaart alsnog
+   * opnieuw getekend worden — anders blijft hij daar verborgen. */
+  set preview(waarde) {
+    const nieuw = Boolean(waarde);
+    if (nieuw === this._preview) return;
+    this._preview = nieuw;
+    this._vorigeStatus = null;
+    if (this._hass) this.hass = this._hass;
+  }
+
+  get preview() {
+    return this._preview === true;
+  }
+
   getCardSize() {
     return 3;
   }
@@ -381,7 +396,10 @@ class CyclingNextRaceCard extends HTMLElement {
     // grens 0 (of onzin) betekent: geen grens, altijd tonen
     const verbergen =
       isFinite(grens) && grens > 0 && isFinite(dagen) && dagen >= grens;
-    if (verbergen || a.show_state === 'Klaar') {
+
+    // in de kaartkiezer en het bewerkscherm nooit verbergen: een kaart die
+    // zichzelf onzichtbaar maakt is daar niet meer aan te klikken
+    if ((verbergen || a.show_state === 'Klaar') && !this.preview) {
       root.innerHTML = '';
       this.style.display = 'none';
       return;

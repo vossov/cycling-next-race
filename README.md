@@ -216,10 +216,15 @@ willen tekenen voordat het script geladen was. De frontend wacht daar maar
 kort op; komt het net te laat, dan valt hij terug op een foutkaart.
 
 Het gaat vanzelf over zodra het script in de cache van de browser staat, dus
-je ziet het vooral één keer na een update. Klik op de foutkaart om de
-melding te zien: staat er *Custom element doesn't exist*, dan is dit het.
-Staat er iets anders, dan is er wél iets mis met de configuratie en helpt
-verversen niet.
+je ziet het vooral één keer na een update.
+
+Wil je zeker weten dat het dáárom gaat, open het dashboard dan op een
+computer in plaats van in de app. De foutkaart toont daar de melding, en in
+de ontwikkelaarsconsole (F12) staat de precieze reden. *Custom element
+doesn't exist* betekent dat het script te laat was; een andere melding
+betekent dat er werkelijk iets mis is met de configuratie en dat verversen
+niet helpt. In de mobiele app is die melding niet op te vragen — tikken op
+de foutkaart doet daar niets.
 
 De kaart-URL draagt een korte hash van het bestand, dus na een update haalt
 de browser gegarandeerd de nieuwe versie op in plaats van een oude uit de

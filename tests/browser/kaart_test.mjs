@@ -130,6 +130,33 @@ for (const [naam, a] of Object.entries(gevallen)) {
   if (naam === 'volledig') await page.screenshot({ path: 'kaart-volledig.png', fullPage: true });
 }
 
+// ── preview-modus: nooit verbergen ───────────────────────────────
+{
+  const uit = await page.evaluate(([alle]) => {
+    const maak = (preview) => {
+      document.getElementById('doel').innerHTML = '';
+      const kaart = document.createElement('cycling-next-race-card');
+      kaart.setConfig({ entity: 'sensor.cycling_next_race', visible_days: 2 });
+      document.getElementById('doel').appendChild(kaart);
+      // hass eerst, preview daarna: de vololgorde die Home Assistant kan aanhouden
+      kaart.hass = { states: { 'sensor.cycling_next_race': {
+        state: 'x', last_updated: 'vast',
+        attributes: { ...alle, days_until: 30, show_state: 'Gepland' } } } };
+      if (preview) kaart.preview = true;
+      return { zichtbaar: getComputedStyle(kaart).display !== 'none',
+               inhoud: kaart.shadowRoot.innerHTML.length };
+    };
+    return { zonder: maak(false), met: maak(true) };
+  }, [attrs]);
+
+  const p = [];
+  if (uit.zonder.zichtbaar) p.push('buiten de bewerkmodus had hij zich moeten verbergen');
+  if (!uit.met.zichtbaar) p.push('in de bewerkmodus blijft hij verborgen en is dan niet aanklikbaar');
+  if (uit.met.inhoud === 0) p.push('in de bewerkmodus wordt niets getekend');
+  if (p.length) { console.log(`FOUT  preview-modus: ${p.join(', ')}`); mislukt++; }
+  else console.log('ok    preview-modus — verborgen op het dashboard, zichtbaar in het bewerkscherm');
+}
+
 // ── zichtbaarheid en aftelweergave ───────────────────────────────
 for (const geval of zichtbaarheid) {
   const uit = await page.evaluate(([config, dagen, alle]) => {
