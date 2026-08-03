@@ -1,13 +1,15 @@
-# Cycling next race
+# Cycling Next Race
 
 Home Assistant-integratie die de eerstvolgende WorldTour-wielerwedstrijd op je
 dashboard zet — met hoogteprofiel, cols, tussensprint, uitslagen, klassementen
 en de Nederlandse tv-zenders.
 
-Zowel de mannen- als de vrouwen-WorldTour worden gevolgd. Koersen tegelijk?
-Dan toont de tegel er één: eerst de eerstvolgende etappe, dan de koers met een
-hoogteprofiel, en bij gelijke stand de mannen. De andere koers verschijnt met
-zijn dag-uitslag in de pop-up.
+Zowel de mannen- als de vrouwen-WorldTour worden gevolgd — op dit moment
+alleen die twee kalenders; de opzet laat ruimte om er later andere koersen
+naast te zetten. Koersen tegelijk? Dan toont de tegel er één: eerst de
+eerstvolgende etappe, dan de koers met een hoogteprofiel, en bij gelijke
+stand de mannen. De andere koers verschijnt met zijn dag-uitslag in de
+pop-up.
 
 ## Wat het laat zien
 
@@ -19,7 +21,8 @@ zijn dag-uitslag in de pop-up.
 - **Uitslag en klassementen** (algemeen, punten, berg, jongeren) met
   positieverandering en dagwinst
 - **Live positie** van het peloton tijdens de koers
-- **Tv-zenders** met uitzendtijden (wielerflits)
+- **Tv-zenders** met uitzendtijden (wielerflits; alleen de Nederlandse
+  uitzendingen worden getoond)
 - **Watchscore** 1–10: een inschatting van hoe de moeite waard een etappe is
 
 Is er geen data, dan toont de integratie niets in plaats van iets verzonnens.
@@ -30,47 +33,104 @@ watchscore.
 
 1. HACS → rechtsboven de drie puntjes → **Aangepaste repositories**
 2. Plak de URL van deze repo, categorie **Integration**, en klik toevoegen
-3. Zoek op *WorldTour Next Race*, installeer, en herstart Home Assistant
+3. Zoek op *Cycling Next Race*, installeer, en herstart Home Assistant
 
 De Python-afhankelijkheid (`procyclingstats`) installeert Home Assistant
 automatisch.
 
 ## Handmatige installatie
 
-Kopieer `custom_components/worldtour_next_race/` naar de map
+Kopieer `custom_components/cycling_next_race/` naar de map
 `custom_components/` van je Home Assistant en herstart.
 
 ## Configuratie
 
-In `configuration.yaml`:
+Ga naar **Instellingen → Apparaten & Services → Integratie toevoegen**, zoek
+op *Cycling Next Race* en bevestig. Er valt niets in te vullen: de
+integratie heeft geen sleutel of adres nodig.
+
+De sensor heet daarna `sensor.volgende_wielerkoers`.
+
+### Instellingen
+
+Achter **Configureren** bij de integratie stel je in:
+
+| Instelling | Standaard |
+|---|---|
+| Aantal renners in de uitslag | 10 |
+| Aantal renners in het klassement | 10 |
+| Maximaal aantal komende etappes | 10 |
+| Komende etappes tonen tot (dagen vooruit) | 7 |
+| Verversen elke (minuten) | 30 |
+| Verversen tijdens een koers (minuten) | 5 |
+
+Wijzigingen gaan meteen in; de integratie herlaadt zichzelf.
+
+### Overstappen vanaf de YAML-configuratie
+
+Stond dit in je `configuration.yaml`?
 
 ```yaml
 sensor:
-  - platform: worldtour_next_race
+  - platform: cycling_next_race
 ```
 
-Dat is alles. De sensor heet `sensor.volgende_worldtour_wedstrijd`.
+Dan wordt die bij de eerstvolgende herstart automatisch omgezet naar een
+integratie in de interface. Haal de regels daarna weg.
 
 ## Dashboard
 
-De kaarten zijn losse Lovelace-templates; die vallen buiten HACS en zet je
-zelf in je dashboard. Ze staan in [`lovelace/button_card_templates.yaml`](lovelace/button_card_templates.yaml)
-en horen in de raw-config van je dashboard onder `button_card_templates:`.
-
-Benodigd: [button-card](https://github.com/custom-cards/button-card),
+De kaarten vallen buiten HACS: de integratie levert alleen de sensor, de
+opmaak zet je zelf in je dashboard. Benodigd zijn
+[button-card](https://github.com/custom-cards/button-card),
 [card-mod](https://github.com/thomasloven/lovelace-card-mod) en
 [Bubble Card](https://github.com/Clooos/Bubble-Card) voor de pop-up.
 
+**1. Templates registreren.** Neem de inhoud van
+[`lovelace/button_card_templates.yaml`](lovelace/button_card_templates.yaml)
+over in de raw-configuratie van je dashboard (rechtsboven → *Raw
+configuration editor*). Het `button_card_templates:`-blok staat op het
+hoogste niveau, náást `views:`.
+
+**2. Kaarten plaatsen.** Elke template is een button-card die zijn gegevens
+uit de sensor haalt:
+
+```yaml
+# hoogteprofiel-tegel
+type: custom:button-card
+template: cycling_profile
+entity: sensor.volgende_wielerkoers
+
+# groter profiel met colnamen, voor in de pop-up
+type: custom:button-card
+template: cycling_detail
+entity: sensor.volgende_wielerkoers
+
+# overzicht "Komende dagen"
+type: custom:button-card
+template: cycling_upcoming
+entity: sensor.volgende_wielerkoers
+```
+
+**3. Tekstkaarten toevoegen.** De zes markdown-kaarten voor uitslag,
+klassementen, tv-zenders en de tweede koers staan in
+[`lovelace/markdown_cards.yaml`](lovelace/markdown_cards.yaml). Die zijn
+zelfstandig: plak er een in je dashboard en hij werkt. Ze verbergen zichzelf
+wanneer de bijbehorende gegevens ontbreken.
+
+**4. Pop-up.** De detailweergave is een Bubble Card-pop-up waarin de
+`cycling_detail`-kaart en de markdown-kaarten samen staan. Hoe je die opent
+— via een tik op de tegel of een aparte knop — hangt af van je eigen
+dashboardindeling; zie de documentatie van Bubble Card.
+
 ## Instellingen in de code
 
-Bovenin `sensor.py` staan een paar constanten die je kunt aanpassen:
+Wat niet in de interface staat, staat bovenin `sensor.py`:
 
 | Constante | Betekenis |
 |---|---|
-| `RESULT_N`, `GC_N` | aantal renners in uitslag en klassement |
-| `UPCOMING_N`, `UPCOMING_DAYS` | omvang van het overzicht "Komende dagen" |
-| `SCAN_INTERVAL`, `LIVE_SCAN_INTERVAL` | verversfrequentie (normaal / tijdens de koers) |
 | `GPX_OVERRIDE` | eigen GPX-adres per koers, als er geen publieke is |
+| `CYCLINGSTAGE_ROUTE`, `CYCLINGSTAGE_ONEDAY` | adressen van de etappeteksten per koers |
 
 ## Bronnen
 
@@ -86,7 +146,8 @@ leeg in plaats van te raden.
 
 ## Licentie
 
-MIT
+MIT — zie [LICENSE](LICENSE). Gebruik, aanpassen en doorgeven mag, ook
+commercieel; de licentietekst moet meeliften en er is geen garantie.
 
 ## Ontwikkelen
 

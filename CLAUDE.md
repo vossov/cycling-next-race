@@ -1,4 +1,4 @@
-# CLAUDE.md — WorldTour Next Race
+# CLAUDE.md — Cycling Next Race
 
 Context voor Claude Code. Lees dit vóór je iets wijzigt.
 
@@ -6,31 +6,40 @@ Context voor Claude Code. Lees dit vóór je iets wijzigt.
 
 Home Assistant custom component die de eerstvolgende WorldTour-wielerkoers op een
 dashboard zet: hoogteprofiel, cols, tussensprint, uitslagen, klassementen,
-tv-zenders. Draait op een Raspberry Pi 5. Zowel mannen- als vrouwen-WorldTour.
+tv-zenders. Zowel mannen- als vrouwen-WorldTour.
 
-- Domein: `worldtour_next_race`
-- Entiteit: `sensor.volgende_worldtour_wedstrijd`
+- Domein: `cycling_next_race`
+- Entiteit: `sensor.volgende_wielerkoers`
 - Installatie: HACS (custom repository) of handmatig kopiëren
-- Configuratie: YAML-platform (`sensor: - platform: worldtour_next_race`)
+- Configuratie: config flow; het oude YAML-platform wordt geïmporteerd
 
 ## Werkafspraken
 
 - **Alle communicatie en codecommentaar in het Nederlands.**
 - **Nooit data verzinnen.** Ontbreekt een bron, laat het veld leeg en laat de
   kaart dat onderdeel weglaten. Geen gereconstrueerde profielen, geen
-  watchscore zonder onderbouwing, geen geraden tv-zenders. Dit is een harde eis
-  van de eigenaar en er is meerdere keren op teruggekomen.
+  watchscore zonder onderbouwing, geen geraden tv-zenders. Dit is een harde
+  regel van het project; er is meerdere keren op teruggekomen.
 - **Benoem onzekerheid expliciet.** Wat niet getest is, zeg je erbij.
 - Degradeer netjes: een mislukte scrape logt op debug-niveau en geeft een lege
   lijst terug, nooit een exception naar boven.
 
 ## Architectuur
 
-Eén bestand: `custom_components/worldtour_next_race/sensor.py`.
+Het werk zit in `custom_components/cycling_next_race/sensor.py`; daaromheen
+staan `const.py` (sleutels en standaardwaarden), `config_flow.py` (toevoegen
+en het optiescherm) en `__init__.py` (config entry opzetten en herladen).
 
-- `WorldTourCoordinator(DataUpdateCoordinator)` haalt alles op.
-- `SCAN_INTERVAL` 30 min, `LIVE_SCAN_INTERVAL` 5 min. De coordinator zet
-  `self.update_interval` dynamisch op basis van `show_state == "LIVE"`.
+- `CyclingCoordinator(DataUpdateCoordinator)` haalt alles op en krijgt de
+  opties uit de config entry mee. `self._opt(sleutel)` leest er één, met de
+  waarde uit `OPTION_DEFAULTS` als terugval — ook bij onzin in de opslag.
+- Verversen standaard elke 30 min, 5 min tijdens een live etappe; beide zijn
+  instelbaar. De coordinator zet `self.update_interval` dynamisch op basis
+  van `show_state == "LIVE"`.
+- Wie een instelling toevoegt raakt vier plekken: `const.py` (`CONF_*`,
+  `DEFAULT_*`, `OPTION_DEFAULTS`), het schema in `config_flow.py`,
+  `strings.json` plus elke vertaling, en de plek in `sensor.py` die hem
+  gebruikt. `tests/test_repo.py` faalt als er één achterblijft.
 - Alle netwerk-/parse-werk loopt via `self._job(...)` →
   `async_add_executor_job`, want procyclingstats en urllib zijn blokkerend.
 - Caches op de coordinator (per dag of per koers geleegd bij een nieuwe dag):
@@ -129,7 +138,7 @@ niet bereiken**. Verifieer daarom zo:
   draaien tegen synthetische attributen; controleren op `NaN`, `undefined` en
   of de uitvoer met `<svg` begint en op `</svg>` eindigt.
 - `python3 -m py_compile` na elke wijziging.
-- Echte verificatie gebeurt op de Pi van de eigenaar.
+- Echte verificatie gebeurt pas in een draaiende Home Assistant.
 
 ## Diagnose-attributen
 
@@ -139,11 +148,11 @@ Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:
 
 ## Dashboard
 
-De Lovelace-kaarten staan in `lovelace/` en vallen **buiten HACS**; die zet de
-eigenaar zelf in de raw-config van het dashboard.
+De Lovelace-kaarten staan in `lovelace/` en vallen **buiten HACS**; die zet je
+zelf in de raw-config van het dashboard.
 
 - `button_card_templates.yaml` → drie button-card-templates
-  (`worldtour_profile` tegel, `worldtour_detail` pop-up, `worldtour_upcoming`)
+  (`cycling_profile` tegel, `cycling_detail` pop-up, `cycling_upcoming`)
 - `markdown_cards.yaml` → de markdown-kaarten voor uitslag, klassementen,
   tv-zenders en de tweede koers
 
@@ -159,5 +168,7 @@ thema volgt, categoriekleuren `CAT={HC:'#E4572E','1':'#F2A03D','2':'#EBD24A',
   afloop via het bergklassement). Uitzoeken of het elders vooraf beschikbaar is.
 - Een aantal cyclingstage-namen voor vrouwenklassiekers is een educated guess
   (`CYCLINGSTAGE_ONEDAY`); daarom staan er meerdere kandidaten per koers.
-- Geen config flow; instellen gaat via YAML.
+- De config flow is niet in een draaiende Home Assistant beproefd: de tests
+  bouwen het optieschema op met gestubde HA-modules, wat niets zegt over de
+  vraag of het scherm verschijnt en de entry laadt.
 - Overweeg de diagnose-attributen te verwijderen zodra alles stabiel draait.

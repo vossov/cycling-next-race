@@ -3,15 +3,13 @@
 YAML-configuratie:
 
     sensor:
-      - platform: worldtour_next_race
+      - platform: cycling_next_race
 
 Uitgebreide versie:
 - Spoiler-vrije attributen voor tegel + pop-up (parcours, cols, profielscore ...).
 - Spoiler-attributen ALLEEN bedoeld voor de pop-up (uitslag laatste etappe + klassement).
 - Etappe-selectie met rollover: zodra de etappe van vandaag klaar is (uitslag binnen)
   toont de tegel de eerstvolgende etappe. Een rustdag telt niet als etappe.
-- Genereert twee transparante SVG-profielen (tegel + detail) naar
-  /config/www/worldtour/ die de kaart als /local/worldtour/*.svg toont.
 
 De kalender wordt 1x per dag opgehaald; live wordt elk half uur ververst.
 """
@@ -24,6 +22,7 @@ from datetime import date, timedelta
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -32,15 +31,34 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.util import dt as dt_util
 
+from .const import (
+    CONF_GC_N,
+    CONF_LIVE_SCAN_MINUTES,
+    CONF_RESULT_N,
+    CONF_SCAN_MINUTES,
+    CONF_UPCOMING_DAYS,
+    CONF_UPCOMING_N,
+    DEFAULT_GC_N,
+    DEFAULT_LIVE_SCAN_MINUTES,
+    DEFAULT_RESULT_N,
+    DEFAULT_SCAN_MINUTES,
+    DEFAULT_UPCOMING_DAYS,
+    DEFAULT_UPCOMING_N,
+    DOMAIN,
+    OPTION_DEFAULTS,
+)
+
 _LOGGER = logging.getLogger(__name__)
 
-SCAN_INTERVAL = timedelta(minutes=30)
-LIVE_SCAN_INTERVAL = timedelta(minutes=5)  # sneller pollen tijdens een live etappe
+# Standaardwaarden. Ze zijn in te stellen via het optiescherm; deze constanten
+# blijven de terugval wanneer een optie ontbreekt.
+SCAN_INTERVAL = timedelta(minutes=DEFAULT_SCAN_MINUTES)
+LIVE_SCAN_INTERVAL = timedelta(minutes=DEFAULT_LIVE_SCAN_MINUTES)
 
-RESULT_N = 10  # aantal renners in de uitslag (pop-up)
-GC_N = 10      # aantal renners in het klassement (pop-up)
-UPCOMING_N = 10  # veiligheidscap op aantal komende etappes (pop-up)
-UPCOMING_DAYS = 7  # toon alleen komende etappes binnen zoveel dagen
+RESULT_N = DEFAULT_RESULT_N  # aantal renners in de uitslag (pop-up)
+GC_N = DEFAULT_GC_N          # aantal renners in het klassement (pop-up)
+UPCOMING_N = DEFAULT_UPCOMING_N  # veiligheidscap op aantal komende etappes
+UPCOMING_DAYS = DEFAULT_UPCOMING_DAYS  # venster voor "Komende dagen"
 
 MONUMENTS = {
     "milano-sanremo",
@@ -554,7 +572,9 @@ def _repair_rows(rows, roster, name_key="rider", team_key="team"):
     return hersteld
 
 
-def _fetch_stage(stage_url: str, one_day: bool = False) -> dict:
+def _fetch_stage(stage_url: str, one_day: bool = False,
+                 result_n: int = DEFAULT_RESULT_N,
+                 gc_n: int = DEFAULT_GC_N) -> dict:
     """Alle relevante velden uit één Stage-pagina (meta + cols + uitslag + klassement)."""
 
     data = {
@@ -598,7 +618,7 @@ def _fetch_stage(stage_url: str, one_day: bool = False) -> dict:
             "team": (r.get("team_name") or "").strip(),
             "time": r.get("time") or "",
         })
-        if len(clean) >= RESULT_N:
+        if len(clean) >= result_n:
             break
     data["results"] = clean
     data["finished"] = bool(clean)
@@ -615,7 +635,7 @@ def _fetch_stage(stage_url: str, one_day: bool = False) -> dict:
         "time": g.get("time") or "",
         "move": _move(g.get("prev_rank"), g.get("rank")),
         "prev": _int(g.get("prev_rank")),
-    } for g in gc[:GC_N]]
+    } for g in gc[:gc_n]]
     _dg, _dh, _draw = _delta_col(st, "gc")
     data["gain_headers"] = _dh
     data["gain_raw"] = _draw
@@ -890,7 +910,7 @@ def _fetch_channels(race_url, idx, one_day, race_name):
     try:
         req = urllib.request.Request(
             WIELERFLITS_TV_URL,
-            headers={"User-Agent": "Mozilla/5.0 (HomeAssistant WorldTour)"})
+            headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             html = resp.read().decode("utf-8", "replace")
     except Exception as err:  # noqa: BLE001
@@ -949,7 +969,7 @@ def _fetch_stage_names(url, distance=None):
     from html import unescape
     try:
         req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant WorldTour)"})
+            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             doc = resp.read().decode("utf-8", "replace")
     except Exception as err:  # noqa: BLE001
@@ -1041,7 +1061,7 @@ def _fetch_live(stage_url):
     url = f"https://www.procyclingstats.com/{stage_url}/live"
     try:
         req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant WorldTour)"})
+            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             doc = resp.read().decode("utf-8", "replace")
     except Exception as err:  # noqa: BLE001
@@ -1276,7 +1296,7 @@ def _fetch_times(race_url, stage_idx, one_day):
     for url in _times_urls(race_url, stage_idx, one_day):
         try:
             req = urllib.request.Request(
-                url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant WorldTour)"})
+                url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
             with urllib.request.urlopen(req, timeout=30) as resp:
                 html = resp.read().decode("utf-8", "replace")
         except Exception as err:  # noqa: BLE001
@@ -1441,7 +1461,7 @@ def _fetch_gpx(gpx_url, n_out: int = 150):
     import urllib.request
     try:
         req = urllib.request.Request(
-            gpx_url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant WorldTour)"})
+            gpx_url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read()
     except Exception as err:  # noqa: BLE001
@@ -1482,10 +1502,12 @@ def _fetch_gpx(gpx_url, n_out: int = 150):
     return out, climbs
 
 
-class WorldTourCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass: HomeAssistant) -> None:
-        super().__init__(hass, _LOGGER, name="worldtour_next_race",
-                         update_interval=SCAN_INTERVAL)
+class CyclingCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass: HomeAssistant, options: dict | None = None) -> None:
+        # opties komen uit het optiescherm; ontbreekt er een, dan de standaard
+        self._options = {**OPTION_DEFAULTS, **(options or {})}
+        super().__init__(hass, _LOGGER, name=DOMAIN,
+                         update_interval=self._scan_interval)
         self._calendar: list[dict] | None = None
         self._calendar_fetched: date | None = None
         self._stages_cache: dict[str, tuple[date, list[dict]]] = {}
@@ -1500,6 +1522,22 @@ class WorldTourCoordinator(DataUpdateCoordinator):
         self._names_cache: dict[str, list] = {}
         self._prose_cache: dict[str, list] = {}
         self._names_diag: list = []
+
+    def _opt(self, sleutel: str) -> int:
+        """Waarde uit het optiescherm, met de standaard als terugval."""
+        waarde = self._options.get(sleutel, OPTION_DEFAULTS[sleutel])
+        try:
+            return int(waarde)
+        except (TypeError, ValueError):
+            return OPTION_DEFAULTS[sleutel]
+
+    @property
+    def _scan_interval(self) -> timedelta:
+        return timedelta(minutes=self._opt(CONF_SCAN_MINUTES))
+
+    @property
+    def _live_scan_interval(self) -> timedelta:
+        return timedelta(minutes=self._opt(CONF_LIVE_SCAN_MINUTES))
 
     async def _job(self, fn, *args):
         return await self.hass.async_add_executor_job(fn, *args)
@@ -1532,7 +1570,8 @@ class WorldTourCoordinator(DataUpdateCoordinator):
                 if self._other_cache and self._other_cache[0] == key:
                     d = self._other_cache[1]
                 else:
-                    d = await self._job(_fetch_stage, s["stage_url"], s.get("one_day"))
+                    d = await self._job(_fetch_stage, s["stage_url"], s.get("one_day"),
+                                        self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
                     if d.get("finished"):
                         self._other_cache = (key, d)
                 if not d.get("finished"):
@@ -1551,7 +1590,7 @@ class WorldTourCoordinator(DataUpdateCoordinator):
                 if s.get("women") and not _noemt_dames(s["race_name"]):
                     label += " \u00b7 Dames"
                 return {"other_label": label,
-                        "other_result": (d.get("results") or [])[:RESULT_N],
+                        "other_result": (d.get("results") or [])[:self._opt(CONF_RESULT_N)],
                         "other_gc": (d.get("gc") or [])[:5]}
         return leeg
 
@@ -1642,7 +1681,7 @@ class WorldTourCoordinator(DataUpdateCoordinator):
     async def _build_upcoming(self, cur_idx: int, shown: dict,
                               future: list[dict], today: date) -> list[dict]:
         shown_url = shown.get("stage_url")
-        cutoff = today + timedelta(days=UPCOMING_DAYS)   # max N dagen vooruit
+        cutoff = today + timedelta(days=self._opt(CONF_UPCOMING_DAYS))
         pool = [s for s in future
                 if s["stage_url"] != shown_url and today <= s["date"] <= cutoff]
         # alle koersen die in het venster vallen, ook koersen die al eerder
@@ -1673,7 +1712,7 @@ class WorldTourCoordinator(DataUpdateCoordinator):
         pool = uniek
         out = []
         diag = []
-        for s in pool[:UPCOMING_N]:
+        for s in pool[:self._opt(CONF_UPCOMING_N)]:
             try:
                 e = await self._upcoming_entry(s, today)
                 if e:
@@ -1723,7 +1762,7 @@ class WorldTourCoordinator(DataUpdateCoordinator):
 
         # Mannen en vrouwen kunnen tegelijk koersen; kies er EEN voor het dashboard.
         # Volgorde: eerstvolgende etappe, dan koersen met hoogteprofiel, dan mannen.
-        venster = today + timedelta(days=UPCOMING_DAYS)
+        venster = today + timedelta(days=self._opt(CONF_UPCOMING_DAYS))
         actief = [(i, r) for i, r in enumerate(self._calendar)
                   if r["end"] >= today and r["start"] <= venster][:4]
         if not actief:
@@ -1760,7 +1799,8 @@ class WorldTourCoordinator(DataUpdateCoordinator):
         today_finished = False
 
         if today_st:
-            td = await self._job(_fetch_stage, today_st["stage_url"], today_st.get("one_day"))
+            td = await self._job(_fetch_stage, today_st["stage_url"], today_st.get("one_day"),
+                                 self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
             if td.get("finished"):
                 today_finished = True
                 last_fin, last_fin_data = today_st, td
@@ -1781,9 +1821,11 @@ class WorldTourCoordinator(DataUpdateCoordinator):
             return {"state": "Seizoen afgelopen", "attributes": {"show_state": "Klaar"}}
 
         if shown_data is None:
-            shown_data = await self._job(_fetch_stage, shown["stage_url"], shown.get("one_day"))
+            shown_data = await self._job(_fetch_stage, shown["stage_url"], shown.get("one_day"),
+                                         self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
         if last_fin is not None and last_fin_data is None:
-            last_fin_data = await self._job(_fetch_stage, last_fin["stage_url"], last_fin.get("one_day"))
+            last_fin_data = await self._job(_fetch_stage, last_fin["stage_url"], last_fin.get("one_day"),
+                                            self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
 
         # namen in de klassementen kunnen bij de verkeerde rij staan; herstellen
         # met de startlijst (renner -> ploeg) als betrouwbare referentie
@@ -1956,7 +1998,8 @@ class WorldTourCoordinator(DataUpdateCoordinator):
         highlights_url = "https://www.youtube.com/results?search_query=" + quote(_q)
         live_url = f"https://www.procyclingstats.com/{shown['stage_url']}/live"
         # tijdens een live etappe vaker verversen zodat het live-stipje meebeweegt
-        self.update_interval = LIVE_SCAN_INTERVAL if show_state == "LIVE" else SCAN_INTERVAL
+        self.update_interval = (self._live_scan_interval if show_state == "LIVE"
+                                else self._scan_interval)
         # voor de conditionele dashboardkaart
         today_or_tomorrow = show_state in ("LIVE", "Vandaag", "Morgen")
         days_until = max(0, (shown["date"] - today).days)
@@ -2049,8 +2092,19 @@ class WorldTourCoordinator(DataUpdateCoordinator):
 
 
 # ──────────────────────────────────────────────────────────────
-# Platform setup (YAML)
+# Setup
 # ──────────────────────────────────────────────────────────────
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """De gewone weg: opgezet vanuit een config entry."""
+    coordinator = CyclingCoordinator(hass, dict(entry.options))
+    await coordinator.async_config_entry_first_refresh()
+    async_add_entities([CyclingNextRaceSensor(coordinator)])
+
 
 async def async_setup_platform(
     hass: HomeAssistant,
@@ -2058,14 +2112,24 @@ async def async_setup_platform(
     async_add_entities: AddEntitiesCallback,
     discovery_info=None,
 ) -> None:
-    coordinator = WorldTourCoordinator(hass)
-    await coordinator.async_config_entry_first_refresh()
-    async_add_entities([WorldTourNextRaceSensor(coordinator)])
+    """Oude YAML-configuratie: eenmalig omzetten naar een config entry.
+
+    Wie `sensor: - platform: cycling_next_race` in configuration.yaml heeft
+    staan houdt zijn sensor; de import-flow maakt er een entry van en de
+    YAML-regel mag daarna weg.
+    """
+    hass.async_create_task(
+        hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": SOURCE_IMPORT},
+            data={},
+        )
+    )
 
 
-class WorldTourNextRaceSensor(CoordinatorEntity, SensorEntity):
-    _attr_name = "Volgende WorldTour Wedstrijd"
-    _attr_unique_id = "worldtour_next_race"
+class CyclingNextRaceSensor(CoordinatorEntity, SensorEntity):
+    _attr_name = "Volgende Wielerkoers"
+    _attr_unique_id = "cycling_next_race"
     _attr_icon = "mdi:bike-fast"
 
     @property

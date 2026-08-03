@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Cycling Next Race",
+        "description": "Er valt niets in te stellen om te beginnen. Bevestig om de sensor toe te voegen; de instellingen vind je daarna onder Configureren."
+      }
+    },
+    "abort": {
+      "already_configured": "Deze integratie is al toegevoegd."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Instellingen",
+        "data": {
+          "result_n": "Aantal renners in de uitslag",
+          "gc_n": "Aantal renners in het klassement",
+          "upcoming_n": "Maximaal aantal komende etappes",
+          "upcoming_days": "Komende etappes tonen tot (dagen vooruit)",
+          "scan_minutes": "Verversen elke (minuten)",
+          "live_scan_minutes": "Verversen tijdens een koers (minuten)"
+        },
+        "data_description": {
+          "scan_minutes": "Hoe vaak procyclingstats wordt geraadpleegd buiten koersen om.",
+          "live_scan_minutes": "Tijdens een live etappe, zodat de positie van het peloton meebeweegt."
+        }
+      }
+    }
+  }
+}
