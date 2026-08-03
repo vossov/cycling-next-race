@@ -25,6 +25,18 @@ OVERGENOMEN = {
 }
 
 
+def _configsleutels(tekst):
+    """De sleutels uit het this._config-object van de kaart.
+
+    Begrensd op het object zelf; wat erachter komt (zoals de omgang met
+    verouderde opties) telt niet mee.
+    """
+    start = tekst.index("this._config = {")
+    eind = tekst.index("};", start)
+    blok = tekst[start:eind]
+    return set(re.findall(r"^\s*(\w+):", blok, re.M))
+
+
 def _kaart():
     return KAART.read_text(encoding="utf-8")
 
@@ -114,8 +126,7 @@ def test_editor_bestaat_en_wordt_aangeboden():
 def test_editor_kent_dezelfde_opties_als_de_kaart():
     """Een veld dat de editor niet aanbiedt is via de interface onbereikbaar."""
     tekst = _kaart()
-    blok = tekst[tekst.index("this._config = {"):tekst.index("this._vorigeStatus")]
-    opties = set(re.findall(r"^\s*(\w+):", blok, re.M))
+    opties = _configsleutels(tekst)
 
     velden = tekst[tekst.index("const VELDEN = ["):tekst.index("const EDITOR_STIJL")]
     aangeboden = set(re.findall(r"name:\s*'(\w+)'", velden))
@@ -127,8 +138,7 @@ def test_readme_beschrijft_dezelfde_opties():
     """Een optie die alleen in de kaart of alleen in de README staat."""
     kaart = _kaart()
     # de sleutels uit setConfig, tussen de standaardwaarden
-    blok = kaart[kaart.index("this._config = {"):kaart.index("this._vorigeStatus")]
-    opties = set(re.findall(r"^\s*(\w+):", blok, re.M))
+    opties = _configsleutels(kaart)
 
     readme = (WORTEL / "README.md").read_text(encoding="utf-8")
     tabel = readme[readme.index("| Optie |"):readme.index("### Voorbeelden")]

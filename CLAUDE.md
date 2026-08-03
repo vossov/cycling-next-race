@@ -160,11 +160,20 @@ Achter de URL hangt `?v={VERSION}`; die constante in `const.py` moet gelijk
 blijven aan `version` in de manifest, anders blijft de browser na een update
 de oude kaart tonen. `tests/test_kaart.py` bewaakt dat.
 
+De kaart kent twee weergaven: `view: profile` tekent het hoogteprofiel,
+`view: countdown` een compacte regel met koers, datum en `countdown` uit de
+sensor. `visible_days` bepaalt vanaf hoeveel dagen voor de koers de kaart
+verschijnt; `0` betekent altijd, en dat is de standaard bij `countdown`
+(die weergave is juist bedoeld om er buiten koersen om te blijven staan).
+De verouderde `always_show: true` wordt nog geaccepteerd als `visible_days: 0`.
+
 De kaart heeft een visuele editor (`cycling-next-race-card-editor`) achter
 `getConfigElement()`. Die gebruikt `ha-form` als dat element bestaat en valt
 anders terug op een eigen formulier. Wie een kaartoptie toevoegt raakt drie
 plekken: `setConfig`, de lijst `VELDEN` in de editor, en de optietabel in de
-README; `tests/test_kaart.py` faalt als er één achterblijft.
+README; `tests/test_kaart.py` faalt als er één achterblijft. Schrijf sleutels
+in `this._config` voluit (`view: view`, niet de verkorte vorm), want die test
+leest ze met een regex.
 
 **De tekencode staat op twee plekken.** De drie SVG-functies (`svgTegel`,
 `svgDetail`, `svgKomend`) zijn letterlijk overgenomen uit de
