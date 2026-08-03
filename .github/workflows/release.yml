@@ -25,7 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          # bij een tag-push die tag; met de hand gestart de huidige main,
+          # want dan bestaat de tag meestal nog niet
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.ref }}
           fetch-depth: 0
 
       - name: Tag en manifest moeten dezelfde versie noemen
@@ -46,4 +48,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${{ github.event.inputs.tag || github.ref_name }}"
-          gh release create "$tag" --title "$tag" --generate-notes
+          # --target maakt de tag aan als hij nog niet bestaat, zodat je een
+          # release ook met de hand kunt starten zonder eerst te taggen
+          gh release create "$tag" \
+            --title "$tag" \
+            --target "${{ github.sha }}" \
+            --generate-notes
