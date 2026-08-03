@@ -88,55 +88,64 @@ De sensor wordt vanzelf gevonden.
 | Optie | Standaard | Betekenis |
 |---|---|---|
 | `entity` | `sensor.cycling_next_race` | welke sensor de kaart uitleest |
+| `view` | `profile` | `profile` toont het hoogteprofiel, `countdown` een regel met het aftellen |
+| `visible_days` | `2` (`0` bij `countdown`) | vanaf hoeveel dagen voor de koers de kaart verschijnt; `0` is altijd |
 | `details` | `true` | een tik opent het detailvenster |
-| `always_show` | `false` | ook tonen als de koers verder weg is dan morgen |
 
 ### Voorbeelden
 
-Alles wat je kunt instellen, met de standaardwaarden expliciet erbij:
+Alles wat je kunt instellen, met de standaardwaarden erbij:
 
 ```yaml
 type: custom:cycling-next-race-card
 entity: sensor.cycling_next_race   # welke sensor
+view: profile                      # of: countdown
+visible_days: 2                    # vandaag en morgen
 details: true                      # tik opent het detailvenster
-always_show: false                 # alleen tonen bij een koers vandaag of morgen
 ```
 
-Het hele seizoen zichtbaar, ook als de eerstvolgende koers nog dagen weg is:
+**Het profiel al een week vooruit.** Handig als je wilt zien wat eraan komt:
 
 ```yaml
 type: custom:cycling-next-race-card
-always_show: true
+visible_days: 7
 ```
 
-Alleen de tegel, zonder venster — handig op een tablet waar je niet wilt
-dat er iets opengaat bij een aanraking:
+**Een aftelregel die er altijd staat.** Deze weergave is compact: de
+koersnaam, de datum en hoeveel dagen het nog duurt — of `Bezig — dag 14/21`
+tijdens een ronde. Ook buiten het seizoen blijft hij staan, zodat je met een
+tik de uitslag van de laatste koers kunt bekijken:
 
 ```yaml
 type: custom:cycling-next-race-card
-details: false
+view: countdown
 ```
 
-De kaart binnen een sectie of grid, met een vaste breedte:
+`visible_days` staat bij deze weergave standaard op `0`, dus je hoeft niets
+extra's in te stellen.
 
-```yaml
-type: custom:cycling-next-race-card
-grid_options:
-  columns: 12
-  rows: auto
-```
-
-Wil je hem in een eigen pop-up of naast andere kaarten, dan gedraagt hij
-zich als elke gewone kaart en kun je hem in `vertical-stack`, `grid` of een
-Bubble Card-pop-up zetten:
+**De twee samen**, wat waarschijnlijk het prettigst werkt: een aftelregel die
+altijd zichtbaar is, met daarboven het profiel zodra de koers dichtbij is.
 
 ```yaml
 type: vertical-stack
 cards:
   - type: custom:cycling-next-race-card
-    details: false
-  - type: markdown
-    content: Volg de koers live op procyclingstats.com
+    view: profile
+    visible_days: 2
+  - type: custom:cycling-next-race-card
+    view: countdown
+```
+
+De profielkaart verbergt zichzelf buiten die twee dagen, dus dan blijft
+alleen de aftelregel over.
+
+**Alleen de tegel, zonder venster** — handig op een tablet waar je niet wilt
+dat er iets opengaat bij een aanraking:
+
+```yaml
+type: custom:cycling-next-race-card
+details: false
 ```
 
 ### Zo ziet het eruit

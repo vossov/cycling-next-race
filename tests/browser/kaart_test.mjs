@@ -17,6 +17,7 @@ const KAART = new URL('../../custom_components/cycling_next_race/www/cycling-nex
 // Synthetische attributen: een bergetappe met alles erop en eraan.
 const attrs = {
   show_state: 'Vandaag', days_until: 0, race_name: 'Tour de France',
+  countdown: '🟢 Bezig — dag 14/21', date: '18 juli', type: 'Etappekoers',
   eyebrow: 'Etappe 14 · Tour de France', start_time: '12:50', finish_est: '17:12',
   departure: 'Pau', arrival: 'Luchon', distance_km: 170.9, vertical_m: 3800,
   profile_score: 438, watchability: 9,
@@ -63,6 +64,17 @@ const gevallen = {
   'alleen tegel': { show_state: 'Morgen', days_until: 1, eyebrow: 'Ronde van Polen', distance_km: 180 },
   leeg: { show_state: 'Klaar' },
 };
+
+// per geval: configuratie -> verwacht de kaart zichtbaar te zijn?
+const zichtbaarheid = [
+  { naam: 'standaard, koers vandaag', config: {}, dagen: 0, zichtbaar: true },
+  { naam: 'standaard, koers over 3 dagen', config: {}, dagen: 3, zichtbaar: false },
+  { naam: 'binnen 7 dagen, koers over 3', config: { visible_days: 7 }, dagen: 3, zichtbaar: true },
+  { naam: 'binnen 7 dagen, koers over 9', config: { visible_days: 7 }, dagen: 9, zichtbaar: false },
+  { naam: 'altijd (0), koers over 40', config: { visible_days: 0 }, dagen: 40, zichtbaar: true },
+  { naam: 'oude always_show, koers over 40', config: { always_show: true }, dagen: 40, zichtbaar: true },
+  { naam: 'aftelweergave zonder grens', config: { view: 'countdown' }, dagen: 40, zichtbaar: true },
+];
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const page = await browser.newPage({ viewport: { width: 520, height: 900 } });
@@ -116,6 +128,40 @@ for (const [naam, a] of Object.entries(gevallen)) {
   else console.log(`ok    ${naam} — ${uitkomst.svgs} svg, ${uitkomst.secties} secties, ${uitkomst.html_lengte} tekens`);
 
   if (naam === 'volledig') await page.screenshot({ path: 'kaart-volledig.png', fullPage: true });
+}
+
+// ── zichtbaarheid en aftelweergave ───────────────────────────────
+for (const geval of zichtbaarheid) {
+  const uit = await page.evaluate(([config, dagen, alle]) => {
+    document.getElementById('doel').innerHTML = '';
+    const kaart = document.createElement('cycling-next-race-card');
+    kaart.setConfig({ entity: 'sensor.cycling_next_race', ...config });
+    document.getElementById('doel').appendChild(kaart);
+    kaart.hass = { states: { 'sensor.cycling_next_race': {
+      state: 'x', last_updated: String(Math.random()),
+      attributes: { ...alle, days_until: dagen, show_state: dagen === 0 ? 'Vandaag' : 'Gepland',
+        countdown: dagen === 0 ? '🟢 Vandaag' : `Over ${dagen} dagen` } } } };
+    const r = kaart.shadowRoot;
+    return {
+      zichtbaar: getComputedStyle(kaart).display !== 'none',
+      aftel: !!(r && r.querySelector('.aftel')),
+      wanneer: r && r.querySelector('.aftel-wanneer') ? r.querySelector('.aftel-wanneer').textContent.trim() : '',
+      nan: /NaN|undefined/.test(r ? r.innerHTML : ''),
+    };
+  }, [geval.config, geval.dagen, attrs]);
+
+  const p = [];
+  if (uit.zichtbaar !== geval.zichtbaar)
+    p.push(`zichtbaar=${uit.zichtbaar}, verwacht ${geval.zichtbaar}`);
+  if (uit.nan) p.push('NaN of undefined');
+  if (geval.config.view === 'countdown') {
+    if (!uit.aftel) p.push('geen aftelregel getekend');
+    if (!uit.wanneer) p.push('aftelregel zonder tekst');
+  }
+  if (p.length) { console.log(`FOUT  ${geval.naam}: ${p.join(', ')}`); mislukt++; }
+  else console.log(`ok    ${geval.naam}${uit.wanneer ? ' — "' + uit.wanneer + '"' : ''}`);
+
+  if (geval.config.view === 'countdown') await page.screenshot({ path: 'kaart-aftellen.png' });
 }
 
 if (fouten.length) { console.log('\nJS-fouten in de pagina:'); fouten.forEach((f) => console.log('  ' + f)); mislukt++; }

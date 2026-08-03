@@ -60,13 +60,14 @@ for (const metHaForm of [false, true]) {
       velden = (r.querySelector('ha-form')._schema || []).map((s) => s.name);
       // bootst na wat ha-form doet als de gebruiker iets aanpast
       r.querySelector('ha-form').dispatchEvent(new CustomEvent('value-changed', {
-        detail: { value: { entity: 'sensor.cycling_next_race', details: false, always_show: true } },
+        detail: { value: { entity: 'sensor.cycling_next_race', view: 'countdown',
+                           visible_days: 7, details: false } },
       }));
     } else {
       velden = [...r.querySelectorAll('[name]')].map((el) => el.getAttribute('name'));
-      const vinkje = r.querySelector('[name="always_show"]');
-      vinkje.checked = true;
-      vinkje.dispatchEvent(new Event('change', { bubbles: true }));
+      const dagen = r.querySelector('[name="visible_days"]');
+      dagen.value = '7';
+      dagen.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     return {
@@ -81,15 +82,15 @@ for (const metHaForm of [false, true]) {
   const problemen = [];
   if (!uit.bestaat) problemen.push('getConfigElement levert geen editor');
   else {
-    const verwacht = ['entity', 'details', 'always_show'];
+    const verwacht = ['entity', 'view', 'visible_days', 'details'];
     if (JSON.stringify(uit.velden) !== JSON.stringify(verwacht))
       problemen.push(`velden ${JSON.stringify(uit.velden)} i.p.v. ${JSON.stringify(verwacht)}`);
     if (uit.viaHaForm !== metHaForm) problemen.push(`verkeerde weg gekozen (ha-form=${uit.viaHaForm})`);
     if (uit.events !== 1) problemen.push(`${uit.events} config-changed events`);
     if (!uit.laatste || uit.laatste.type !== 'custom:cycling-next-race-card')
       problemen.push('type ontbreekt in de doorgegeven configuratie');
-    if (uit.laatste && uit.laatste.always_show !== true)
-      problemen.push('de wijziging kwam niet door');
+    if (uit.laatste && uit.laatste.visible_days !== 7)
+      problemen.push(`de wijziging kwam niet door (visible_days=${uit.laatste && uit.laatste.visible_days})`);
     for (const s of verwacht) if (!(s in uit.stub)) problemen.push(`getStubConfig mist ${s}`);
   }
   if (fouten.length) problemen.push('JS-fouten: ' + fouten.join(' | '));

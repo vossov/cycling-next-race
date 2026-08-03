@@ -8,10 +8,15 @@
  *
  * Opties:
  *   entity        standaard sensor.cycling_next_race
- *   details       true (standaard) opent bij een tik het volledige
- *                 overzicht; false laat de tegel alleen tonen
- *   always_show   false (standaard) verbergt de kaart als er de komende
- *                 dagen geen koers is; true toont hem altijd
+ *   view          'profile' (standaard) toont het hoogteprofiel,
+ *                 'countdown' een regel met de koers en het aftellen
+ *   visible_days  vanaf hoeveel dagen voor de koers de kaart verschijnt:
+ *                 2 is vandaag en morgen, 7 de hele week, 0 altijd.
+ *                 Standaard 2 bij profile en 0 bij countdown
+ *   details       true (standaard) opent bij een tik het volledige overzicht
+ *
+ * always_show uit oudere configuraties blijft werken en betekent
+ * visible_days: 0.
  *
  * De hoogteprofielen komen uit dezelfde tekencode die eerder als
  * button-card-template werd meegeleverd.
@@ -93,6 +98,33 @@ function puntenlijst(titel, rijen) {
     })
     .join('');
   return `<section><h3>${esc(titel)}</h3><ol>${regels}</ol></section>`;
+}
+
+/** Compacte regel met de koers en hoe lang het nog duurt.
+ *
+ * Bedoeld om altijd op het dashboard te staan, ook buiten een ronde: een
+ * tik erop opent hetzelfde venster met de laatste uitslag.
+ */
+function aftelling(a) {
+  const naam = a.race_name || a.eyebrow || 'Wielrennen';
+  const wanneer = a.countdown || a.show_state || '';
+  const live = /LIVE/i.test(a.show_state || '') || a.is_live === true;
+  const onder = [a.date, a.type].filter(Boolean).join(' · ');
+
+  return `
+    <div class="aftel">
+      <div class="aftel-icoon ${live ? 'live' : ''}">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
+          <path d="M5 20.5A3.5 3.5 0 0 1 1.5 17A3.5 3.5 0 0 1 5 13.5A3.5 3.5 0 0 1 8.5 17A3.5 3.5 0 0 1 5 20.5M5 12a5 5 0 0 0-5 5a5 5 0 0 0 5 5a5 5 0 0 0 5-5a5 5 0 0 0-5-5m14.8-2H19V7h-1.5l-1.6-3.2A1 1 0 0 0 15 3.3l-1.9 1.1a1 1 0 0 0-.4 1.4l2 3.4l-2.2 2.6l-2.3-1.6l1.1-1.9l-1.7-1l-2.1 3.6l4.6 3.2l3.1-3.7l1.4 2.4A5 5 0 0 0 14 17a5 5 0 0 0 5 5a5 5 0 0 0 5-5a5 5 0 0 0-4.2-4.9M19 20.5A3.5 3.5 0 0 1 15.5 17a3.5 3.5 0 0 1 3.5-3.5a3.5 3.5 0 0 1 3.5 3.5a3.5 3.5 0 0 1-3.5 3.5"/>
+        </svg>
+      </div>
+      <div class="aftel-tekst">
+        <div class="aftel-naam">${esc(naam)}</div>
+        ${onder ? `<div class="aftel-onder">${esc(onder)}</div>` : ''}
+      </div>
+      <div class="aftel-wanneer ${live ? 'live' : ''}">${esc(wanneer)}</div>
+    </div>
+  `;
 }
 
 /** Tv-zenders met logo en uitzendtijd. */
@@ -238,6 +270,22 @@ const STIJL = `
   .leeg { padding: 16px; opacity: .6; font-size: 14px; }
   svg { display: block; width: 100%; height: auto; }
 
+  .aftel { display: flex; align-items: center; gap: 12px; padding: 2px 4px; }
+  .aftel-icoon { flex: none; opacity: .75; line-height: 0; }
+  .aftel-icoon svg { width: 26px; height: 26px; }
+  .aftel-icoon.live { color: #E4572E; opacity: 1; }
+  .aftel-tekst { flex: 1; min-width: 0; }
+  .aftel-naam {
+    font-size: 15px; font-weight: 700;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .aftel-onder { font-size: 12.5px; opacity: .6; margin-top: 1px; }
+  .aftel-wanneer {
+    flex: none; font-size: 13.5px; font-weight: 700; opacity: .8;
+    white-space: nowrap;
+  }
+  .aftel-wanneer.live { color: #E4572E; opacity: 1; }
+
   dialog {
     border: none; border-radius: 22px; padding: 0; max-width: 560px; width: 92vw;
     max-height: 86vh; overflow: auto;
@@ -277,16 +325,31 @@ class CyclingNextRaceCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { entity: 'sensor.cycling_next_race', details: true, always_show: false };
+    return {
+      entity: 'sensor.cycling_next_race',
+      view: 'profile',
+      visible_days: 2,
+      details: true,
+    };
   }
 
   setConfig(config) {
+    const gegeven = config || {};
+    const view = gegeven.view === 'countdown' ? 'countdown' : 'profile';
+    // de aftelweergave is bedoeld om er altijd te staan; het profiel
+    // verschijnt standaard pas als de koers vandaag of morgen is
     this._config = {
       entity: 'sensor.cycling_next_race',
+      view: view,
+      visible_days: view === 'countdown' ? 0 : 2,
       details: true,
-      always_show: false,
-      ...(config || {}),
+      ...gegeven,
     };
+    // always_show uit een oudere configuratie betekent: geen grens
+    if (gegeven.always_show === true && gegeven.visible_days === undefined) {
+      this._config.visible_days = 0;
+    }
+    delete this._config.always_show;
     this._vorigeStatus = null;
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
   }
@@ -314,8 +377,10 @@ class CyclingNextRaceCard extends HTMLElement {
 
     const a = st.attributes || {};
     const dagen = Number(a.days_until);
+    const grens = Number(this._config.visible_days);
+    // grens 0 (of onzin) betekent: geen grens, altijd tonen
     const verbergen =
-      !this._config.always_show && isFinite(dagen) && dagen >= 2;
+      isFinite(grens) && grens > 0 && isFinite(dagen) && dagen >= grens;
     if (verbergen || a.show_state === 'Klaar') {
       root.innerHTML = '';
       this.style.display = 'none';
@@ -324,9 +389,11 @@ class CyclingNextRaceCard extends HTMLElement {
     this.style.display = 'block';
 
     const klikbaar = this._config.details;
+    const inhoud =
+      this._config.view === 'countdown' ? aftelling(a) : svgTegel({ attributes: a });
     root.innerHTML = `
       <style>${STIJL}</style>
-      <ha-card class="${klikbaar ? 'klikbaar' : ''}">${svgTegel({ attributes: a })}</ha-card>
+      <ha-card class="${klikbaar ? 'klikbaar' : ''}">${inhoud}</ha-card>
       ${klikbaar ? this._dialoog(a) : ''}
     `;
 
@@ -384,15 +451,29 @@ const VELDEN = [
     selector: { entity: { domain: 'sensor', integration: 'cycling_next_race' } },
   },
   {
+    name: 'view',
+    label: 'Weergave',
+    uitleg: 'Het hoogteprofiel, of een regel met de koers en het aftellen.',
+    selector: {
+      select: {
+        mode: 'dropdown',
+        options: [
+          { value: 'profile', label: 'Hoogteprofiel' },
+          { value: 'countdown', label: 'Aftellen' },
+        ],
+      },
+    },
+  },
+  {
+    name: 'visible_days',
+    label: 'Tonen vanaf (dagen voor de koers)',
+    uitleg: '2 is vandaag en morgen, 7 is de hele week vooruit, 0 is altijd.',
+    selector: { number: { min: 0, max: 60, mode: 'box', step: 1 } },
+  },
+  {
     name: 'details',
     label: 'Detailvenster bij aantikken',
     uitleg: 'Opent uitslag, klassementen en tv-zenders.',
-    selector: { boolean: {} },
-  },
-  {
-    name: 'always_show',
-    label: 'Altijd tonen',
-    uitleg: 'Ook als de eerstvolgende koers verder weg is dan morgen.',
     selector: { boolean: {} },
   },
 ];
@@ -410,7 +491,17 @@ const EDITOR_STIJL = `
 
 class CyclingNextRaceCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = { entity: 'sensor.cycling_next_race', details: true, always_show: false, ...(config || {}) };
+    const g = config || {};
+    const view = g.view === 'countdown' ? 'countdown' : 'profile';
+    this._config = {
+      entity: 'sensor.cycling_next_race',
+      view,
+      visible_days: view === 'countdown' ? 0 : 2,
+      details: true,
+      ...g,
+    };
+    if (g.always_show === true && g.visible_days === undefined) this._config.visible_days = 0;
+    delete this._config.always_show;
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     this._teken();
   }
@@ -463,18 +554,25 @@ class CyclingNextRaceCardEditor extends HTMLElement {
     doos.innerHTML = `
       <label>Sensor<span class="uitleg">De sensor van Cycling Next Race.</span>
         <input type="text" name="entity" value="${esc(c.entity)}"></label>
+      <label>Weergave<span class="uitleg">Hoogteprofiel of een regel met het aftellen.</span>
+        <select name="view">
+          <option value="profile"${c.view !== 'countdown' ? ' selected' : ''}>Hoogteprofiel</option>
+          <option value="countdown"${c.view === 'countdown' ? ' selected' : ''}>Aftellen</option>
+        </select></label>
+      <label>Tonen vanaf (dagen voor de koers)
+        <span class="uitleg">2 is vandaag en morgen, 7 is de hele week vooruit, 0 is altijd.</span>
+        <input type="number" name="visible_days" min="0" max="60" value="${Number(c.visible_days) || 0}"></label>
       <label class="schakel"><input type="checkbox" name="details" ${c.details ? 'checked' : ''}>
         Detailvenster bij aantikken</label>
-      <label class="schakel"><input type="checkbox" name="always_show" ${c.always_show ? 'checked' : ''}>
-        Altijd tonen</label>
     `;
     doos.addEventListener('change', () => {
       const lees = (n) => doos.querySelector(`[name="${n}"]`);
       this._wijzig({
         type: 'custom:cycling-next-race-card',
         entity: lees('entity').value.trim() || 'sensor.cycling_next_race',
+        view: lees('view').value,
+        visible_days: Math.max(0, parseInt(lees('visible_days').value, 10) || 0),
         details: lees('details').checked,
-        always_show: lees('always_show').checked,
       });
     });
     this.shadowRoot.replaceChildren(stijl, doos);
