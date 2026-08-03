@@ -199,7 +199,7 @@ werkt de sensor gewoon door en zie je alleen de kaart niet. Loop dit na:
    probleem in de browser (stap 4). Krijg je een 404, dan is het bestand niet
    geserveerd — ga naar stap 3.
 3. **Wat zegt het logboek?** Zoek op `cycling_next_race`. Bij succes staat er
-   `Lovelace-kaart aangemeld op /cycling_next_race/...`. Staat er in plaats
+   `Lovelace-kaart aangemeld via ... op /cycling_next_race/...`. Staat er in plaats
    daarvan `Kaartbestand niet gevonden`, dan mist `www/` in je installatie:
    controleer of `custom_components/cycling_next_race/www/` bestaat en
    installeer anders opnieuw via HACS.
@@ -218,13 +218,18 @@ kort op; komt het net te laat, dan valt hij terug op een foutkaart.
 Het gaat vanzelf over zodra het script in de cache van de browser staat, dus
 je ziet het vooral één keer na een update.
 
-Wil je zeker weten dat het dáárom gaat, open het dashboard dan op een
-computer in plaats van in de app. De foutkaart toont daar de melding, en in
-de ontwikkelaarsconsole (F12) staat de precieze reden. *Custom element
-doesn't exist* betekent dat het script te laat was; een andere melding
-betekent dat er werkelijk iets mis is met de configuratie en dat verversen
-niet helpt. In de mobiele app is die melding niet op te vragen — tikken op
-de foutkaart doet daar niets.
+Sinds versie 0.4 zet de integratie de kaart in de resourcelijst van
+Lovelace in plaats van hem los mee te geven. Lovelace laadt zijn resources
+en wacht daarop vóór het tekenen, waardoor die race weg is. Alleen in
+YAML-modus kan dat niet — daar beheer je de lijst zelf — en blijft de oude
+weg over.
+
+Zie je het toch nog, open het dashboard dan op een computer in plaats van in
+de app. De foutkaart toont daar de melding, en in de ontwikkelaarsconsole
+(F12) staat de precieze reden. *Custom element doesn't exist* betekent dat
+het script te laat was; een andere melding betekent dat er werkelijk iets
+mis is met de configuratie en dat verversen niet helpt. In de mobiele app is
+die melding niet op te vragen — tikken op de foutkaart doet daar niets.
 
 De kaart-URL draagt een korte hash van het bestand, dus na een update haalt
 de browser gegarandeerd de nieuwe versie op in plaats van een oude uit de

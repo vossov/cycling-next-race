@@ -172,3 +172,116 @@ def test_stempel_verandert_mee_met_het_bestand(wt, const):
     assert gewijzigd != eerste, "stempel beweegt niet mee met de inhoud"
     assert init._bestandsstempel(pad) == eerste, "stempel is niet stabiel"
     assert init._bestandsstempel(COMPONENT / "www" / "bestaat-niet.js") is None
+
+
+# ── hoe de kaart bij de frontend komt ───────────────────────────────
+
+class _NepResources:
+    """Bootst de resourcecollectie van Lovelace na."""
+
+    def __init__(self, items=None):
+        self.items = list(items or [])
+        self.aangemaakt = []
+        self.bijgewerkt = []
+
+    async def async_get_info(self):
+        return {"resources": len(self.items)}
+
+    def async_items(self):
+        return self.items
+
+    async def async_create_item(self, data):
+        self.aangemaakt.append(data)
+        self.items.append({"id": "nieuw", **data})
+        return self.items[-1]
+
+    async def async_update_item(self, item_id, updates):
+        self.bijgewerkt.append((item_id, updates))
+        for i in self.items:
+            if i["id"] == item_id:
+                i.update(updates)
+
+
+class _NepLovelace:
+    def __init__(self, resources, modus="storage"):
+        self.resources = resources
+        self.resource_mode = modus
+
+
+class _NepHass:
+    def __init__(self, lovelace=None):
+        self.data = {"lovelace": lovelace} if lovelace else {}
+
+
+def _init():
+    import importlib
+
+    return importlib.import_module("cycling_next_race")
+
+
+def test_resource_wordt_aangemaakt_als_hij_ontbreekt(wt):
+    import asyncio
+
+    init = _init()
+    res = _NepResources()
+    hass = _NepHass(_NepLovelace(res))
+    gelukt = asyncio.run(init._als_lovelace_resource(hass, "/cycling_next_race/x.js?v=1"))
+
+    assert gelukt is True
+    assert res.aangemaakt == [{"res_type": "module",
+                               "url": "/cycling_next_race/x.js?v=1"}]
+
+
+def test_bestaande_resource_wordt_bijgewerkt_niet_verdubbeld(wt):
+    """Na een update wijzigt de versie achter de URL; één regel volstaat."""
+    import asyncio
+
+    init = _init()
+    res = _NepResources([{"id": "a1", "res_type": "module",
+                          "url": f"{init.KAART_URL}?v=oud"}])
+    hass = _NepHass(_NepLovelace(res))
+    gelukt = asyncio.run(init._als_lovelace_resource(hass, f"{init.KAART_URL}?v=nieuw"))
+
+    assert gelukt is True
+    assert res.aangemaakt == [], "er is een tweede regel bijgekomen"
+    assert res.bijgewerkt == [("a1", {"url": f"{init.KAART_URL}?v=nieuw"})]
+
+
+def test_ongewijzigde_resource_blijft_met_rust(wt):
+    import asyncio
+
+    init = _init()
+    url = f"{init.KAART_URL}?v=gelijk"
+    res = _NepResources([{"id": "a1", "res_type": "module", "url": url}])
+    gelukt = asyncio.run(init._als_lovelace_resource(_NepHass(_NepLovelace(res)), url))
+
+    assert gelukt is True
+    assert res.aangemaakt == [] and res.bijgewerkt == []
+
+
+def test_yaml_modus_valt_terug(wt):
+    """Daar beheert de gebruiker de lijst zelf; niets aan wijzigen."""
+    import asyncio
+
+    init = _init()
+    res = _NepResources()
+    hass = _NepHass(_NepLovelace(res, modus="yaml"))
+    assert asyncio.run(init._als_lovelace_resource(hass, "/x.js")) is False
+    assert res.aangemaakt == []
+
+
+def test_zonder_lovelace_valt_terug(wt):
+    import asyncio
+
+    init = _init()
+    assert asyncio.run(init._als_lovelace_resource(_NepHass(), "/x.js")) is False
+
+
+def test_kaart_registreert_zich_niet_dubbel():
+    """Via twee wegen geladen mag geen DOMException geven."""
+    tekst = _kaart()
+    for element in ("cycling-next-race-card", "cycling-next-race-card-editor"):
+        assert f"customElements.get('{element}')" in tekst, (
+            f"{element} wordt zonder controle gedefinieerd; twee keer laden "
+            "gooit dan een DOMException en breekt alles"
+        )

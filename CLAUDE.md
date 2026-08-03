@@ -182,11 +182,18 @@ het kaartbestand komt (`_bestandsstempel`). Dat is bewust niet alleen
 browsers een oude kaart bleven tonen. `VERSION` in `const.py` moet nog steeds
 gelijk zijn aan `version` in de manifest; `tests/test_kaart.py` bewaakt beide.
 
-Home Assistant kan de kaart willen tekenen voordat het script geladen is;
-dan verschijnt kort een foutkaart die na verversen weg is. Dat is een
-eigenschap van `add_extra_js_url`, geen fout in de kaart. Wie dat helemaal
-wil uitsluiten moet de kaart als Lovelace-resource registreren, maar dat
-schrijft in de gebruikersopslag en werkt niet in YAML-modus.
+De kaart gaat bij voorkeur in de **resourcelijst van Lovelace**
+(`_als_lovelace_resource`), niet via `add_extra_js_url`. Lovelace laadt zijn
+resources en wacht daarop vóór het tekenen van de kaarten; bij extra_js_url
+gebeurt dat niet en verscheen er soms een foutkaart die na verversen weg
+was. Dat lukt alleen in storage-modus — in YAML-modus beheert de gebruiker
+de lijst zelf — en dan valt het terug op `add_extra_js_url`. `lovelace`
+staat in de manifest onder `after_dependencies`, zodat het er is wanneer wij
+opzetten.
+
+Omdat het script daardoor langs twee wegen kan binnenkomen, staat elke
+`customElements.define` achter een `customElements.get`-controle: twee keer
+definiëren gooit een DOMException en breekt alles alsnog.
 
 De kaart kent twee weergaven: `view: profile` tekent het hoogteprofiel,
 `view: countdown` een compacte regel met koers, datum en `countdown` uit de

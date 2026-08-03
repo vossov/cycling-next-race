@@ -457,7 +457,12 @@ class CyclingNextRaceCard extends HTMLElement {
   }
 }
 
-customElements.define('cycling-next-race-card', CyclingNextRaceCard);
+// Het script kan langs twee wegen binnenkomen (Lovelace-resource of
+// add_extra_js_url). Twee keer definiëren gooit een DOMException en breekt
+// dan alsnog alles, dus eerst kijken of het er al is.
+if (!customElements.get('cycling-next-race-card')) {
+  customElements.define('cycling-next-race-card', CyclingNextRaceCard);
+}
 
 /* ── visuele editor ──────────────────────────────────────────────── */
 
@@ -607,15 +612,19 @@ class CyclingNextRaceCardEditor extends HTMLElement {
   }
 }
 
-customElements.define('cycling-next-race-card-editor', CyclingNextRaceCardEditor);
+if (!customElements.get('cycling-next-race-card-editor')) {
+  customElements.define('cycling-next-race-card-editor', CyclingNextRaceCardEditor);
+}
 
 window.customCards = window.customCards || [];
-window.customCards.push({
+if (!window.customCards.some((k) => k.type === 'cycling-next-race-card')) {
+  window.customCards.push({
   type: 'cycling-next-race-card',
   name: 'Cycling Next Race',
   description: 'Hoogteprofiel, cols en uitslagen van de eerstvolgende koers.',
   preview: false,
-  documentationURL: 'https://github.com/vossov/cycling-next-race',
-});
+    documentationURL: 'https://github.com/vossov/cycling-next-race',
+  });
+}
 
 console.info('%c CYCLING-NEXT-RACE-CARD ', 'background:#E4572E;color:#fff;border-radius:3px');
