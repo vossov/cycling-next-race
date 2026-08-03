@@ -56,13 +56,48 @@ Dat is alles. De sensor heet `sensor.volgende_wielerkoers`.
 
 ## Dashboard
 
-De kaarten zijn losse Lovelace-templates; die vallen buiten HACS en zet je
-zelf in je dashboard. Ze staan in [`lovelace/button_card_templates.yaml`](lovelace/button_card_templates.yaml)
-en horen in de raw-config van je dashboard onder `button_card_templates:`.
-
-Benodigd: [button-card](https://github.com/custom-cards/button-card),
+De kaarten vallen buiten HACS: de integratie levert alleen de sensor, de
+opmaak zet je zelf in je dashboard. Benodigd zijn
+[button-card](https://github.com/custom-cards/button-card),
 [card-mod](https://github.com/thomasloven/lovelace-card-mod) en
 [Bubble Card](https://github.com/Clooos/Bubble-Card) voor de pop-up.
+
+**1. Templates registreren.** Neem de inhoud van
+[`lovelace/button_card_templates.yaml`](lovelace/button_card_templates.yaml)
+over in de raw-configuratie van je dashboard (rechtsboven → *Raw
+configuration editor*). Het `button_card_templates:`-blok staat op het
+hoogste niveau, náást `views:`.
+
+**2. Kaarten plaatsen.** Elke template is een button-card die zijn gegevens
+uit de sensor haalt:
+
+```yaml
+# hoogteprofiel-tegel
+type: custom:button-card
+template: cycling_profile
+entity: sensor.volgende_wielerkoers
+
+# groter profiel met colnamen, voor in de pop-up
+type: custom:button-card
+template: cycling_detail
+entity: sensor.volgende_wielerkoers
+
+# overzicht "Komende dagen"
+type: custom:button-card
+template: cycling_upcoming
+entity: sensor.volgende_wielerkoers
+```
+
+**3. Tekstkaarten toevoegen.** De zes markdown-kaarten voor uitslag,
+klassementen, tv-zenders en de tweede koers staan in
+[`lovelace/markdown_cards.yaml`](lovelace/markdown_cards.yaml). Die zijn
+zelfstandig: plak er een in je dashboard en hij werkt. Ze verbergen zichzelf
+wanneer de bijbehorende gegevens ontbreken.
+
+**4. Pop-up.** De detailweergave is een Bubble Card-pop-up waarin de
+`cycling_detail`-kaart en de markdown-kaarten samen staan. Hoe je die opent
+— via een tik op de tegel of een aparte knop — hangt af van je eigen
+dashboardindeling; zie de documentatie van Bubble Card.
 
 ## Instellingen in de code
 
