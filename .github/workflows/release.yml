@@ -1,0 +1,49 @@
+name: Release
+
+# HACS toont de naam van een GitHub-release; zonder releases valt het terug
+# op de laatste commit en zie je een hash als "cbc97ea" staan. Deze workflow
+# maakt de release zodra je een tag pusht:
+#
+#   git tag v0.4.0 && git push origin v0.4.0
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag om een release voor te maken, bijvoorbeeld v0.4.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release aanmaken
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Tag en manifest moeten dezelfde versie noemen
+        # Anders installeert HACS "v0.5.0" terwijl Home Assistant 0.4.0
+        # rapporteert, en klopt de updatemelding niet meer.
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          uit_tag="${tag#v}"
+          uit_manifest=$(python3 -c "import json; print(json.load(open('custom_components/cycling_next_race/manifest.json'))['version'])")
+          echo "tag: $uit_tag, manifest: $uit_manifest"
+          if [ "$uit_tag" != "$uit_manifest" ]; then
+            echo "::error::tag $tag hoort bij versie $uit_tag, maar manifest.json zegt $uit_manifest"
+            exit 1
+          fi
+
+      - name: Release publiceren
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release create "$tag" --title "$tag" --generate-notes

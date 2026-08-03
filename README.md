@@ -251,6 +251,24 @@ Wat niet in de interface staat, staat bovenin `sensor.py`:
 | `GPX_OVERRIDE` | eigen GPX-adres per koers, als er geen publieke is |
 | `CYCLINGSTAGE_ROUTE`, `CYCLINGSTAGE_ONEDAY` | adressen van de etappeteksten per koers |
 
+## Versies en updates
+
+Elke release krijgt een tag als `v0.4.0`; HACS toont die naam en je kunt
+ermee terug naar een eerdere versie. Zonder release valt HACS terug op de
+laatste commit en zie je een hash staan.
+
+Een nieuwe versie uitbrengen gaat zo:
+
+1. Verhoog `version` in `custom_components/cycling_next_race/manifest.json`
+   en `VERSION` in `const.py` — een test bewaakt dat die twee gelijk blijven.
+2. Zet die wijziging op `main`.
+3. `git tag v0.4.0 && git push origin v0.4.0`
+
+De release-workflow controleert of de tag en de manifest dezelfde versie
+noemen en publiceert daarna de release met notities uit de commits. Lopen
+ze uiteen, dan faalt hij: anders installeert HACS `v0.5.0` terwijl Home
+Assistant `0.4.0` rapporteert.
+
 ## Bronnen
 
 - [procyclingstats.com](https://www.procyclingstats.com) — kalender, uitslagen,

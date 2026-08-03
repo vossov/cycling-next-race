@@ -248,6 +248,17 @@ SVG-conventies: `viewBox` breedte 440, kleuren via `currentColor` zodat het
 thema volgt, categoriekleuren `CAT={HC:'#E4572E','1':'#F2A03D','2':'#EBD24A',
 '3':'#7FB069','4':'#5FA8A0'}`, accent `#E4572E`.
 
+## Uitbrengen
+
+HACS toont de naam van een GitHub-release; zonder releases valt het terug op
+de laatste commit en staat er een hash in de updatekaart. `.github/workflows/
+release.yml` maakt de release zodra een tag `vX.Y.Z` wordt gepusht, en weigert
+als die tag niet overeenkomt met `version` in de manifest.
+
+Verhoog dus altijd `version` in `manifest.json` én `VERSION` in `const.py`
+(`tests/test_kaart.py` bewaakt dat ze gelijk zijn), zet dat op `main`, en tag
+daarna pas.
+
 ## Openstaande punten
 
 - Categorieën van cols ontbreken vaak vóór de koers (PCS publiceert ze pas na
