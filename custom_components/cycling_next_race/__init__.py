@@ -62,19 +62,64 @@ async def _registreer_kaart(hass: HomeAssistant) -> None:
         _LOGGER.warning("Kaartbestand niet gevonden op %s", pad)
         return
 
+    url = f"{KAART_URL}?v={stempel}"
     try:
         await hass.http.async_register_static_paths(
             [StaticPathConfig(KAART_URL, str(pad), False)]
         )
-        add_extra_js_url(hass, f"{KAART_URL}?v={stempel}")
     except Exception as err:  # noqa: BLE001
-        _LOGGER.warning("Kaart registreren mislukt: %s", err)
+        _LOGGER.warning("Kaart serveren mislukt: %s", err)
         return
+
+    if await _als_lovelace_resource(hass, url):
+        weg = "Lovelace-resource"
+    else:
+        # Terugval voor YAML-modus, waar de resourcelijst niet te wijzigen is.
+        # Het script komt dan op elke pagina en Lovelace wacht er niet op,
+        # waardoor een kaart soms als "Configuratiefout" verschijnt tot je
+        # ververst.
+        add_extra_js_url(hass, url)
+        weg = "extra_js_url"
 
     hass.data[_KAART_GEREGISTREERD] = True
     # op info-niveau: zonder deze regel in het log is de kaart niet aangemeld,
     # en dat is precies wat je wilt weten als hij niet verschijnt
-    _LOGGER.info("Lovelace-kaart aangemeld op %s?v=%s", KAART_URL, stempel)
+    _LOGGER.info("Lovelace-kaart aangemeld via %s op %s", weg, url)
+
+
+async def _als_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
+    """Zet de kaart in de resourcelijst van Lovelace.
+
+    Dat is beter dan `add_extra_js_url`: Lovelace laadt zijn resources en
+    wacht daarop vóór het tekenen van de kaarten. Bij extra_js_url gebeurt
+    dat niet, en dan kan een kaart getekend worden voordat het element
+    bestaat — de foutkaart die na verversen weg is.
+
+    Lukt alleen in storage-modus; in YAML-modus beheert de gebruiker de
+    lijst zelf en is die hier niet te wijzigen.
+    """
+    lovelace = hass.data.get("lovelace")
+    resources = getattr(lovelace, "resources", None)
+    if resources is None or getattr(lovelace, "resource_mode", None) != "storage":
+        return False
+
+    try:
+        # zorgt dat de opgeslagen lijst is ingelezen
+        await resources.async_get_info()
+
+        for item in resources.async_items() or []:
+            if str(item.get("url", "")).split("?")[0] != KAART_URL:
+                continue
+            if item.get("url") != url:
+                # zelfde kaart, nieuwe inhoud: alleen de versie bijwerken
+                await resources.async_update_item(item["id"], {"url": url})
+            return True
+
+        await resources.async_create_item({"res_type": "module", "url": url})
+        return True
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Kaart als Lovelace-resource registreren lukte niet: %s", err)
+        return False
 
 
 def _bestandsstempel(pad: Path) -> str | None:
