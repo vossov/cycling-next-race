@@ -1,4 +1,4 @@
-# CLAUDE.md — WorldTour Next Race
+# CLAUDE.md — Cycling Next Race
 
 Context voor Claude Code. Lees dit vóór je iets wijzigt.
 
@@ -8,10 +8,10 @@ Home Assistant custom component die de eerstvolgende WorldTour-wielerkoers op ee
 dashboard zet: hoogteprofiel, cols, tussensprint, uitslagen, klassementen,
 tv-zenders. Zowel mannen- als vrouwen-WorldTour.
 
-- Domein: `worldtour_next_race`
-- Entiteit: `sensor.volgende_worldtour_wedstrijd`
+- Domein: `cycling_next_race`
+- Entiteit: `sensor.volgende_wielerkoers`
 - Installatie: HACS (custom repository) of handmatig kopiëren
-- Configuratie: YAML-platform (`sensor: - platform: worldtour_next_race`)
+- Configuratie: YAML-platform (`sensor: - platform: cycling_next_race`)
 
 ## Werkafspraken
 
@@ -26,9 +26,9 @@ tv-zenders. Zowel mannen- als vrouwen-WorldTour.
 
 ## Architectuur
 
-Eén bestand: `custom_components/worldtour_next_race/sensor.py`.
+Eén bestand: `custom_components/cycling_next_race/sensor.py`.
 
-- `WorldTourCoordinator(DataUpdateCoordinator)` haalt alles op.
+- `CyclingCoordinator(DataUpdateCoordinator)` haalt alles op.
 - `SCAN_INTERVAL` 30 min, `LIVE_SCAN_INTERVAL` 5 min. De coordinator zet
   `self.update_interval` dynamisch op basis van `show_state == "LIVE"`.
 - Alle netwerk-/parse-werk loopt via `self._job(...)` →
@@ -143,7 +143,7 @@ De Lovelace-kaarten staan in `lovelace/` en vallen **buiten HACS**; die zet je
 zelf in de raw-config van het dashboard.
 
 - `button_card_templates.yaml` → drie button-card-templates
-  (`worldtour_profile` tegel, `worldtour_detail` pop-up, `worldtour_upcoming`)
+  (`cycling_profile` tegel, `cycling_detail` pop-up, `cycling_upcoming`)
 - `markdown_cards.yaml` → de markdown-kaarten voor uitslag, klassementen,
   tv-zenders en de tweede koers
 

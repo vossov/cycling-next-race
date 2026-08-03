@@ -9,7 +9,7 @@
     style: |
       ha-card { background: none; border: none; box-shadow: none; }
   content: >
-    {%- set e = 'sensor.volgende_worldtour_wedstrijd' -%}
+    {%- set e = 'sensor.volgende_wielerkoers' -%}
     {%- set rs = state_attr(e,'last_result') or [] -%}
 
     {%- macro secs(t) -%}
@@ -37,7 +37,7 @@
     style: |
       ha-card { background: none; border: none; box-shadow: none; }
   content: >
-    {%- set e = 'sensor.volgende_worldtour_wedstrijd' -%}
+    {%- set e = 'sensor.volgende_wielerkoers' -%}
     {%- set gc = state_attr(e,'gc_top') or [] -%}
 
     {%- macro secs(t) -%}
@@ -75,7 +75,7 @@
     style: |
       ha-card { background: none; border: none; box-shadow: none; }
   content: >
-    {%- set e = 'sensor.volgende_worldtour_wedstrijd' -%}
+    {%- set e = 'sensor.volgende_wielerkoers' -%}
     {%- set yt = state_attr(e,'youth_top') or [] -%}
 
     {%- macro secs(t) -%}
@@ -113,7 +113,7 @@
     style: |
       ha-card { background: none; border: none; box-shadow: none; }
   content: >
-    {%- set e = 'sensor.volgende_worldtour_wedstrijd' -%}
+    {%- set e = 'sensor.volgende_wielerkoers' -%}
     {%- set rs = state_attr(e,'other_result') or [] -%}
 
     {%- macro secs(t) -%}
@@ -141,7 +141,7 @@
     style: |
       ha-card { background: none; border: none; box-shadow: none; }
   content: >
-    {%- set e = 'sensor.volgende_worldtour_wedstrijd' -%}
+    {%- set e = 'sensor.volgende_wielerkoers' -%}
 
     {%- macro mv(m) -%}
     {%- if m and m > 0 %} <font color='#7FB069'>&#9650;{{ m }}</font>{% elif m and m < 0 %}
@@ -171,7 +171,7 @@
       ha-markdown img { height: 20px; width: auto; border-radius: 3px;
                         vertical-align: middle; margin-right: 5px; }
   content: >
-    {%- set ch = state_attr('sensor.volgende_worldtour_wedstrijd','channels_detail') or [] -%}
+    {%- set ch = state_attr('sensor.volgende_wielerkoers','channels_detail') or [] -%}
 
     {%- for c in ch %}{% if not loop.first %} &nbsp;&middot;&nbsp; {% endif %}{% if c.logo %}<img
     src="{{ c.logo }}" alt="{{ c.name }}" height="20"

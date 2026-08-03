@@ -36,6 +36,6 @@ jobs:
       - name: pytest installeren
         run: python -m pip install --upgrade pip pytest
       - name: Syntaxcontrole
-        run: python -m compileall -q custom_components/worldtour_next_race
+        run: python -m compileall -q custom_components/cycling_next_race
       - name: Tests draaien
         run: python -m pytest tests/ -q

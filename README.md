@@ -1,4 +1,4 @@
-# WorldTour Next Race
+# Cycling Next Race
 
 Home Assistant-integratie die de eerstvolgende WorldTour-wielerwedstrijd op je
 dashboard zet — met hoogteprofiel, cols, tussensprint, uitslagen, klassementen
@@ -31,14 +31,14 @@ watchscore.
 
 1. HACS → rechtsboven de drie puntjes → **Aangepaste repositories**
 2. Plak de URL van deze repo, categorie **Integration**, en klik toevoegen
-3. Zoek op *WorldTour Next Race*, installeer, en herstart Home Assistant
+3. Zoek op *Cycling Next Race*, installeer, en herstart Home Assistant
 
 De Python-afhankelijkheid (`procyclingstats`) installeert Home Assistant
 automatisch.
 
 ## Handmatige installatie
 
-Kopieer `custom_components/worldtour_next_race/` naar de map
+Kopieer `custom_components/cycling_next_race/` naar de map
 `custom_components/` van je Home Assistant en herstart.
 
 ## Configuratie
@@ -47,10 +47,10 @@ In `configuration.yaml`:
 
 ```yaml
 sensor:
-  - platform: worldtour_next_race
+  - platform: cycling_next_race
 ```
 
-Dat is alles. De sensor heet `sensor.volgende_worldtour_wedstrijd`.
+Dat is alles. De sensor heet `sensor.volgende_wielerkoers`.
 
 ## Dashboard
 

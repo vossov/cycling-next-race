@@ -1,0 +1,10 @@
+{
+  "domain": "cycling_next_race",
+  "name": "Cycling Next Race",
+  "codeowners": ["@vossov"],
+  "documentation": "https://github.com/vossov/cycling-next-race",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/vossov/cycling-next-race/issues",
+  "requirements": ["procyclingstats==0.2.8"],
+  "version": "0.1.0"
+}

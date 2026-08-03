@@ -3,15 +3,13 @@
 YAML-configuratie:
 
     sensor:
-      - platform: worldtour_next_race
+      - platform: cycling_next_race
 
 Uitgebreide versie:
 - Spoiler-vrije attributen voor tegel + pop-up (parcours, cols, profielscore ...).
 - Spoiler-attributen ALLEEN bedoeld voor de pop-up (uitslag laatste etappe + klassement).
 - Etappe-selectie met rollover: zodra de etappe van vandaag klaar is (uitslag binnen)
   toont de tegel de eerstvolgende etappe. Een rustdag telt niet als etappe.
-- Genereert twee transparante SVG-profielen (tegel + detail) naar
-  /config/www/worldtour/ die de kaart als /local/worldtour/*.svg toont.
 
 De kalender wordt 1x per dag opgehaald; live wordt elk half uur ververst.
 """
@@ -890,7 +888,7 @@ def _fetch_channels(race_url, idx, one_day, race_name):
     try:
         req = urllib.request.Request(
             WIELERFLITS_TV_URL,
-            headers={"User-Agent": "Mozilla/5.0 (HomeAssistant WorldTour)"})
+            headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             html = resp.read().decode("utf-8", "replace")
     except Exception as err:  # noqa: BLE001
@@ -949,7 +947,7 @@ def _fetch_stage_names(url, distance=None):
     from html import unescape
     try:
         req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant WorldTour)"})
+            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             doc = resp.read().decode("utf-8", "replace")
     except Exception as err:  # noqa: BLE001
@@ -1041,7 +1039,7 @@ def _fetch_live(stage_url):
     url = f"https://www.procyclingstats.com/{stage_url}/live"
     try:
         req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant WorldTour)"})
+            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             doc = resp.read().decode("utf-8", "replace")
     except Exception as err:  # noqa: BLE001
@@ -1276,7 +1274,7 @@ def _fetch_times(race_url, stage_idx, one_day):
     for url in _times_urls(race_url, stage_idx, one_day):
         try:
             req = urllib.request.Request(
-                url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant WorldTour)"})
+                url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
             with urllib.request.urlopen(req, timeout=30) as resp:
                 html = resp.read().decode("utf-8", "replace")
         except Exception as err:  # noqa: BLE001
@@ -1441,7 +1439,7 @@ def _fetch_gpx(gpx_url, n_out: int = 150):
     import urllib.request
     try:
         req = urllib.request.Request(
-            gpx_url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant WorldTour)"})
+            gpx_url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read()
     except Exception as err:  # noqa: BLE001
@@ -1482,9 +1480,9 @@ def _fetch_gpx(gpx_url, n_out: int = 150):
     return out, climbs
 
 
-class WorldTourCoordinator(DataUpdateCoordinator):
+class CyclingCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant) -> None:
-        super().__init__(hass, _LOGGER, name="worldtour_next_race",
+        super().__init__(hass, _LOGGER, name="cycling_next_race",
                          update_interval=SCAN_INTERVAL)
         self._calendar: list[dict] | None = None
         self._calendar_fetched: date | None = None
@@ -2058,14 +2056,14 @@ async def async_setup_platform(
     async_add_entities: AddEntitiesCallback,
     discovery_info=None,
 ) -> None:
-    coordinator = WorldTourCoordinator(hass)
+    coordinator = CyclingCoordinator(hass)
     await coordinator.async_config_entry_first_refresh()
-    async_add_entities([WorldTourNextRaceSensor(coordinator)])
+    async_add_entities([CyclingNextRaceSensor(coordinator)])
 
 
-class WorldTourNextRaceSensor(CoordinatorEntity, SensorEntity):
-    _attr_name = "Volgende WorldTour Wedstrijd"
-    _attr_unique_id = "worldtour_next_race"
+class CyclingNextRaceSensor(CoordinatorEntity, SensorEntity):
+    _attr_name = "Volgende Wielerkoers"
+    _attr_unique_id = "cycling_next_race"
     _attr_icon = "mdi:bike-fast"
 
     @property

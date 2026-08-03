@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 WORTEL = Path(__file__).parent.parent
-MANIFEST = WORTEL / "custom_components" / "worldtour_next_race" / "manifest.json"
+MANIFEST = WORTEL / "custom_components" / "cycling_next_race" / "manifest.json"
 HACS_JSON = WORTEL / "hacs.json"
 
 

@@ -43,7 +43,7 @@ def wt():
     """De geladen sensor-module."""
     _installeer_stubs()
     pad = (Path(__file__).parent.parent / "custom_components"
-           / "worldtour_next_race" / "sensor.py")
+           / "cycling_next_race" / "sensor.py")
     spec = importlib.util.spec_from_file_location("wt_sensor", pad)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
