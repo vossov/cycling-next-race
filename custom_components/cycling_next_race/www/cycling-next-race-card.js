@@ -270,7 +270,10 @@ const STIJL = `
   .leeg { padding: 16px; opacity: .6; font-size: 14px; }
   svg { display: block; width: 100%; height: auto; }
 
-  .aftel { display: flex; align-items: center; gap: 12px; padding: 2px 4px; }
+  .aftel { display: flex; align-items: center; padding: 2px 4px; }
+  /* geen gap: die werkt pas vanaf Chrome 84 en oude wandpanelen
+     draaien vaak ouder; marges doen hetzelfde en werken overal */
+  .aftel > * + * { margin-left: 12px; }
   .aftel-icoon { flex: none; opacity: .75; line-height: 0; }
   .aftel-icoon svg { width: 26px; height: 26px; }
   .aftel-icoon.live { color: #E4572E; opacity: 1; }
@@ -294,7 +297,7 @@ const STIJL = `
   }
   dialog::backdrop { background: rgba(0, 0, 0, .55); }
   .kop {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center;
     padding: 14px 18px 6px; font-size: 17px; font-weight: 700;
   }
   .kop .sluit {
@@ -306,7 +309,8 @@ const STIJL = `
   section { margin-top: 14px; }
   h3 { margin: 0 0 6px; font-size: 14px; font-weight: 700; }
   ol { list-style: none; margin: 0; padding: 0; font-size: 13.5px; }
-  li { display: flex; gap: 8px; padding: 2px 0; align-items: baseline; }
+  li { display: flex; padding: 2px 0; align-items: baseline; }
+  li > * + * { margin-left: 8px; }
   .pos { width: 1.6em; text-align: right; opacity: .55; font-variant-numeric: tabular-nums; }
   .naam { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wrd { font-variant-numeric: tabular-nums; opacity: .85; white-space: nowrap; }
@@ -497,10 +501,13 @@ const VELDEN = [
 ];
 
 const EDITOR_STIJL = `
-  .eigen { display: flex; flex-direction: column; gap: 14px; padding: 8px 0; }
-  .eigen label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+  .eigen { display: flex; flex-direction: column; padding: 8px 0; }
+  .eigen > * + * { margin-top: 14px; }
+  .eigen label { display: flex; flex-direction: column; font-size: 14px; }
+  .eigen label > * + * { margin-top: 4px; }
   .eigen .uitleg { font-size: 12px; opacity: .6; }
-  .eigen .schakel { flex-direction: row; align-items: center; gap: 10px; }
+  .eigen .schakel { flex-direction: row; align-items: center; }
+  .eigen .schakel > * + * { margin-left: 10px; }
   .eigen input[type="text"] {
     padding: 8px; border-radius: 8px; border: 1px solid var(--divider-color, #444);
     background: var(--card-background-color, #1c1c1c); color: inherit; font: inherit;
@@ -558,7 +565,8 @@ class CyclingNextRaceCardEditor extends HTMLElement {
         e.stopPropagation();
         this._wijzig({ type: 'custom:cycling-next-race-card', ...e.detail.value });
       });
-      this.shadowRoot.replaceChildren(form);
+      this.shadowRoot.innerHTML = '';
+      this.shadowRoot.appendChild(form);
       this._form = form;
       return;
     }
@@ -593,7 +601,9 @@ class CyclingNextRaceCardEditor extends HTMLElement {
         details: lees('details').checked,
       });
     });
-    this.shadowRoot.replaceChildren(stijl, doos);
+    this.shadowRoot.innerHTML = '';
+    this.shadowRoot.appendChild(stijl);
+    this.shadowRoot.appendChild(doos);
   }
 }
 
