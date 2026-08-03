@@ -3,6 +3,7 @@
   "name": "Cycling Next Race",
   "codeowners": ["@vossov"],
   "config_flow": true,
+  "dependencies": ["frontend", "http"],
   "documentation": "https://github.com/vossov/cycling-next-race",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/vossov/cycling-next-race/issues",

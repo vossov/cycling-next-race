@@ -8,6 +8,15 @@ from __future__ import annotations
 DOMAIN = "cycling_next_race"
 NAME = "Cycling Next Race"
 
+# Gelijk aan "version" in manifest.json; hangt achter de kaart-URL zodat de
+# browser na een update de nieuwe versie ophaalt. tests/test_repo.py bewaakt
+# dat de twee niet uiteenlopen.
+VERSION = "0.1.0"
+
+# De meegeleverde Lovelace-kaart, door de integratie zelf geregistreerd.
+KAART_BESTAND = "cycling-next-race-card.js"
+KAART_URL = f"/{DOMAIN}/{KAART_BESTAND}"
+
 # Optiesleutels (opgeslagen in ConfigEntry.options)
 CONF_RESULT_N = "result_n"
 CONF_GC_N = "gc_n"

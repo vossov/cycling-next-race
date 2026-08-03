@@ -32,6 +32,8 @@ def _installeer_stubs():
     _stub("homeassistant")
     _stub("homeassistant.components")
     _stub("homeassistant.components.sensor", SensorEntity=_klasse("SensorEntity"))
+    _stub("homeassistant.components.frontend", add_extra_js_url=lambda *a, **kw: None)
+    _stub("homeassistant.components.http", StaticPathConfig=_klasse("StaticPathConfig"))
     # ConfigFlow neemt `domain=` mee in de klassedefinitie, vandaar het
     # eigen __init_subclass__; een kale type() weigert dat.
     def _init_subclass(cls, **kwargs):

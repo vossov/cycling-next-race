@@ -28,7 +28,8 @@ tv-zenders. Zowel mannen- als vrouwen-WorldTour.
 
 Het werk zit in `custom_components/cycling_next_race/sensor.py`; daaromheen
 staan `const.py` (sleutels en standaardwaarden), `config_flow.py` (toevoegen
-en het optiescherm) en `__init__.py` (config entry opzetten en herladen).
+en het optiescherm), `__init__.py` (config entry opzetten, herladen, en de
+kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
 
 - `CyclingCoordinator(DataUpdateCoordinator)` haalt alles op en krijgt de
   opties uit de config entry mee. `self._opt(sleutel)` leest er één, met de
@@ -148,19 +149,30 @@ Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:
 
 ## Dashboard
 
-De Lovelace-kaarten staan in `lovelace/` en vallen **buiten HACS**; die zet je
-zelf in de raw-config van het dashboard.
+De kaart hoort bij de integratie: `www/cycling-next-race-card.js` wordt in
+`__init__.py` geserveerd via `async_register_static_paths` en aangemeld met
+`add_extra_js_url`. Daarvoor staan `frontend` en `http` in de manifest onder
+`dependencies`. De gebruiker voegt alleen
+`type: custom:cycling-next-race-card` toe; geen resources, geen templates,
+geen button-card of Bubble Card.
 
-- `button_card_templates.yaml` → drie button-card-templates
-  (`cycling_profile` tegel, `cycling_detail` pop-up, `cycling_upcoming`)
-- `dashboard.yaml` → de complete opstelling: de conditionele tegel en de
-  Bubble Card-pop-up met alle markdown-kaarten erin
+Achter de URL hangt `?v={VERSION}`; die constante in `const.py` moet gelijk
+blijven aan `version` in de manifest, anders blijft de browser na een update
+de oude kaart tonen. `tests/test_kaart.py` bewaakt dat.
+
+**De tekencode staat op twee plekken.** De drie SVG-functies (`svgTegel`,
+`svgDetail`, `svgKomend`) zijn letterlijk overgenomen uit de
+button-card-templates in `lovelace/`, die er nog staan voor de oude opzet.
+`tests/test_kaart.py` vergelijkt ze regel voor regel per functie — zoeken in
+het hele bestand werkt niet, want dezelfde regels komen in meerdere functies
+voor. Wijzig je de een, wijzig dan de ander.
+
+Registratie faalt zacht: lukt het serveren niet, dan logt het een
+waarschuwing en draait de sensor gewoon door.
 
 `tests/test_dashboard.py` controleert dat elk attribuut dat een kaart
 opvraagt ook echt door `sensor.py` wordt gezet, dat gebruikte templates
 bestaan, en dat tegel en pop-up dezelfde hash delen.
-
-Benodigde frontend-kaarten: button-card, card-mod, Bubble Card.
 
 SVG-conventies: `viewBox` breedte 440, kleuren via `currentColor` zodat het
 thema volgt, categoriekleuren `CAT={HC:'#E4572E','1':'#F2A03D','2':'#EBD24A',
