@@ -1,0 +1,265 @@
+# Complete dashboardopstelling voor Cycling Next Race
+#
+# Twee kaarten: de tegel die je op je dashboard zet, en de pop-up die
+# opengaat als je erop tikt. Kopieer ze los; ze horen in een view, niet in
+# het `button_card_templates:`-blok (dat zijn de templates uit
+# button_card_templates.yaml en die moeten er apart in).
+#
+# De tegel en de pop-up vinden elkaar via de hash `#cycling`. Wijzig je die,
+# wijzig hem dan op beide plekken.
+
+
+# ────────────────────────────────────────────────────────────────
+# 1. De tegel op het dashboard
+#
+# Verschijnt pas als de koers vandaag of morgen is (days_until < 2). Wil je
+# hem altijd zien, laat het conditional-omhulsel dan weg en houd alleen het
+# `card:`-gedeelte over.
+# ────────────────────────────────────────────────────────────────
+- type: conditional
+  conditions:
+    - condition: numeric_state
+      entity: sensor.volgende_wielerkoers
+      attribute: days_until
+      below: 2
+  card:
+    type: custom:button-card
+    template: cycling_profile
+    entity: sensor.volgende_wielerkoers
+    tap_action:
+      action: navigate
+      navigation_path: "#cycling"
+    styles:
+      card:
+        - background: var(--secondary-background-color)
+        - border-radius: 26px
+        - padding: 10px
+
+
+# ────────────────────────────────────────────────────────────────
+# 2. De pop-up
+#
+# Volgorde: groot profiel, tv-zenders, "Komende dagen", dan de uitslag en de
+# klassementen. Elke markdown-kaart verbergt zichzelf als zijn attribuut
+# leeg is, dus buiten een ronde blijft de pop-up vanzelf kort.
+# ────────────────────────────────────────────────────────────────
+- type: custom:bubble-card
+  card_type: pop-up
+  hash: "#cycling"
+  show_header: true
+  icon: mdi:bike-fast
+  name: Wielrennen
+  button_type: name
+  sub_button:
+    main: []
+    bottom: []
+  cards:
+    # Groot hoogteprofiel met colnamen, tussensprint en finishtijd
+    - type: custom:button-card
+      template: cycling_detail
+      entity: sensor.volgende_wielerkoers
+      grid_options:
+        columns: 12
+        rows: auto
+
+    # Tv-zenders met logo en uitzendtijd, rechts uitgelijnd
+    - type: markdown
+      card_mod:
+        style: |
+          ha-card { background: none; border: none; box-shadow: none; padding: 2px 8px 0; }
+          ha-card .card-content { text-align: right; padding: 0; font-size: 13px; }
+          ha-markdown img { height: 20px; width: auto; border-radius: 3px;
+                            vertical-align: middle; margin-right: 5px; }
+      content: >
+        {%- set ch = state_attr('sensor.volgende_wielerkoers','channels_detail') or [] -%}
+
+        {%- for c in ch %}{% if not loop.first %} &nbsp;&middot;&nbsp; {% endif %}{% if c.logo %}<img
+        src="{{ c.logo }}" alt="{{ c.name }}" height="20"
+        style="vertical-align:middle;border-radius:3px;margin-right:5px">{% else %}{{ c.name
+        }} {% endif %}{{ c.time }}{% endfor %}
+
+    # Kop boven het overzicht; valt weg als er niets komt
+    - type: markdown
+      card_mod:
+        style: |
+          ha-card { background: none; border: none; box-shadow: none; padding: 4px 8px 0; }
+      content: >
+        {%- set up = state_attr('sensor.volgende_wielerkoers','upcoming') or [] -%}
+
+        {%- if up %}**Komende dagen**{%- endif %}
+      grid_options:
+        columns: 12
+        rows: auto
+
+    # De komende etappes als staafjes
+    - type: custom:button-card
+      template: cycling_upcoming
+      entity: sensor.volgende_wielerkoers
+      styles:
+        card:
+          - background: none
+          - box-shadow: none
+          - border: none
+          - padding: 4px
+      grid_options:
+        columns: 12
+        rows: auto
+
+    # Dag-uitslag van de laatst verreden etappe
+    - type: markdown
+      card_mod:
+        style: |
+          ha-card { background: none; border: none; box-shadow: none; }
+      content: >
+        {%- set e = 'sensor.volgende_wielerkoers' -%}
+        {%- set rs = state_attr(e,'last_result') or [] -%}
+
+        {%- macro secs(t) -%}
+        {%- set p = t.split(':')|map('int')|list -%}
+        {{ (p[0]*3600 + p[1]*60 + p[2]) if p|length == 3 else (p[0]*60 + p[1]) }}
+        {%- endmacro -%}
+
+        {%- macro gap(t, w) -%}
+        {%- set g = (secs(t)|int) - (secs(w)|int) -%}
+        {%- if g <= 0 -%}z.t.{%- elif g < 3600 -%}+{{ '%d:%02d'|format(g//60, g%60) }}{%-
+        else -%}+{{ '%d:%02d:%02d'|format(g//3600, (g%3600)//60, g%60) }}{%- endif -%}
+        {%- endmacro -%}
+
+        {%- if rs %}**{{ state_attr(e,'last_stage_label') or 'Uitslag' }}**
+
+        {% for x in rs %}
+        {{ x.rank }}. {{ x.rider }} - {% if loop.first or ':' not in x.time or ':' not in
+        rs[0].time %}{{ x.time }}{% else %}{{ gap(x.time, rs[0].time) }}{% endif %}
+        {%- endfor %}
+        {%- endif %}
+
+    # Algemeen klassement, met positieverandering en dagwinst
+    - type: markdown
+      card_mod:
+        style: |
+          ha-card { background: none; border: none; box-shadow: none; }
+      content: >
+        {%- set e = 'sensor.volgende_wielerkoers' -%}
+        {%- set gc = state_attr(e,'gc_top') or [] -%}
+
+        {%- macro secs(t) -%}
+        {%- set p = t.split(':')|map('int')|list -%}
+        {{ (p[0]*3600 + p[1]*60 + p[2]) if p|length == 3 else (p[0]*60 + p[1]) }}
+        {%- endmacro -%}
+
+        {%- macro gap(t, w) -%}
+        {%- set g = (secs(t)|int) - (secs(w)|int) -%}
+        {%- if g <= 0 -%}z.t.{%- elif g < 3600 -%}+{{ '%d:%02d'|format(g//60, g%60) }}{%-
+        else -%}+{{ '%d:%02d:%02d'|format(g//3600, (g%3600)//60, g%60) }}{%- endif -%}
+        {%- endmacro -%}
+
+        {%- macro mv(m) -%}
+        {%- if m and m > 0 %} <font color='#7FB069'>&#9650;{{ m }}</font>{% elif m and m < 0 %}
+        <font color='#E4572E'>&#9660;{{ -m }}</font>{% endif -%}
+        {%- endmacro -%}
+
+        {%- macro chg(s) -%}
+        {%- if s %} <font color='{{ '#E4572E' if s > 0 else '#7FB069' }}'>{{ '+' if s > 0
+        else '-' }}{{ '%d:%02d'|format((s|abs)//60, (s|abs)%60) }}</font>{% endif -%}
+        {%- endmacro -%}
+
+        {%- if gc %}**{{ 'Algemeen klassement' }}**
+
+        {% for x in gc %}
+        {{ x.rank }}. {{ x.rider }} - {% if loop.first or ':' not in x.time or ':' not in
+        gc[0].time %}{{ x.time }}{% else %}{{ gap(x.time, gc[0].time) }}{% endif %}{{ mv(x.get('move')) }}{{ chg(x.get('gain_s')) }}
+        {%- endfor %}
+        {%- endif %}
+
+    # Punten- en bergklassement, met gepakte punten
+    - type: markdown
+      card_mod:
+        style: |
+          ha-card { background: none; border: none; box-shadow: none; }
+      content: >
+        {%- set e = 'sensor.volgende_wielerkoers' -%}
+
+        {%- macro mv(m) -%}
+        {%- if m and m > 0 %} <font color='#7FB069'>&#9650;{{ m }}</font>{% elif m and m < 0 %}
+        <font color='#E4572E'>&#9660;{{ -m }}</font>{% endif -%}
+        {%- endmacro -%}
+
+        {%- macro blok(titel, rows) -%}
+        {%- if rows %}**{{ titel }}**
+
+        {% for x in rows %}
+        {{ x.rank }}. {{ x.rider }} - {{ x.points }}{{ mv(x.get('move')) }}{% if
+        x.get('gain') %} <font color='#7FB069'>+{{ x.gain }}</font>{% endif %}
+        {%- endfor %}
+
+        {% endif -%}
+        {%- endmacro -%}
+
+        {{ blok('Puntenklassement', state_attr(e,'points_top') or []) }}
+        {{ blok('Bergklassement', state_attr(e,'kom_top') or []) }}
+
+    # Jongerenklassement
+    - type: markdown
+      card_mod:
+        style: |
+          ha-card { background: none; border: none; box-shadow: none; }
+      content: >
+        {%- set e = 'sensor.volgende_wielerkoers' -%}
+        {%- set yt = state_attr(e,'youth_top') or [] -%}
+
+        {%- macro secs(t) -%}
+        {%- set p = t.split(':')|map('int')|list -%}
+        {{ (p[0]*3600 + p[1]*60 + p[2]) if p|length == 3 else (p[0]*60 + p[1]) }}
+        {%- endmacro -%}
+
+        {%- macro gap(t, w) -%}
+        {%- set g = (secs(t)|int) - (secs(w)|int) -%}
+        {%- if g <= 0 -%}z.t.{%- elif g < 3600 -%}+{{ '%d:%02d'|format(g//60, g%60) }}{%-
+        else -%}+{{ '%d:%02d:%02d'|format(g//3600, (g%3600)//60, g%60) }}{%- endif -%}
+        {%- endmacro -%}
+
+        {%- macro mv(m) -%}
+        {%- if m and m > 0 %} <font color='#7FB069'>&#9650;{{ m }}</font>{% elif m and m < 0 %}
+        <font color='#E4572E'>&#9660;{{ -m }}</font>{% endif -%}
+        {%- endmacro -%}
+
+        {%- macro chg(s) -%}
+        {%- if s %} <font color='{{ '#E4572E' if s > 0 else '#7FB069' }}'>{{ '+' if s > 0
+        else '-' }}{{ '%d:%02d'|format((s|abs)//60, (s|abs)%60) }}</font>{% endif -%}
+        {%- endmacro -%}
+
+        {%- if yt %}**{{ 'Jongerenklassement' }}**
+
+        {% for x in yt %}
+        {{ x.rank }}. {{ x.rider }} - {% if loop.first or ':' not in x.time or ':' not in
+        yt[0].time %}{{ x.time }}{% else %}{{ gap(x.time, yt[0].time) }}{% endif %}{{ mv(x.get('move')) }}{{ chg(x.get('gain_s')) }}
+        {%- endfor %}
+        {%- endif %}
+
+    # Dag-uitslag van de andere koers die tegelijk bezig is
+    - type: markdown
+      card_mod:
+        style: |
+          ha-card { background: none; border: none; box-shadow: none; }
+      content: >
+        {%- set e = 'sensor.volgende_wielerkoers' -%}
+        {%- set rs = state_attr(e,'other_result') or [] -%}
+
+        {%- macro secs(t) -%}
+        {%- set p = t.split(':')|map('int')|list -%}
+        {{ (p[0]*3600 + p[1]*60 + p[2]) if p|length == 3 else (p[0]*60 + p[1]) }}
+        {%- endmacro -%}
+
+        {%- macro gap(t, w) -%}
+        {%- set g = (secs(t)|int) - (secs(w)|int) -%}
+        {%- if g <= 0 -%}z.t.{%- elif g < 3600 -%}+{{ '%d:%02d'|format(g//60, g%60) }}{%-
+        else -%}+{{ '%d:%02d:%02d'|format(g//3600, (g%3600)//60, g%60) }}{%- endif -%}
+        {%- endmacro -%}
+
+        {%- if rs %}**{{ state_attr(e,'other_label') or '' }}**
+
+        {% for x in rs %}
+        {{ x.rank }}. {{ x.rider }} - {% if loop.first or ':' not in x.time or ':' not in
+        rs[0].time %}{{ x.time }}{% else %}{{ gap(x.time, rs[0].time) }}{% endif %}
+        {%- endfor %}
+        {%- endif %}

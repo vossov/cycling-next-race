@@ -153,8 +153,12 @@ zelf in de raw-config van het dashboard.
 
 - `button_card_templates.yaml` → drie button-card-templates
   (`cycling_profile` tegel, `cycling_detail` pop-up, `cycling_upcoming`)
-- `markdown_cards.yaml` → de markdown-kaarten voor uitslag, klassementen,
-  tv-zenders en de tweede koers
+- `dashboard.yaml` → de complete opstelling: de conditionele tegel en de
+  Bubble Card-pop-up met alle markdown-kaarten erin
+
+`tests/test_dashboard.py` controleert dat elk attribuut dat een kaart
+opvraagt ook echt door `sensor.py` wordt gezet, dat gebruikte templates
+bestaan, en dat tegel en pop-up dezelfde hash delen.
 
 Benodigde frontend-kaarten: button-card, card-mod, Bubble Card.
 
