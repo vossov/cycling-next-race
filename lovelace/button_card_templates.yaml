@@ -23,7 +23,7 @@ button_card_templates:
         const E=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" xmlns="http://www.w3.org/2000/svg" style="display:block;font-family:-apple-system,Roboto,sans-serif;color:var(--primary-text-color,#E8EEF4)">';
         s+='<defs><linearGradient id="wt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+FIL+'" stop-opacity=".5"/><stop offset="1" stop-color="'+FIL+'" stop-opacity=".03"/></linearGradient></defs>';
-        s+='<text x="'+L+'" y="25" fill="currentColor" font-size="15" font-weight="700">'+E(a.eyebrow||'WorldTour')+'</text>';
+        s+='<text x="'+L+'" y="25" fill="currentColor" font-size="15" font-weight="700">'+E(a.eyebrow||'')+'</text>';
         let b=[Math.round(dist)+' km']; if(a.vertical_m)b.push(Math.round(a.vertical_m)+' hm'); const _w=Number(a.watchability)||0; if(_w)b.push('Watchscore '+_w+'/10');
         s+='<text x="'+L+'" y="42" fill="currentColor" opacity=".6" font-size="13.5">'+E(b.join('  ·  '))+'</text>';
         const st=(a.show_state||'')+''; if(st){const lv=st.toUpperCase()=='LIVE',bt=lv?('LIVE'+(a.finish_est?'  ·  '+a.finish_est:'')):((st==='Vandaag'||st==='Morgen')&&a.start_time?(st+' '+String(a.start_time).trim()+(a.finish_est?'-'+a.finish_est:'')):st.toUpperCase()),tw=bt.length*8.2+22,px=W-R-tw; s+='<rect x="'+px.toFixed(1)+'" y="16" width="'+tw.toFixed(1)+'" height="24" rx="12" fill="'+(lv?ACC:'none')+'" stroke="'+(lv?ACC:'currentColor')+'" stroke-opacity="'+(lv?0:.5)+'"/><text x="'+(px+tw/2).toFixed(1)+'" y="32.5" text-anchor="middle" font-size="12.5" font-weight="700" fill="'+(lv?'#fff':'currentColor')+'" opacity="'+(lv?1:.7)+'">'+E(bt)+'</text>';}
@@ -69,7 +69,7 @@ button_card_templates:
         const E=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'), N=x=>x==null?'':String(Math.round(x*10)/10).replace('.',',');
         let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" xmlns="http://www.w3.org/2000/svg" style="display:block;font-family:-apple-system,Roboto,sans-serif;color:var(--primary-text-color,#E8EEF4)">';
         s+='<defs><linearGradient id="wt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+FIL+'" stop-opacity=".55"/><stop offset="1" stop-color="'+FIL+'" stop-opacity=".03"/></linearGradient></defs>';
-        s+='<text x="'+L+'" y="20" fill="currentColor" opacity=".6" font-size="11" font-weight="700" letter-spacing="1.3">'+E((a.eyebrow||'WorldTour').toUpperCase())+'</text>';
+        s+='<text x="'+L+'" y="20" fill="currentColor" opacity=".6" font-size="11" font-weight="700" letter-spacing="1.3">'+E((a.eyebrow||'').toUpperCase())+'</text>';
         s+='<text x="'+L+'" y="45" fill="currentColor" font-size="20" font-weight="700">'+E((a.departure&&a.arrival)?a.departure+' → '+a.arrival:(a.eyebrow||''))+'</text>';
         let b=[Math.round(dist)+' km']; if(a.vertical_m)b.push(Math.round(a.vertical_m)+' hm'); const _w=Number(a.watchability)||0; if(_w)b.push('Watchscore '+_w+'/10');
         s+='<text x="'+L+'" y="65" fill="currentColor" opacity=".6" font-size="13.5">'+E(b.join('  ·  '))+'</text>';

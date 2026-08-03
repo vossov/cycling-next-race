@@ -4,10 +4,12 @@ Home Assistant-integratie die de eerstvolgende WorldTour-wielerwedstrijd op je
 dashboard zet — met hoogteprofiel, cols, tussensprint, uitslagen, klassementen
 en de Nederlandse tv-zenders.
 
-Zowel de mannen- als de vrouwen-WorldTour worden gevolgd. Koersen tegelijk?
-Dan toont de tegel er één: eerst de eerstvolgende etappe, dan de koers met een
-hoogteprofiel, en bij gelijke stand de mannen. De andere koers verschijnt met
-zijn dag-uitslag in de pop-up.
+Zowel de mannen- als de vrouwen-WorldTour worden gevolgd — op dit moment
+alleen die twee kalenders; de opzet laat ruimte om er later andere koersen
+naast te zetten. Koersen tegelijk? Dan toont de tegel er één: eerst de
+eerstvolgende etappe, dan de koers met een hoogteprofiel, en bij gelijke
+stand de mannen. De andere koers verschijnt met zijn dag-uitslag in de
+pop-up.
 
 ## Wat het laat zien
 
