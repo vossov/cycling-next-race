@@ -112,16 +112,23 @@ template: cycling_upcoming
 entity: sensor.volgende_wielerkoers
 ```
 
-**3. Tekstkaarten toevoegen.** De zes markdown-kaarten voor uitslag,
-klassementen, tv-zenders en de tweede koers staan in
-[`lovelace/markdown_cards.yaml`](lovelace/markdown_cards.yaml). Die zijn
-zelfstandig: plak er een in je dashboard en hij werkt. Ze verbergen zichzelf
-wanneer de bijbehorende gegevens ontbreken.
+**3. De kaarten zelf.** De complete opstelling staat in
+[`lovelace/dashboard.yaml`](lovelace/dashboard.yaml): de tegel voor je
+dashboard en de pop-up die opengaat als je erop tikt. Kopieer ze in een
+view — niet in het `button_card_templates:`-blok, daar horen alleen de
+templates uit stap 1.
 
-**4. Pop-up.** De detailweergave is een Bubble Card-pop-up waarin de
-`cycling_detail`-kaart en de markdown-kaarten samen staan. Hoe je die opent
-— via een tik op de tegel of een aparte knop — hangt af van je eigen
-dashboardindeling; zie de documentatie van Bubble Card.
+De tegel is een `conditional` die pas verschijnt als de koers vandaag of
+morgen is. Wil je hem altijd zien, laat dat omhulsel dan weg en houd het
+`card:`-gedeelte over.
+
+De pop-up bevat het grote profiel, de tv-zenders, "Komende dagen", en
+daaronder de uitslag en de klassementen. Elke markdown-kaart verbergt
+zichzelf als zijn attribuut leeg is, dus buiten een ronde blijft de pop-up
+vanzelf kort.
+
+Tegel en pop-up vinden elkaar via de hash `#cycling`; wijzig je die, doe het
+dan op beide plekken.
 
 ## Instellingen in de code
 

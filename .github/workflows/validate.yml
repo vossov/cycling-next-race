@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: pytest installeren
-        run: python -m pip install --upgrade pip pytest voluptuous
+        run: python -m pip install --upgrade pip pytest voluptuous pyyaml
       - name: Syntaxcontrole
         run: python -m compileall -q custom_components/cycling_next_race
       - name: Tests draaien
