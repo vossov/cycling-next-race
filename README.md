@@ -208,6 +208,23 @@ werkt de sensor gewoon door en zie je alleen de kaart niet. Loop dit na:
    alsnog op. Dit is verreweg de meest voorkomende oorzaak vlak na een
    installatie.
 
+### "Configuratiefout" die na verversen weg is
+
+Zie je op de plek van de kaart een rood vlak met *Configuratiefout*, en is
+dat na een keer verversen verdwenen, dan heeft Home Assistant de kaart
+willen tekenen voordat het script geladen was. De frontend wacht daar maar
+kort op; komt het net te laat, dan valt hij terug op een foutkaart.
+
+Het gaat vanzelf over zodra het script in de cache van de browser staat, dus
+je ziet het vooral één keer na een update. Klik op de foutkaart om de
+melding te zien: staat er *Custom element doesn't exist*, dan is dit het.
+Staat er iets anders, dan is er wél iets mis met de configuratie en helpt
+verversen niet.
+
+De kaart-URL draagt een korte hash van het bestand, dus na een update haalt
+de browser gegarandeerd de nieuwe versie op in plaats van een oude uit de
+cache.
+
 ### De oude opzet met button-card
 
 Vóór deze kaart werden de profielen als button-card-templates meegeleverd.

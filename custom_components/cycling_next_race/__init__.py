@@ -6,6 +6,7 @@ zodat je zelf niets aan resources hoeft toe te voegen.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -56,7 +57,8 @@ async def _registreer_kaart(hass: HomeAssistant) -> None:
         return
 
     pad = Path(__file__).parent / "www" / KAART_BESTAND
-    if not await hass.async_add_executor_job(pad.is_file):
+    stempel = await hass.async_add_executor_job(_bestandsstempel, pad)
+    if stempel is None:
         _LOGGER.warning("Kaartbestand niet gevonden op %s", pad)
         return
 
@@ -64,8 +66,7 @@ async def _registreer_kaart(hass: HomeAssistant) -> None:
         await hass.http.async_register_static_paths(
             [StaticPathConfig(KAART_URL, str(pad), False)]
         )
-        # de versie erachter dwingt de browser na een update te herladen
-        add_extra_js_url(hass, f"{KAART_URL}?v={VERSION}")
+        add_extra_js_url(hass, f"{KAART_URL}?v={stempel}")
     except Exception as err:  # noqa: BLE001
         _LOGGER.warning("Kaart registreren mislukt: %s", err)
         return
@@ -73,4 +74,19 @@ async def _registreer_kaart(hass: HomeAssistant) -> None:
     hass.data[_KAART_GEREGISTREERD] = True
     # op info-niveau: zonder deze regel in het log is de kaart niet aangemeld,
     # en dat is precies wat je wilt weten als hij niet verschijnt
-    _LOGGER.info("Lovelace-kaart aangemeld op %s?v=%s", KAART_URL, VERSION)
+    _LOGGER.info("Lovelace-kaart aangemeld op %s?v=%s", KAART_URL, stempel)
+
+
+def _bestandsstempel(pad: Path) -> str | None:
+    """Versie plus een korte hash van de kaart, voor achter de URL.
+
+    De hash maakt het onmogelijk dat een browser een oude kaart blijft
+    tonen: wijzigt het bestand, dan wijzigt de URL. Zonder die hash zou dat
+    afhangen van het ophogen van VERSION, en dat wordt vergeten.
+
+    Draait in een executor; leest het bestand van schijf.
+    """
+    if not pad.is_file():
+        return None
+    korte_hash = hashlib.sha256(pad.read_bytes()).hexdigest()[:10]
+    return f"{VERSION}-{korte_hash}"
