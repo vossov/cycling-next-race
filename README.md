@@ -66,69 +66,79 @@ Achter **Configureren** bij de integratie stel je in:
 
 Wijzigingen gaan meteen in; de integratie herlaadt zichzelf.
 
-### Overstappen vanaf de YAML-configuratie
-
-Stond dit in je `configuration.yaml`?
-
-```yaml
-sensor:
-  - platform: cycling_next_race
-```
-
-Dan wordt die bij de eerstvolgende herstart automatisch omgezet naar een
-integratie in de interface. Haal de regels daarna weg.
-
 ## Dashboard
 
-De kaarten vallen buiten HACS: de integratie levert alleen de sensor, de
-opmaak zet je zelf in je dashboard. Benodigd zijn
-[button-card](https://github.com/custom-cards/button-card),
-[card-mod](https://github.com/thomasloven/lovelace-card-mod) en
-[Bubble Card](https://github.com/Clooos/Bubble-Card) voor de pop-up.
+De kaart zit in de integratie: je hoeft geen resources te registreren, geen
+templates in de raw-config te plakken en geen extra frontend-kaarten te
+installeren.
 
-**1. Templates registreren.** Neem de inhoud van
-[`lovelace/button_card_templates.yaml`](lovelace/button_card_templates.yaml)
-over in de raw-configuratie van je dashboard (rechtsboven → *Raw
-configuration editor*). Het `button_card_templates:`-blok staat op het
-hoogste niveau, náást `views:`.
-
-**2. Kaarten plaatsen.** Elke template is een button-card die zijn gegevens
-uit de sensor haalt:
+**Voeg hem toe zoals elke andere kaart.** Bewerk je dashboard, kies *Kaart
+toevoegen* en zoek op *Cycling Next Race*. In YAML is het:
 
 ```yaml
-# hoogteprofiel-tegel
-type: custom:button-card
-template: cycling_profile
-entity: sensor.cycling_next_race
-
-# groter profiel met colnamen, voor in de pop-up
-type: custom:button-card
-template: cycling_detail
-entity: sensor.cycling_next_race
-
-# overzicht "Komende dagen"
-type: custom:button-card
-template: cycling_upcoming
-entity: sensor.cycling_next_race
+type: custom:cycling-next-race-card
 ```
 
-**3. De kaarten zelf.** De complete opstelling staat in
-[`lovelace/dashboard.yaml`](lovelace/dashboard.yaml): de tegel voor je
-dashboard en de pop-up die opengaat als je erop tikt. Kopieer ze in een
-view — niet in het `button_card_templates:`-blok, daar horen alleen de
-templates uit stap 1.
+Meer valt er niet in te stellen, maar het kan:
 
-De tegel is een `conditional` die pas verschijnt als de koers vandaag of
-morgen is. Wil je hem altijd zien, laat dat omhulsel dan weg en houd het
-`card:`-gedeelte over.
+| Optie | Standaard | Betekenis |
+|---|---|---|
+| `entity` | `sensor.cycling_next_race` | de sensor |
+| `details` | `true` | een tik opent het volledige overzicht |
+| `always_show` | `false` | ook tonen als de koers verder weg is dan morgen |
 
-De pop-up bevat het grote profiel, de tv-zenders, "Komende dagen", en
-daaronder de uitslag en de klassementen. Elke markdown-kaart verbergt
-zichzelf als zijn attribuut leeg is, dus buiten een ronde blijft de pop-up
-vanzelf kort.
+De kaart toont het hoogteprofiel met de cols, de tussensprint, de
+start- en verwachte finishtijd en de watchscore. Tikken opent een venster
+met het grote profiel, de tv-zenders, de komende dagen, de dag-uitslag en
+de klassementen. Onderdelen zonder gegevens blijven weg — buiten een ronde
+is het venster vanzelf kort.
 
-Tegel en pop-up vinden elkaar via de hash `#cycling`; wijzig je die, doe het
-dan op beide plekken.
+Standaard verschijnt de kaart pas als de koers vandaag of morgen is. Wil je
+hem het hele seizoen zien, zet dan `always_show: true`.
+
+### Zo ziet het eruit
+
+Een indruk van de tekstblokken in het detailvenster. De namen hieronder zijn
+ter illustratie; de kaart toont alleen wat de bronnen werkelijk leveren.
+
+```
+Etappe 13 · uitslag
+ 1  Pogacar Tadej          4:12:33
+ 2  Vingegaard Jonas         +0:14
+ 3  Evenepoel Remco          +1:18
+
+Algemeen klassement
+ 1  Pogacar Tadej         52:14:33
+ 2  Vingegaard Jonas   +2:12 ▲1 −0:14
+ 3  Evenepoel Remco    +4:39 ▼1 +1:18
+
+Puntenklassement
+ 1  Philipsen Jasper       302 +25
+
+Bergklassement
+ 1  Ciccone Giulio       84 ▲2 +10
+```
+
+Achter een klassement staat de positieverandering ten opzichte van de vorige
+etappe (▲ gestegen, ▼ gedaald) en wat er die dag is gewonnen of verloren —
+in tijd bij het algemeen en jongerenklassement, in punten bij de andere twee.
+
+De tv-zenders staan als regel bovenaan het venster, met het zenderlogo waar
+wielerflits dat meelevert:
+
+```
+NPO 1 14:15  ·  Eurosport 1 12:45
+```
+
+Alleen Nederlandse uitzendingen, en alleen als de koers binnen zes dagen
+begint — verder vooruit publiceert de gids niets.
+
+### De oude opzet met button-card
+
+Vóór deze kaart werden de profielen als button-card-templates meegeleverd.
+Die staan er nog, voor wie zijn dashboard zo heeft ingericht: zie
+[`lovelace/`](lovelace/). Nieuw beginnen doe je met de kaart hierboven —
+die heeft button-card, card-mod noch Bubble Card nodig.
 
 ## Instellingen in de code
 

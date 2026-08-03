@@ -1,5 +1,13 @@
 # Complete dashboardopstelling voor Cycling Next Race
 #
+# LET OP: dit is de oude opzet, met button-card, card-mod en Bubble Card.
+# De integratie levert tegenwoordig zelf een kaart mee die dit allemaal
+# vervangt en geen templates in de raw-config nodig heeft:
+#
+#   type: custom:cycling-next-race-card
+#
+# Deze bestanden blijven staan voor wie zijn dashboard al zo had ingericht.
+#
 # Twee kaarten: de tegel die je op je dashboard zet, en de pop-up die
 # opengaat als je erop tikt. Kopieer ze los; ze horen in een view, niet in
 # het `button_card_templates:`-blok (dat zijn de templates uit
