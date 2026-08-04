@@ -61,6 +61,11 @@ GC_N = DEFAULT_GC_N          # aantal renners in het klassement (pop-up)
 UPCOMING_N = DEFAULT_UPCOMING_N  # veiligheidscap op aantal komende etappes
 UPCOMING_DAYS = DEFAULT_UPCOMING_DAYS  # venster voor "Komende dagen"
 
+# Hoeveel koersen er naast de getoonde in de pop-up aanklikbaar zijn. Elke
+# koers erbij kost twee extra paginaverzoeken bij procyclingstats en ruimte
+# in de attributen; in de praktijk lopen er mannen en vrouwen tegelijk.
+MAX_ANDERE_KOERSEN = 2
+
 MONUMENTS = {
     "milano-sanremo",
     "ronde-van-vlaanderen",
@@ -1519,7 +1524,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._channels_cache = None
         self._sprints_cache = None
         self._roster_cache: dict = {}
-        self._other_cache = None
+        # uitslag per etappe van de andere koersen, op stage_url; per dag geleegd
+        self._other_cache: dict[str, dict] = {}
         self._prevrank_cache = None
         self._names_cache: dict[str, list] = {}
         self._prose_cache: dict[str, list] = {}
@@ -1561,40 +1567,115 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._climbs_cache[race_url] = climbs
         return climbs
 
-    async def _other_block(self, andere, today):
-        """Laatste uitslag + klassement van de andere gelijktijdige koers."""
-        leeg = {"other_label": "", "other_result": [], "other_gc": []}
-        for _d, _g, _w, _i, _ev, st in andere:
-            klaar = [s for s in st if s["date"] < today]
-            vandaag = next((s for s in st if s["date"] == today), None)
-            for s in ([vandaag] if vandaag else []) + klaar[-1:]:
-                key = (today.isoformat(), s["stage_url"])
-                if self._other_cache and self._other_cache[0] == key:
-                    d = self._other_cache[1]
-                else:
-                    d = await self._job(_fetch_stage, s["stage_url"], s.get("one_day"),
-                                        self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
-                    if d.get("finished"):
-                        self._other_cache = (key, d)
-                if not d.get("finished"):
-                    continue
-                rkey = s["race_url"]
-                if rkey not in self._roster_cache and not s.get("one_day"):
-                    r = await self._job(_fetch_roster, rkey)
-                    if r:
-                        self._roster_cache[rkey] = r
-                roster = self._roster_cache.get(rkey) or {}
-                if roster:
-                    _repair_rows(d.get("results"), roster)
-                    _repair_rows(d.get("gc"), roster)
-                label = (_short_race(s["race_name"], 34) if s.get("one_day")
-                         else f"Etappe {s['idx']} \u00b7 {_short_race(s['race_name'], 34)}")
-                if s.get("women") and not _noemt_dames(s["race_name"]):
-                    label += " \u00b7 Dames"
-                return {"other_label": label,
-                        "other_result": (d.get("results") or [])[:self._opt(CONF_RESULT_N)],
-                        "other_gc": (d.get("gc") or [])[:5]}
-        return leeg
+    async def _stage_uitslag(self, s):
+        """Uitslag + standen van \u00e9\u00e9n etappe van een andere koers.
+
+        Alleen een afgeronde etappe komt in de cache: een etappe die nog
+        bezig is moet elke ronde opnieuw opgehaald worden.
+        """
+        url = s["stage_url"]
+        if url in self._other_cache:
+            return self._other_cache[url]
+        d = await self._job(_fetch_stage, url, s.get("one_day"),
+                            self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
+        if not d.get("finished"):
+            return d
+        rkey = s["race_url"]
+        if rkey not in self._roster_cache and not s.get("one_day"):
+            r = await self._job(_fetch_roster, rkey)
+            if r:
+                self._roster_cache[rkey] = r
+        roster = self._roster_cache.get(rkey) or {}
+        if roster:
+            for _k in ("results", "gc", "points_top", "kom_top", "youth_top"):
+                _repair_rows(d.get(_k), roster)
+        self._other_cache[url] = d
+        return d
+
+    async def _race_entry(self, ev, stages, today):
+        """E\u00e9n koersblok voor de pop-up: welke etappe eraan komt, plus de
+        laatste uitslag en de standen.
+
+        Het hoogteprofiel zit er bewust niet in. Dat staat al in `upcoming`,
+        waar elke etappe met `race_key` vertelt bij welke koers hij hoort;
+        de kaart zoekt het daar op. Twee keer meesturen zou de attributen
+        onnodig groter maken.
+        """
+        naam = ev["name"]
+        dames = bool(ev.get("women")) and not _noemt_dames(naam)
+        entry = {
+            "key": _race_slug(ev["url"]),
+            "label": _short_race(naam, 24) + (" \u00b7 Dames" if dames else ""),
+            "race_name": naam,
+            "women": bool(ev.get("women")),
+            "eyebrow": "",
+            "show_state": "",
+            "last_stage_label": "",
+            "last_result": [],
+            "gc_top": [],
+            "points_top": [],
+            "kom_top": [],
+            "youth_top": [],
+        }
+
+        vandaag = next((s for s in stages if s["date"] == today), None)
+        klaar = [s for s in stages if s["date"] < today]
+        toon = vandaag or next((s for s in stages if s["date"] > today), None)
+
+        # dezelfde rollover als op de tegel: is de etappe van vandaag klaar,
+        # dan is dat de laatste uitslag en toont het blok de volgende
+        laatst, data = None, None
+        if vandaag is not None:
+            d = await self._stage_uitslag(vandaag)
+            if d.get("finished"):
+                laatst, data = vandaag, d
+                toon = next((s for s in stages if s["date"] > today), None)
+        if data is None and klaar:
+            d = await self._stage_uitslag(klaar[-1])
+            if d.get("finished"):
+                laatst, data = klaar[-1], d
+
+        if toon is not None:
+            entry["show_state"] = _show_state_for(toon["date"], today)
+            entry["eyebrow"] = (_short_race(toon["race_name"], 26) if toon.get("one_day")
+                                else f"Etappe {toon['idx']} \u00b7 {_short_race(toon['race_name'])}")
+            if dames:
+                entry["eyebrow"] += " \u00b7 Dames"
+        if data is not None:
+            entry["last_stage_label"] = (
+                _short_race(laatst["race_name"], 34) if laatst.get("one_day")
+                else f"Etappe {laatst['idx']} \u00b7 {_short_race(laatst['race_name'], 34)}")
+            entry["last_result"] = (data.get("results") or [])[:self._opt(CONF_RESULT_N)]
+            entry["gc_top"] = (data.get("gc") or [])[:self._opt(CONF_GC_N)]
+            entry["points_top"] = data.get("points_top") or []
+            entry["kom_top"] = data.get("kom_top") or []
+            entry["youth_top"] = data.get("youth_top") or []
+        return entry
+
+    async def _races_block(self, primair, andere, today):
+        """De koersen die de pop-up naast elkaar zet.
+
+        De eerste is de koers die ook op de tegel staat; die staat in de
+        kaart standaard open en heeft geen eigen blok nodig, want al zijn
+        gegevens staan al in de gewone attributen \u2014 vandaar `primary`.
+
+        `other_label`/`other_result`/`other_gc` blijven er voor kaarten van
+        v\u00f3\u00f3r deze opzet; ze herhalen de eerste andere koers met een uitslag.
+        """
+        races = [dict(primair, primary=True)]
+        legacy = {"other_label": "", "other_result": [], "other_gc": []}
+        for _d, _g, _w, _i, ev, st in andere[:MAX_ANDERE_KOERSEN]:
+            try:
+                blok = await self._race_entry(ev, st, today)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Koersblok mislukt voor %s: %s", ev.get("url"), err)
+                continue
+            races.append(blok)
+            if not legacy["other_label"] and blok["last_result"]:
+                legacy = {"other_label": blok["last_stage_label"],
+                          "other_result": blok["last_result"],
+                          "other_gc": blok["gc_top"][:5]}
+        return dict(legacy, races=races)
 
     def _gpx_rang(self, s):
         """0 = hoogteprofiel beschikbaar, 1 = (waarschijnlijk) niet."""
@@ -1679,6 +1760,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
         sd = s["date"]
         e["date"] = sd.isoformat()
         e["show_state"] = _show_state_for(sd, today)
+        # waar dit etappeprofiel bij hoort; de kaart zoekt er per koersblok
+        # in de pop-up de eigen etappes mee op
+        e["race_key"] = _race_slug(s["race_url"])
         if s.get("one_day"):
             e["eyebrow"] = _short_race(s["race_name"], 26)
         else:
@@ -1758,6 +1842,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._gpx_beschikbaar.clear()
                 self._channels_cache = None
                 self._sprints_cache = None
+                self._other_cache.clear()
                 self._prevrank_cache = None
                 self._names_cache.clear()
                 self._prose_cache.clear()
@@ -1916,8 +2001,15 @@ class CyclingCoordinator(DataUpdateCoordinator):
                                       shown.get("idx"), shown.get("one_day"))
             self._sprints_cache = (skey, sprints)
 
-        # dag-uitslag van de andere koers die tegelijk bezig is
-        ander = await self._other_block(andere_koersen, today)
+        # de aanklikbare koersen in de pop-up: eerst de getoonde koers, dan
+        # de andere die tegelijk lopen, elk met hun eigen uitslag en standen
+        _dames = bool(shown.get("women")) and not _noemt_dames(shown["race_name"])
+        ander = await self._races_block(
+            {"key": _race_slug(shown["race_url"]),
+             "label": _short_race(shown["race_name"], 24) + (" · Dames" if _dames else ""),
+             "race_name": shown["race_name"],
+             "women": bool(shown.get("women"))},
+            andere_koersen, today)
 
         # ── Status-pill + eyebrow ─────────────────────────────
         sd = shown["date"]

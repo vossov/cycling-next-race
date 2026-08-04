@@ -8,8 +8,10 @@ Zowel de mannen- als de vrouwen-WorldTour worden gevolgd — op dit moment
 alleen die twee kalenders; de opzet laat ruimte om er later andere koersen
 naast te zetten. Koersen tegelijk? Dan toont de tegel er één: eerst de
 eerstvolgende etappe, dan de koers met een hoogteprofiel, en bij gelijke
-stand de mannen. De andere koers verschijnt met zijn dag-uitslag in de
-pop-up.
+stand de mannen. De andere koers is in de pop-up aan te klikken: bovenin
+staat een knop per koers, en je krijgt er hetzelfde volledige beeld van —
+etappe, komende dagen, uitslag en klassementen. De koers van de tegel staat
+standaard open.
 
 ## Wat het laat zien
 
@@ -91,6 +93,10 @@ De sensor wordt vanzelf gevonden.
 | `view` | `profile` | `profile` toont het hoogteprofiel, `countdown` een regel met het aftellen |
 | `visible_days` | `2` (`0` bij `countdown`) | vanaf hoeveel dagen voor de koers de kaart verschijnt; `0` is altijd |
 | `details` | `true` | een tik opent het detailvenster |
+
+Lopen er meerdere koersen tegelijk, dan staan ze in dat detailvenster als
+knoppen naast elkaar; de koers van de tegel staat open en de andere zijn
+één tik ver. Is er maar één koers, dan is er niets extra's te zien.
 
 ### Voorbeelden
 

@@ -15,6 +15,9 @@
  *                 Standaard 2 bij profile en 0 bij countdown
  *   details       true (standaard) opent bij een tik het volledige overzicht
  *
+ * Lopen er meerdere koersen tegelijk, dan staan ze in dat overzicht als
+ * knoppen naast elkaar; de koers van de tegel staat open.
+ *
  * always_show uit oudere configuraties blijft werken en betekent
  * visible_days: 0.
  *
@@ -125,6 +128,66 @@ function aftelling(a) {
       <div class="aftel-wanneer ${live ? 'live' : ''}">${esc(wanneer)}</div>
     </div>
   `;
+}
+
+/* ── koersen naast elkaar ────────────────────────────────────────── */
+
+/* De sensor kan meerdere koersen tegelijk aanbieden (mannen en vrouwen
+ * koersen vaak op dezelfde dag). Die staan in het attribuut `races`: de
+ * eerste is de koers die ook op de tegel staat en heeft `primary: true`,
+ * want al zijn gegevens staan al in de gewone attributen. De andere
+ * dragen hun eigen uitslag en standen mee; hun hoogteprofiel staat in
+ * `upcoming`, waar elke etappe met `race_key` bij een koers hoort. */
+
+/** De koersen uit de attributen; altijd minstens één. */
+function koersen(a) {
+  const lijst = a.races;
+  if (lijst && lijst.length) return lijst;
+  return [{ primary: true, race_name: a.race_name || '', label: a.race_name || 'Wielrennen' }];
+}
+
+/** De komende etappes die bij deze koers horen. */
+function komendVoor(a, race, meerdere) {
+  const alles = a.upcoming || [];
+  if (!meerdere || !race.key) return alles;
+  // een sensor van vóór race_key: dan is er niets te filteren en blijft
+  // de volledige lijst staan, zoals altijd
+  if (!alles.some((u) => u.race_key)) return alles;
+  return alles.filter((u) => u.race_key === race.key);
+}
+
+/** Alles van één koers: profiel, komende dagen, uitslag en klassementen. */
+function koersblok(a, race, meerdere) {
+  const eigen = komendVoor(a, race, meerdere);
+  // de getoonde etappe van de tegelkoers staat niet in upcoming; die van een
+  // andere koers is er juist de eerste van, en hoort dus niet nog eens
+  // onder "Komende dagen"
+  const profiel = race.primary ? a : eigen[0];
+  const komend = race.primary ? eigen : eigen.slice(1);
+  const u = race.primary ? a : race;
+
+  const delen = [
+    profiel ? svgDetail({ attributes: profiel }) : '',
+    race.primary ? zenders(a.channels_detail) : '',
+    komend.length
+      ? `<section><h3>Komende dagen</h3>${svgKomend({ attributes: { upcoming: komend } })}</section>`
+      : '',
+    tijdlijst(u.last_stage_label || 'Uitslag', u.last_result),
+    tijdlijst('Algemeen klassement', u.gc_top, { verschillen: true }),
+    puntenlijst('Puntenklassement', u.points_top),
+    puntenlijst('Bergklassement', u.kom_top),
+    tijdlijst('Jongerenklassement', u.youth_top, { verschillen: true }),
+  ];
+  // alleen bij de tegelkoers: de losse uitslag van een oudere sensor, die
+  // anders dubbel zou staan met het eigen blok van die koers
+  if (race.primary && !meerdere) {
+    delen.push(tijdlijst(a.other_label || '', a.other_result));
+  }
+
+  const inhoud = delen.join('');
+  return inhoud.trim()
+    ? inhoud
+    : '<div class="leeg">Nog geen gegevens voor deze koers.</div>';
 }
 
 /** Tv-zenders met logo en uitzendtijd. */
@@ -306,6 +369,19 @@ const STIJL = `
   }
   .inhoud { padding: 0 18px 18px; }
 
+  /* de aanklikbare koersen; alleen zichtbaar als er meer dan één is */
+  .koersen { display: flex; flex-wrap: wrap; padding: 4px 18px 0; }
+  /* geen gap: die werkt pas vanaf Chrome 84 */
+  .koersen > * + * { margin-left: 6px; }
+  .koers {
+    border: 1px solid var(--divider-color, #444); background: none;
+    color: inherit; font: inherit; font-size: 13px; font-weight: 600;
+    padding: 5px 12px; margin-bottom: 6px; border-radius: 14px;
+    cursor: pointer; opacity: .65; white-space: nowrap;
+  }
+  .koers.aan { background: #E4572E; border-color: #E4572E; color: #fff; opacity: 1; }
+  .blok.uit { display: none; }
+
   section { margin-top: 14px; }
   h3 { margin: 0 0 6px; font-size: 14px; font-weight: 700; }
   ol { list-style: none; margin: 0; padding: 0; font-size: 13.5px; }
@@ -426,34 +502,64 @@ class CyclingNextRaceCard extends HTMLElement {
       dlg.onclick = (e) => {
         if (e.target === dlg) dlg.close();
       };
+      this._koersknoppen(dlg, a);
     }
   }
 
   _dialoog(a) {
-    const entity = { attributes: a };
-    const komend = (a.upcoming || []).length
-      ? `<section><h3>Komende dagen</h3>${svgKomend(entity)}</section>`
+    const races = koersen(a);
+    const meerdere = races.length > 1;
+
+    // koersen mét naam eerst noemen in de kop; die volgt de keuze
+    const keuze = meerdere
+      ? `<div class="koersen">${races
+          .map(
+            (r, i) =>
+              `<button class="koers${i === 0 ? ' aan' : ''}" data-i="${i}">` +
+              `${esc(r.label || r.race_name || 'Koers')}</button>`
+          )
+          .join('')}</div>`
       : '';
 
+    const blokken = races
+      .map(
+        (r, i) =>
+          `<div class="blok${i === 0 ? '' : ' uit'}">${koersblok(a, r, meerdere)}</div>`
+      )
+      .join('');
+
+    const kop = races[0].race_name || a.race_name || 'Wielrennen';
     return `
       <dialog>
         <div class="kop">
-          <span>${esc(a.race_name || 'Wielrennen')}</span>
+          <span class="titel">${esc(kop)}</span>
           <button class="sluit" aria-label="Sluiten">&times;</button>
         </div>
-        <div class="inhoud">
-          ${svgDetail(entity)}
-          ${zenders(a.channels_detail)}
-          ${komend}
-          ${tijdlijst(a.last_stage_label || 'Uitslag', a.last_result)}
-          ${tijdlijst('Algemeen klassement', a.gc_top, { verschillen: true })}
-          ${puntenlijst('Puntenklassement', a.points_top)}
-          ${puntenlijst('Bergklassement', a.kom_top)}
-          ${tijdlijst('Jongerenklassement', a.youth_top, { verschillen: true })}
-          ${tijdlijst(a.other_label || '', a.other_result)}
-        </div>
+        ${keuze}
+        <div class="inhoud">${blokken}</div>
       </dialog>
     `;
+  }
+
+  /** De koersknoppen bovenin de pop-up laten wisselen van blok. */
+  _koersknoppen(dlg, a) {
+    const knoppen = dlg.querySelectorAll('.koers');
+    if (!knoppen.length) return;
+    const blokken = dlg.querySelectorAll('.blok');
+    const titel = dlg.querySelector('.titel');
+    const races = koersen(a);
+    for (let i = 0; i < knoppen.length; i++) {
+      knoppen[i].onclick = () => {
+        for (let j = 0; j < knoppen.length; j++) {
+          knoppen[j].className = i === j ? 'koers aan' : 'koers';
+          blokken[j].className = i === j ? 'blok' : 'blok uit';
+        }
+        const r = races[i] || {};
+        if (titel) titel.textContent = r.race_name || r.label || '';
+        // een langere lijst begint bij de gekozen koers weer bovenaan
+        dlg.scrollTop = 0;
+      };
+    }
   }
 }
 
