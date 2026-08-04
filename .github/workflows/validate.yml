@@ -25,6 +25,36 @@ jobs:
           category: integration
           ignore: brands
 
+  versie:
+    # Zonder ophoging meldt Home Assistant na een update nog de oude versie
+    # en weet je bij een probleem niet wat er draait. Alleen op een pull
+    # request: daar is bekend waartegen we vergelijken.
+    name: Versie opgehoogd
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Wie de integratie wijzigt hoogt het versienummer op
+        env:
+          BASIS: ${{ github.base_ref }}
+        run: |
+          git fetch --quiet origin "$BASIS"
+          if git diff --quiet "origin/$BASIS...HEAD" -- custom_components/; then
+            echo "niets aan de integratie gewijzigd; het versienummer mag blijven staan"
+            exit 0
+          fi
+          lees() { python3 -c "import json,sys; print(json.load(sys.stdin)['version'])"; }
+          pad=custom_components/cycling_next_race/manifest.json
+          nu=$(lees < "$pad")
+          was=$(git show "origin/$BASIS:$pad" | lees)
+          echo "was: $was, nu: $nu"
+          if [ "$was" = "$nu" ]; then
+            echo "::error::de integratie is gewijzigd maar manifest.json staat nog op $was — hoog version in manifest.json én VERSION in const.py op (tests/test_kaart.py bewaakt dat die twee gelijk blijven)"
+            exit 1
+          fi
+
   tests:
     name: Tests
     runs-on: ubuntu-latest

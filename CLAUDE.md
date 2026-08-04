@@ -24,6 +24,13 @@ tv-zenders. Zowel mannen- als vrouwen-WorldTour.
 - **Uitbrengen gaat met een versienummer, nooit met een commit-hash.** Zie
   "Uitbrengen" verderop. Dit is een algemene voorkeur van de eigenaar en
   geldt voor al zijn projecten.
+- **Elke wijziging aan de integratie hoogt het versienummer op.** In
+  dezelfde commit, in `manifest.json` én `const.py`, en die twee blijven
+  gelijk. Niet pas bij het taggen: zonder ophoging meldt Home Assistant nog
+  de oude versie en weet je bij een probleem niet wat er draait. Patch bij
+  een reparatie, minor bij iets nieuws. Alleen aan README, CLAUDE.md of
+  tests gezeten? Dan hoeft het niet — daar merkt een draaiende installatie
+  niets van.
 - Degradeer netjes: een mislukte scrape logt op debug-niveau en geeft een lege
   lijst terug, nooit een exception naar boven.
 
@@ -282,9 +289,15 @@ de laatste commit en staat er een hash in de updatekaart. `.github/workflows/
 release.yml` maakt de release zodra een tag `vX.Y.Z` wordt gepusht, en weigert
 als die tag niet overeenkomt met `version` in de manifest.
 
-Verhoog dus altijd `version` in `manifest.json` én `VERSION` in `const.py`
-(`tests/test_kaart.py` bewaakt dat ze gelijk zijn), zet dat op `main`, en tag
-daarna pas.
+Het versienummer staat op twee plekken: `version` in `manifest.json` en
+`VERSION` in `const.py`. `tests/test_kaart.py` bewaakt dat ze gelijk zijn.
+Ophogen doe je in de commit met de wijziging zelf (zie "Werkafspraken"), niet
+pas hier; taggen is dan alleen nog het nummer dat er al staat vastleggen.
+
+Uitbrengen is dus: zet de wijziging mét ophoging op `main` en tag daarna
+`vX.Y.Z` met datzelfde nummer. De workflow weigert een tag die niet
+overeenkomt met de manifest — anders installeert HACS `v0.5.0` terwijl Home
+Assistant `0.4.0` rapporteert.
 
 ## Openstaande punten
 
