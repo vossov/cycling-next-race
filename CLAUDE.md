@@ -48,7 +48,8 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
   `async_add_executor_job`, want procyclingstats en urllib zijn blokkerend.
 - Caches op de coordinator (per dag of per koers geleegd bij een nieuwe dag):
   `_elev_cache`, `_names_cache`, `_channels_cache`, `_sprints_cache`,
-  `_prevrank_cache`, `_roster_cache` (dict per koers), `_other_cache`.
+  `_prevrank_cache`, `_roster_cache` (dict per koers), `_other_cache` (dict
+  per etappe van de andere koersen; alleen afgeronde etappes komen erin).
   `_elev_cache` heeft `(etappe, aantal punten)` als sleutel: dezelfde etappe
   wordt als komende dag met 60 punten opgehaald en als getoonde etappe met
   200. Stond alleen de URL in de sleutel, dan kreeg het grote profiel de
@@ -64,8 +65,23 @@ Mannen en vrouwen koersen vaak tegelijk. De tegel toont er één, gekozen op:
 2. koers mét hoogteprofiel (`_gpx_rang`)
 3. bij gelijke stand de mannen
 
-De tweede koers komt terug via `_other_block` → `other_label`, `other_result`,
-`other_gc`. Het overzicht "Komende dagen" toont álle koersen door elkaar.
+De andere koersen komen terug via `_races_block` → het attribuut `races`: een
+lijst met de getoonde koers voorop (`primary: true`) en daarachter hoogstens
+`MAX_ANDERE_KOERSEN` andere, elk met eigen `last_result`, `gc_top`,
+`points_top`, `kom_top` en `youth_top`. De kaart maakt daar knoppen van
+bovenin de pop-up; de eerste staat open.
+
+Een koersblok stuurt géén eigen hoogteprofiel mee. Elke etappe in `upcoming`
+draagt een `race_key`, en de kaart pakt daaruit de eerste etappe van die
+koers als profiel en de rest als "Komende dagen". Dat scheelt een tweede
+profiel in de attributen, en het is meteen de reden dat "Komende dagen" per
+koers wordt opgesplitst zodra er meer dan één is — bij één koers blijft dat
+overzicht alle koersen door elkaar tonen, zoals eerder.
+
+`other_label`, `other_result` en `other_gc` blijven bestaan voor kaarten van
+vóór deze opzet; ze herhalen de eerste andere koers met een uitslag. De
+meegeleverde kaart tekent ze alleen nog als er één koers is, anders zouden
+ze dubbel staan met het eigen blok van die koers.
 
 ## Bronnen en URL-patronen
 
@@ -163,6 +179,14 @@ profieltjes in "Komende dagen" zijn maar een paar pixels hoog.
 Onder de 16 kB komt alleen door `upcoming` verder in te perken: minder
 etappes, of de profieltjes eruit. Beide kosten iets zichtbaars, dus dat is
 een keuze en geen vanzelfsprekendheid.
+
+`races` komt daar bovenop: een koersblok is ruwweg 4 kB (uitslag, algemeen,
+punten, berg, jongeren) en er passen er `MAX_ANDERE_KOERSEN` naast de
+getoonde. In de praktijk is dat er één — mannen en vrouwen — dus zo'n 28 kB.
+Bewust géén hoogteprofiel in het blok; dat komt uit `upcoming` via
+`race_key`, anders was het een stuk meer. Wordt het te veel, dan is de
+knop `MAX_ANDERE_KOERSEN` op 1 zetten de goedkoopste stap. **Niet gemeten in
+een draaiende Home Assistant, alleen geschat.**
 
 ## Diagnose-attributen
 

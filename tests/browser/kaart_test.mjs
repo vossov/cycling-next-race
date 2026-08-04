@@ -27,14 +27,41 @@ const attrs = {
     { name: 'Peyresourde', category: '1', km_to_finish: 12.4, top_m: 1569, length_km: 9.7, steepness_pct: 7.8 },
   ],
   sprints: [56.1],
-  // velden zoals _upcoming_entry ze zet: eyebrow, date, show_state + etappegegevens
+  // velden zoals _upcoming_entry ze zet: eyebrow, date, show_state, race_key
+  // + etappegegevens
   upcoming: [
     { date: '2026-07-18', eyebrow: 'Etappe 15 · Tour de France', show_state: 'Morgen',
+      race_key: 'tour-de-france',
       departure: 'Loudenvielle', arrival: 'Plateau de Beille', distance_km: 197,
       vertical_m: 2400, profile_score: 402, watchability: 8 },
     { date: '2026-07-19', eyebrow: 'Etappe 4 · Tour de France Femmes · Dames', show_state: 'Overmorgen',
+      race_key: 'tour-de-france-femmes',
       departure: 'Saumur', arrival: 'Poitiers', distance_km: 130, vertical_m: 1500,
       profile_score: 120, watchability: 5 },
+    { date: '2026-07-20', eyebrow: 'Etappe 5 · Tour de France Femmes · Dames', show_state: 'Za 20 jul',
+      race_key: 'tour-de-france-femmes',
+      departure: 'Poitiers', arrival: 'Limoges', distance_km: 152, vertical_m: 1900,
+      profile_score: 180, watchability: 6 },
+  ],
+  // zoals _races_block ze zet: de tegelkoers eerst (primary), daarna de
+  // koersen die tegelijk lopen met hun eigen uitslag en standen
+  races: [
+    { primary: true, key: 'tour-de-france', label: 'Tour de France',
+      race_name: 'Tour de France', women: false },
+    { key: 'tour-de-france-femmes', label: 'Tour de France Femmes · Dames',
+      race_name: 'Tour de France Femmes', women: true,
+      eyebrow: 'Etappe 4 · Tour de France Femmes · Dames', show_state: 'Overmorgen',
+      last_stage_label: 'Etappe 3 · Tour de France Femmes',
+      last_result: [
+        { rank: 1, rider: 'Vollering Demi', team: 'FDJ', time: '3:02:11' },
+        { rank: 2, rider: 'Kopecky Lotte', team: 'SD Worx', time: '3:02:11' },
+      ],
+      gc_top: [
+        { rank: 1, rider: 'Vollering Demi', time: '9:14:02', move: 1, gain_s: -22 },
+        { rank: 2, rider: 'Kopecky Lotte', time: '9:14:36', move: -1, gain_s: 22 },
+      ],
+      points_top: [{ rank: 1, rider: 'Wiebes Lorena', points: 120, move: 0, gain: 25 }],
+      kom_top: [], youth_top: [] },
   ],
   last_stage_label: 'Etappe 13 · uitslag',
   last_result: [
@@ -58,9 +85,13 @@ const attrs = {
   ],
 };
 
+const { races: _races, ...zonderKoerslijst } = attrs;
+
 const gevallen = {
   volledig: attrs,
   'geen profiel': { ...attrs, elevation: [], climbs: [], sprints: [] },
+  // een sensor van vóór `races`: de pop-up hoort er hetzelfde uit te zien
+  'oude sensor': zonderKoerslijst,
   'alleen tegel': { show_state: 'Morgen', days_until: 1, eyebrow: 'Ronde van Polen', distance_km: 180 },
   leeg: { show_state: 'Klaar' },
 };
@@ -128,6 +159,51 @@ for (const [naam, a] of Object.entries(gevallen)) {
   else console.log(`ok    ${naam} — ${uitkomst.svgs} svg, ${uitkomst.secties} secties, ${uitkomst.html_lengte} tekens`);
 
   if (naam === 'volledig') await page.screenshot({ path: 'kaart-volledig.png', fullPage: true });
+}
+
+// ── koersen aanklikken in de pop-up ──────────────────────────────
+{
+  const uit = await page.evaluate(([alle]) => {
+    document.getElementById('doel').innerHTML = '';
+    const kaart = document.createElement('cycling-next-race-card');
+    kaart.setConfig({ entity: 'sensor.cycling_next_race' });
+    document.getElementById('doel').appendChild(kaart);
+    kaart.hass = { states: { 'sensor.cycling_next_race': {
+      state: 'Tour de France', last_updated: 'vast', attributes: alle } } };
+    const r = kaart.shadowRoot;
+    const dlg = r.querySelector('dialog');
+    dlg.showModal();
+    const knoppen = r.querySelectorAll('.koers');
+    const blokken = r.querySelectorAll('.blok');
+    const zichtbaar = () => Array.prototype.map.call(
+      blokken, (b) => getComputedStyle(b).display !== 'none');
+    const titel = () => r.querySelector('.titel').textContent;
+
+    const start = { open: zichtbaar(), titel: titel() };
+    if (knoppen.length > 1) knoppen[1].click();
+    const na = { open: zichtbaar(), titel: titel(),
+                 tekst: blokken[1] ? blokken[1].textContent : '' };
+    return { knoppen: knoppen.length, blokken: blokken.length, start, na,
+             labels: Array.prototype.map.call(knoppen, (k) => k.textContent) };
+  }, [attrs]);
+
+  const p = [];
+  if (uit.knoppen !== 2) p.push(`${uit.knoppen} koersknoppen, verwacht 2`);
+  if (uit.blokken !== 2) p.push(`${uit.blokken} koersblokken, verwacht 2`);
+  if (String(uit.start.open) !== 'true,false')
+    p.push(`bij openen staat niet alleen de eerste koers open: ${uit.start.open}`);
+  if (uit.start.titel !== 'Tour de France')
+    p.push(`kop bij openen: "${uit.start.titel}"`);
+  if (String(uit.na.open) !== 'false,true')
+    p.push(`na de klik staat niet alleen de tweede koers open: ${uit.na.open}`);
+  if (uit.na.titel !== 'Tour de France Femmes')
+    p.push(`kop na de klik: "${uit.na.titel}"`);
+  if (uit.na.tekst.indexOf('Vollering') < 0)
+    p.push('de uitslag van de tweede koers staat niet in zijn blok');
+  if (p.length) { console.log(`FOUT  koerskeuze: ${p.join(', ')}`); mislukt++; }
+  else console.log(`ok    koerskeuze — ${uit.labels.join(' | ')}`);
+
+  await page.screenshot({ path: 'kaart-koerskeuze.png', fullPage: true });
 }
 
 // ── preview-modus: nooit verbergen ───────────────────────────────
