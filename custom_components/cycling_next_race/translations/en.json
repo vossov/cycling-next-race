@@ -20,11 +20,17 @@
           "upcoming_n": "Maximum number of upcoming stages",
           "upcoming_days": "Show upcoming stages up to (days ahead)",
           "scan_minutes": "Refresh every (minutes)",
-          "live_scan_minutes": "Refresh during a race (minutes)"
+          "live_scan_minutes": "Refresh during a race (minutes)",
+          "levels": "Levels on the dashboard",
+          "levels_popup": "Levels in the pop-up only",
+          "max_other": "Races next to the shown one in the pop-up"
         },
         "data_description": {
           "scan_minutes": "How often procyclingstats is queried outside of races.",
-          "live_scan_minutes": "During a live stage, so the peloton's position keeps up."
+          "live_scan_minutes": "During a live stage, so the peloton's position keeps up.",
+          "levels": "These levels may take the tile and also appear in the pop-up.",
+          "levels_popup": "These levels get a button in the pop-up but stay off the tile. Put ProSeries here to follow races like the Tour of Denmark without changing your dashboard.",
+          "max_other": "0 shows only the race on the tile. Every extra race costs requests at procyclingstats and room in the attributes."
         }
       }
     }

@@ -20,11 +20,17 @@
           "upcoming_n": "Maximaal aantal komende etappes",
           "upcoming_days": "Komende etappes tonen tot (dagen vooruit)",
           "scan_minutes": "Verversen elke (minuten)",
-          "live_scan_minutes": "Verversen tijdens een koers (minuten)"
+          "live_scan_minutes": "Verversen tijdens een koers (minuten)",
+          "levels": "Niveaus op het dashboard",
+          "levels_popup": "Niveaus alleen in de pop-up",
+          "max_other": "Aantal koersen naast de getoonde in de pop-up"
         },
         "data_description": {
           "scan_minutes": "Hoe vaak procyclingstats wordt geraadpleegd buiten koersen om.",
-          "live_scan_minutes": "Tijdens een live etappe, zodat de positie van het peloton meebeweegt."
+          "live_scan_minutes": "Tijdens een live etappe, zodat de positie van het peloton meebeweegt.",
+          "levels": "Deze niveaus mogen de tegel pakken en staan ook in de pop-up.",
+          "levels_popup": "Deze niveaus komen er in de pop-up als knop bij, maar blijven van de tegel af. Zet ProSeries hier neer om koersen als de Ronde van Denemarken te volgen zonder dat je dashboard verandert.",
+          "max_other": "0 laat alleen de getoonde koers zien. Elke koers erbij kost verzoeken bij procyclingstats en ruimte in de attributen."
         }
       }
     }

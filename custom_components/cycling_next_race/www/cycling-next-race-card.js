@@ -146,6 +146,33 @@ function koersen(a) {
   return [{ primary: true, race_name: a.race_name || '', label: a.race_name || 'Wielrennen' }];
 }
 
+/* De sensor geeft per koers de kleur van de leiderstrui mee (`jersey`),
+ * maar alleen waar die vaststaat. Ontbreekt hij, dan houdt de knop de
+ * gewone accentkleur — een verzonnen kleur is erger dan geen kleur. */
+
+const ACCENT = '#E4572E';
+
+/** Alleen een echte hexkleur; de rest gaat als '' de opmaak niet in. */
+function veiligeKleur(k) {
+  return /^#[0-9a-fA-F]{3,8}$/.test(String(k == null ? '' : k)) ? String(k) : '';
+}
+
+/** Zwarte of witte letters op een gekleurde knop; geel wil zwart. */
+function tekstOp(kleur) {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(kleur);
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16);
+  const helder =
+    (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return helder > 0.6 ? '#0E1520' : '#fff';
+}
+
+/** De stijl van de open knop: de leiderstrui, anders het accent. */
+function knopStijl(race) {
+  const kleur = veiligeKleur(race.jersey) || ACCENT;
+  return `background:${kleur};border-color:${kleur};color:${tekstOp(kleur)}`;
+}
+
 /** De komende etappes die bij deze koers horen. */
 function komendVoor(a, race, meerdere) {
   const alles = a.upcoming || [];
@@ -380,6 +407,13 @@ const STIJL = `
     cursor: pointer; opacity: .65; white-space: nowrap;
   }
   .koers.aan { background: #E4572E; border-color: #E4572E; color: #fff; opacity: 1; }
+  /* het stipje van de leiderstrui op een dichte knop; op de open knop staat
+     die kleur al op de knop zelf, dus daar mag het stipje weg */
+  .koers .trui {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 6px; vertical-align: middle;
+  }
+  .koers.aan .trui { display: none; }
   .blok.uit { display: none; }
 
   section { margin-top: 14px; }
@@ -513,11 +547,19 @@ class CyclingNextRaceCard extends HTMLElement {
     // koersen mét naam eerst noemen in de kop; die volgt de keuze
     const keuze = meerdere
       ? `<div class="koersen">${races
-          .map(
-            (r, i) =>
-              `<button class="koers${i === 0 ? ' aan' : ''}" data-i="${i}">` +
-              `${esc(r.label || r.race_name || 'Koers')}</button>`
-          )
+          .map((r, i) => {
+            const kleur = veiligeKleur(r.jersey);
+            // dichte knop: de kleur staat op de knop zelf; de andere krijgen
+            // een stipje, zodat de koers ook dicht herkenbaar blijft
+            const stip = kleur
+              ? `<span class="trui" style="background:${kleur}"></span>`
+              : '';
+            const stijl = i === 0 ? ` style="${knopStijl(r)}"` : '';
+            return (
+              `<button class="koers${i === 0 ? ' aan' : ''}" data-i="${i}"${stijl}>` +
+              `${stip}${esc(r.label || r.race_name || 'Koers')}</button>`
+            );
+          })
           .join('')}</div>`
       : '';
 
@@ -551,8 +593,11 @@ class CyclingNextRaceCard extends HTMLElement {
     for (let i = 0; i < knoppen.length; i++) {
       knoppen[i].onclick = () => {
         for (let j = 0; j < knoppen.length; j++) {
-          knoppen[j].className = i === j ? 'koers aan' : 'koers';
-          blokken[j].className = i === j ? 'blok' : 'blok uit';
+          const aan = i === j;
+          knoppen[j].className = aan ? 'koers aan' : 'koers';
+          // de kleur van de leiderstrui verhuist mee naar de open knop
+          knoppen[j].setAttribute('style', aan ? knopStijl(races[j] || {}) : '');
+          blokken[j].className = aan ? 'blok' : 'blok uit';
         }
         const r = races[i] || {};
         if (titel) titel.textContent = r.race_name || r.label || '';

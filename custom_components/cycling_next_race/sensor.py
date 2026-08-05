@@ -33,19 +33,24 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_GC_N,
+    CONF_LEVELS,
+    CONF_LEVELS_POPUP,
     CONF_LIVE_SCAN_MINUTES,
+    CONF_MAX_OTHER,
     CONF_RESULT_N,
     CONF_SCAN_MINUTES,
     CONF_UPCOMING_DAYS,
     CONF_UPCOMING_N,
     DEFAULT_GC_N,
     DEFAULT_LIVE_SCAN_MINUTES,
+    DEFAULT_MAX_OTHER,
     DEFAULT_RESULT_N,
     DEFAULT_SCAN_MINUTES,
     DEFAULT_UPCOMING_DAYS,
     DEFAULT_UPCOMING_N,
     DOMAIN,
     NAME,
+    NIVEAUS,
     OPTION_DEFAULTS,
 )
 
@@ -64,7 +69,37 @@ UPCOMING_DAYS = DEFAULT_UPCOMING_DAYS  # venster voor "Komende dagen"
 # Hoeveel koersen er naast de getoonde in de pop-up aanklikbaar zijn. Elke
 # koers erbij kost twee extra paginaverzoeken bij procyclingstats en ruimte
 # in de attributen; in de praktijk lopen er mannen en vrouwen tegelijk.
-MAX_ANDERE_KOERSEN = 2
+# In te stellen via `max_other`; dit is de standaard.
+MAX_ANDERE_KOERSEN = DEFAULT_MAX_OTHER
+
+# Hoeveel koersen er hoogstens tegelijk worden bekeken om te bepalen welke op
+# de tegel komt en welke er in de pop-up naast passen. Alles daarboven kost
+# alleen maar verzoeken: er staan er toch maar 1 + `max_other` in beeld.
+MAX_ACTIEVE_KOERSEN = 6
+
+# Kleur van de leiderstrui, voor de knoppen bovenin de pop-up.
+#
+# Dit is een vaste lijst, geen bron: procyclingstats geeft de kleur van een
+# trui nergens terug. Er staan daarom alleen koersen in waarvan de truikleur
+# buiten kijf staat. Een koers die er niet in staat krijgt geen kleur en
+# houdt de gewone accentkleur van de kaart — liever geen kleur dan een
+# verzonnen kleur. Eendaagse koersen hebben geen klassement en horen hier
+# dus niet thuis. Sleutel: de procyclingstats-naam van de koers.
+LEIDERSTRUI = {
+    "tour-de-france": "#F3C700",          # geel
+    "tour-de-france-femmes": "#F3C700",   # geel
+    "giro-d-italia": "#E6007E",           # roze
+    "giro-d-italia-women": "#E6007E",     # roze
+    "vuelta-a-espana": "#D0021B",         # rood
+    "vuelta-espana-femenina": "#D0021B",  # rood
+    "paris-nice": "#F3C700",              # geel
+    "tirreno-adriatico": "#0E5FA8",       # blauw
+    "dauphine": "#F3C700",                # geel
+    "tour-de-suisse": "#F3C700",          # geel
+    "tour-de-romandie": "#F3C700",        # geel
+    "tour-down-under": "#C8862B",         # oker
+    "uae-tour": "#D0021B",                # rood
+}
 
 MONUMENTS = {
     "milano-sanremo",
@@ -169,6 +204,28 @@ def _race_slug(url: str) -> str:
     return m.group(1) if m else ""
 
 
+def _leiderstrui(race_url: str) -> str:
+    """Kleur van de leiderstrui van een koers, of '' als die niet vaststaat."""
+    return LEIDERSTRUI.get(_race_slug(race_url or ""), "")
+
+
+def _lees_niveaus(waarde) -> list[str]:
+    """Opgeslagen niveaus -> lijst met bekende nummers, zonder dubbelen.
+
+    Home Assistant slaat een keuzelijst als lijst op, maar een oude of met
+    de hand bewerkte opslag kan er tekst van maken; onbekende nummers gaan
+    eruit, want die leveren toch niets op.
+    """
+    if not isinstance(waarde, (list, tuple, set)):
+        waarde = re.split(r"[,;\s]+", str(waarde or ""))
+    uit = []
+    for deel in waarde:
+        niveau = str(deel).strip()
+        if niveau in NIVEAUS and niveau not in uit:
+            uit.append(niveau)
+    return uit
+
+
 def _noemt_dames(naam):
     """Bevat de koersnaam zelf al een aanduiding dat het de vrouwenkoers is?"""
     return bool(re.search(
@@ -219,8 +276,13 @@ def _parse_start_hhmm(start_time: str | None):
 # Blocking scrape-functies — draaien via async_add_executor_job
 # ──────────────────────────────────────────────────────────────
 
-def _fetch_calendar(year: int) -> list[dict]:
-    """Haal de WorldTour-kalender op van procyclingstats.com."""
+def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict]:
+    """Kalender van de gekozen niveaus ophalen van procyclingstats.com.
+
+    Geeft `(koersen, telling)` terug; de telling is het aantal koersen per
+    niveau en gaat als `levels_diag` naar de attributen, zodat een niveau
+    dat niets oplevert in de interface te zien is.
+    """
     from procyclingstats.scraper import Scraper
 
     class RacesCalendar(Scraper):
@@ -247,14 +309,20 @@ def _fetch_calendar(year: int) -> list[dict]:
             return out
 
     races = []
-    # circuit 1 = UCI WorldTour (mannen), circuit 24 = UCI Women's WorldTour
-    for circuit, vrouwen in ((1, False), (24, True)):
+    telling = {}
+    for niveau in niveaus or []:
+        info = NIVEAUS.get(str(niveau))
+        if info is None:
+            _LOGGER.warning("Onbekend niveau %s, overgeslagen", niveau)
+            continue
+        gevonden = 0
         try:
             cal = RacesCalendar(
-                f"races.php?year={year}&circuit={circuit}&class=&filter=Filter")
+                f"races.php?year={year}&circuit={niveau}&class=&filter=Filter")
             rijen = cal.races()
         except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("Kalender circuit %s ophalen mislukt: %s", circuit, err)
+            _LOGGER.warning("Kalender van %s ophalen mislukt: %s", info["naam"], err)
+            telling[info["naam"]] = 0
             continue
         for r in rijen:
             m = re.findall(r"(\d{2})\.(\d{2})", r["date"])
@@ -267,11 +335,31 @@ def _fetch_calendar(year: int) -> list[dict]:
             start = date(year, int(m[0][1]), int(m[0][0]))
             end = date(year, int(m[-1][1]), int(m[-1][0])) if len(m) > 1 else start
             races.append({"name": r["name"], "url": u.group(1),
-                          "start": start, "end": end, "women": vrouwen})
-    races.sort(key=lambda x: (x["start"], x["women"]))
-    _LOGGER.debug("Kalender: %s koersen (%s bij de vrouwen)",
-                  len(races), sum(1 for r in races if r["women"]))
-    return races
+                          "start": start, "end": end,
+                          "women": info["vrouwen"], "level": str(niveau)})
+            gevonden += 1
+        telling[info["naam"]] = gevonden
+        if not gevonden:
+            # een verkeerd circuitnummer levert stil een lege lijst op; dat
+            # hoort zichtbaar te zijn en niet als "geen koersen deze week"
+            _LOGGER.warning(
+                "Niveau %s (circuit %s) levert geen koersen op%s",
+                info["naam"], niveau,
+                "" if info["zeker"] else
+                " — dit circuitnummer is niet geverifieerd, mogelijk klopt het niet")
+    # dubbele koersen kunnen niet: een koers zit bij PCS in één circuit. Toch
+    # ontdubbelen, want twee blokken van dezelfde koers is lelijker dan de
+    # paar regels die het kost.
+    gezien, uniek = set(), []
+    for r in races:
+        if r["url"] in gezien:
+            continue
+        gezien.add(r["url"])
+        uniek.append(r)
+    uniek.sort(key=lambda x: (x["start"], x["women"]))
+    _LOGGER.debug("Kalender: %s koersen (%s)", len(uniek),
+                  ", ".join(f"{n}: {a}" for n, a in telling.items()))
+    return uniek, telling
 
 
 def _event_stages(event: dict) -> list[dict]:
@@ -1516,6 +1604,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
                          update_interval=self._scan_interval)
         self._calendar: list[dict] | None = None
         self._calendar_fetched: date | None = None
+        # aantal koersen per niveau uit de laatste kalender; gaat als
+        # `levels_diag` naar de attributen
+        self._levels_diag: dict = {}
         self._stages_cache: dict[str, tuple[date, list[dict]]] = {}
         self._climbs_cache: dict[str, dict] = {}
         self._upcoming_cache: dict[str, dict] = {}
@@ -1538,6 +1629,31 @@ class CyclingCoordinator(DataUpdateCoordinator):
             return int(waarde)
         except (TypeError, ValueError):
             return OPTION_DEFAULTS[sleutel]
+
+    def _opt_niveaus(self, sleutel: str) -> list[str]:
+        """Een keuzelijst met niveaus uit het optiescherm."""
+        return _lees_niveaus(self._options.get(sleutel, OPTION_DEFAULTS[sleutel]))
+
+    @property
+    def _niveaus_tegel(self) -> list[str]:
+        """Niveaus die op de tegel mogen komen (en dus ook in de pop-up)."""
+        return self._opt_niveaus(CONF_LEVELS) or list(OPTION_DEFAULTS[CONF_LEVELS])
+
+    @property
+    def _niveaus_alles(self) -> list[str]:
+        """Alle niveaus die worden opgehaald: die van de tegel plus de pop-up."""
+        alles = list(self._niveaus_tegel)
+        for niveau in self._opt_niveaus(CONF_LEVELS_POPUP):
+            if niveau not in alles:
+                alles.append(niveau)
+        return alles
+
+    def _mag_op_tegel(self, ev: dict) -> bool:
+        """Mag deze koers de tegel op, of hoort hij alleen in de pop-up?"""
+        niveau = str(ev.get("level", ""))
+        # een koers zonder niveau (kalender van een oudere versie) sluiten
+        # we niet uit; dat zou de tegel leeg laten
+        return not niveau or niveau in self._niveaus_tegel
 
     @property
     def _scan_interval(self) -> timedelta:
@@ -1608,6 +1724,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
             "label": _short_race(naam, 24) + (" \u00b7 Dames" if dames else ""),
             "race_name": naam,
             "women": bool(ev.get("women")),
+            # kleur van de leiderstrui voor de knop in de pop-up; leeg als
+            # die niet vaststaat, dan houdt de knop de accentkleur
+            "jersey": _leiderstrui(ev["url"]),
             "eyebrow": "",
             "show_state": "",
             "last_stage_label": "",
@@ -1664,7 +1783,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         """
         races = [dict(primair, primary=True)]
         legacy = {"other_label": "", "other_result": [], "other_gc": []}
-        for _d, _g, _w, _i, ev, st in andere[:MAX_ANDERE_KOERSEN]:
+        for _d, _g, _w, _i, ev, st in andere[:self._opt(CONF_MAX_OTHER)]:
             try:
                 blok = await self._race_entry(ev, st, today)
             except Exception as err:  # noqa: BLE001
@@ -1775,22 +1894,31 @@ class CyclingCoordinator(DataUpdateCoordinator):
         return e
 
     async def _build_upcoming(self, cur_idx: int, shown: dict,
-                              future: list[dict], today: date) -> list[dict]:
+                              future: list[dict], today: date,
+                              getoond: set | None = None) -> list[dict]:
         shown_url = shown.get("stage_url")
         cutoff = today + timedelta(days=self._opt(CONF_UPCOMING_DAYS))
         pool = [s for s in future
                 if s["stage_url"] != shown_url and today <= s["date"] <= cutoff]
         # alle koersen die in het venster vallen, ook koersen die al eerder
         # begonnen dan de koers op de tegel (mannen en vrouwen door elkaar)
-        for i, ev in enumerate(self._calendar):
+        koersen = list(self._calendar or [])
+        for i, ev in enumerate(koersen):
             if i == cur_idx or ev["end"] < today or ev["start"] > cutoff:
+                continue
+            # een koers van een niveau dat alleen in de pop-up staat en die
+            # daar geen knop heeft gekregen, hoeft ook geen etappes in
+            # `upcoming`: die zijn nergens te zien en verdringen wel de
+            # koersen die je wél ziet
+            if (getoond is not None and not self._mag_op_tegel(ev)
+                    and _race_slug(ev["url"]) not in getoond):
                 continue
             pool.extend([s for s in await self._stages_for(ev, today)
                          if s["stage_url"] != shown_url
                          and today <= s["date"] <= cutoff])
         if not pool:   # niets binnen het venster -> pak de eerstvolgende koers(en)
             later = []
-            for ev in self._calendar:
+            for ev in koersen:
                 if ev["end"] < today:
                     continue
                 later.extend([s for s in await self._stages_for(ev, today)
@@ -1834,7 +1962,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
         if (self._calendar is None or self._calendar_fetched is None
                 or (today - self._calendar_fetched) >= timedelta(days=1)):
             try:
-                self._calendar = await self._job(_fetch_calendar, today.year)
+                self._calendar, self._levels_diag = await self._job(
+                    _fetch_calendar, today.year, self._niveaus_alles)
                 self._calendar_fetched = today
                 self._stages_cache.clear()
                 self._upcoming_cache.clear()
@@ -1852,9 +1981,16 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Kalender verversen mislukt, oude cache: %s", err)
 
         if not self._calendar:
-            raise UpdateFailed("Geen WorldTour-wedstrijden gevonden — PCS-structuur gewijzigd?")
+            raise UpdateFailed("Geen wedstrijden gevonden — PCS-structuur gewijzigd?")
 
-        cur_idx = next((i for i, r in enumerate(self._calendar) if r["end"] >= today), None)
+        # de tegel gaat bij voorkeur naar een koers van een niveau dat daar
+        # mag staan; blijft er anders niets over, dan liever een koers uit
+        # de pop-up dan een lege tegel
+        cur_idx = next((i for i, r in enumerate(self._calendar)
+                        if r["end"] >= today and self._mag_op_tegel(r)), None)
+        if cur_idx is None:
+            cur_idx = next((i for i, r in enumerate(self._calendar)
+                            if r["end"] >= today), None)
         if cur_idx is None:
             return {"state": "Seizoen afgelopen", "attributes": {"show_state": "Klaar"}}
 
@@ -1862,7 +1998,13 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # Volgorde: eerstvolgende etappe, dan koersen met hoogteprofiel, dan mannen.
         venster = today + timedelta(days=self._opt(CONF_UPCOMING_DAYS))
         actief = [(i, r) for i, r in enumerate(self._calendar)
-                  if r["end"] >= today and r["start"] <= venster][:4]
+                  if r["end"] >= today and r["start"] <= venster]
+        # koersen die op de tegel mogen eerst: staat er een niveau aan dat
+        # alleen in de pop-up hoort, dan mag een druk weekend daarvan de
+        # WorldTour niet uit de lijst duwen
+        actief.sort(key=lambda p: (0 if self._mag_op_tegel(p[1]) else 1,
+                                   p[1]["start"], bool(p[1].get("women"))))
+        actief = actief[:MAX_ACTIEVE_KOERSEN]
         if not actief:
             actief = [(cur_idx, self._calendar[cur_idx])]
         kandidaten = []
@@ -1875,8 +2017,14 @@ class CyclingCoordinator(DataUpdateCoordinator):
                                1 if ev.get("women") else 0, i, ev, st))
         if kandidaten:
             kandidaten.sort(key=lambda k: k[:4])
-            cur_idx, cur, stages = kandidaten[0][3], kandidaten[0][4], kandidaten[0][5]
-            andere_koersen = kandidaten[1:]
+            op_tegel = [k for k in kandidaten if self._mag_op_tegel(k[4])]
+            gekozen = (op_tegel or kandidaten)[0]
+            cur_idx, cur, stages = gekozen[3], gekozen[4], gekozen[5]
+            # in de pop-up ook eerst de niveaus van het dashboard, daarna de
+            # niveaus die er alleen in de pop-up bij staan
+            andere_koersen = sorted(
+                (k for k in kandidaten if k is not gekozen),
+                key=lambda k: (0 if self._mag_op_tegel(k[4]) else 1,) + tuple(k[:4]))
             if len(kandidaten) > 1:
                 _LOGGER.debug("Koerskeuze: %s (uit %s kandidaten)",
                               cur["name"], len(kandidaten))
@@ -1908,12 +2056,16 @@ class CyclingCoordinator(DataUpdateCoordinator):
         else:
             shown = future[0] if future else None  # rustdag / pre-race
 
-        # Voorbij de laatste etappe van deze koers -> volgende koers
-        if shown is None and cur_idx + 1 < len(self._calendar):
-            nxt = self._calendar[cur_idx + 1]
-            nstages = await self._stages_for(nxt, today)
-            if nstages:
-                shown, shown_event = nstages[0], nxt
+        # Voorbij de laatste etappe van deze koers -> volgende koers die op
+        # de tegel mag staan
+        if shown is None:
+            for volgende in self._calendar[cur_idx + 1:]:
+                if not self._mag_op_tegel(volgende):
+                    continue
+                nstages = await self._stages_for(volgende, today)
+                if nstages:
+                    shown, shown_event = nstages[0], volgende
+                    break
 
         if shown is None:
             return {"state": "Seizoen afgelopen", "attributes": {"show_state": "Klaar"}}
@@ -2008,7 +2160,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
             {"key": _race_slug(shown["race_url"]),
              "label": _short_race(shown["race_name"], 24) + (" · Dames" if _dames else ""),
              "race_name": shown["race_name"],
-             "women": bool(shown.get("women"))},
+             "women": bool(shown.get("women")),
+             "jersey": _leiderstrui(shown["race_url"])},
             andere_koersen, today)
 
         # ── Status-pill + eyebrow ─────────────────────────────
@@ -2086,7 +2239,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
             f"{_fmt_nl(cur['start'])} – {_fmt_nl(cur['end'])}"
 
         # Komende etappes (mini-profielen in de pop-up)
-        upcoming = await self._build_upcoming(cur_idx, shown, future, today)
+        upcoming = await self._build_upcoming(
+            cur_idx, shown, future, today,
+            {r.get("key") for r in ander.get("races", [])})
 
         # Live-positie (alleen als de kop echt onderweg is) + links
         from urllib.parse import quote
@@ -2147,6 +2302,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 "elevation": elevation,
                 "upcoming": upcoming,
                 "names_diag": self._names_diag,
+                # aantal koersen per gekozen niveau; 0 verraadt een
+                # circuitnummer dat niet klopt
+                "levels_diag": self._levels_diag,
                 # ── spoiler (alleen tonen in de pop-up!) ──
                 "last_result": last_result,
                 "gc_top": gc_top,
