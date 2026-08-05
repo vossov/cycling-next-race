@@ -195,7 +195,9 @@ function koersblok(a, race, meerdere) {
 
   const delen = [
     profiel ? svgDetail({ attributes: profiel }) : '',
-    race.primary ? zenders(a.channels_detail) : '',
+    // elke koers zijn eigen zenders; een sensor van vóór `races` heeft ze
+    // alleen bovenaan staan, en dan blijft het bij de tegelkoers
+    zenders(race.primary ? a.channels_detail : u.channels_detail),
     komend.length
       ? `<section><h3>Komende dagen</h3>${svgKomend({ attributes: { upcoming: komend } })}</section>`
       : '',

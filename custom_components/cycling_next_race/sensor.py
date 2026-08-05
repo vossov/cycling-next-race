@@ -854,6 +854,9 @@ def _fetch_stage_meta(stage_url: str, one_day: bool = False) -> dict:
     d["profile_score"] = _int(_safe(st.profile_score))
     d["stage_type"] = _safe(st.stage_type, "") or ""
     d["startlist_quality"] = _quality(st)
+    # starttijd hoort bij de lichte fetch: de koersen in de pop-up tekenen
+    # hun profiel uit `upcoming` en anders staat daar geen tijd op
+    d["start_time"] = _safe(st.start_time, "") or ""
     return d
 
 
@@ -995,20 +998,28 @@ def _parse_channels(html, pcs_slug, year, idx, race_name):
     return []
 
 
-def _fetch_channels(race_url, idx, one_day, race_name):
-    """NL-tv-zenders van de (aankomende) etappe uit de wielerflits-tv-gids."""
-    m = re.match(r"race/([^/]+)/(\d{4})", race_url or "")
-    if not m:
-        return []
+def _fetch_tv_html():
+    """De tv-gids van wielerflits, of '' als het niet lukt.
+
+    Los van het uitlezen, want op de pagina staan álle koersen van de dag:
+    één verzoek volstaat voor de koers op de tegel én die in de pop-up.
+    """
     import urllib.request
     try:
         req = urllib.request.Request(
             WIELERFLITS_TV_URL,
             headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
         with urllib.request.urlopen(req, timeout=30) as resp:
-            html = resp.read().decode("utf-8", "replace")
+            return resp.read().decode("utf-8", "replace")
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("TV-gids ophalen mislukt: %s", err)
+        return ""
+
+
+def _channels_from(html, race_url, idx, race_name):
+    """NL-tv-zenders van één etappe uit de al opgehaalde tv-gids."""
+    m = re.match(r"race/([^/]+)/(\d{4})", race_url or "")
+    if not html or not m:
         return []
     ch = _parse_channels(html, m.group(1), m.group(2), idx, race_name or "")
     _LOGGER.debug("TV-zenders %s e%s: %s", m.group(1), idx, ch)
@@ -1612,12 +1623,16 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._upcoming_cache: dict[str, dict] = {}
         self._elev_cache: dict[tuple[str, int], tuple] = {}
         self._gpx_beschikbaar: dict[str, bool] = {}
-        self._channels_cache = None
-        self._sprints_cache = None
+        # de tv-gids van vandaag als HTML; daar staan álle koersen op, dus
+        # één verzoek per dag bedient de tegel en de pop-up samen
+        self._tv_cache = None
+        # tussensprints en klassementsstanden per etappe. Allebei een dict en
+        # niet één plek, want de koersen in de pop-up vragen ze ook op.
+        self._sprints_cache: dict[str, list] = {}
         self._roster_cache: dict = {}
         # uitslag per etappe van de andere koersen, op stage_url; per dag geleegd
         self._other_cache: dict[str, dict] = {}
-        self._prevrank_cache = None
+        self._prevrank_cache: dict[str, dict] = {}
         self._names_cache: dict[str, list] = {}
         self._prose_cache: dict[str, list] = {}
         self._names_diag: list = []
@@ -1675,6 +1690,65 @@ class CyclingCoordinator(DataUpdateCoordinator):
         if stages:
             self._stages_cache[key] = (today, stages)
         return stages
+
+    async def _tv_gids(self, today: date) -> str:
+        """De tv-gids van vandaag, één keer opgehaald voor alle koersen."""
+        if self._tv_cache and self._tv_cache[0] == today:
+            return self._tv_cache[1]
+        html = await self._job(_fetch_tv_html)
+        if html:
+            self._tv_cache = (today, html)
+        return html
+
+    async def _zenders_voor(self, stage: dict, today: date) -> list[dict]:
+        """NL-tv-zenders van een etappe; leeg als hij te ver weg is.
+
+        Deze drie helpers slikken hun eigen fouten. Ze worden ook gebruikt
+        voor de koersen in de pop-up, en daar zou een mislukte scrape
+        anders het hele koersblok kosten.
+        """
+        if stage is None or (stage["date"] - today).days > 6:
+            return []          # de tv-gids toont ~6 dagen vooruit
+        try:
+            html = await self._tv_gids(today)
+            return await self._job(_channels_from, html, stage["race_url"],
+                                   stage.get("idx"), stage.get("race_name"))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("TV-zenders mislukt voor %s: %s",
+                          stage.get("stage_url"), err)
+            return []
+
+    async def _sprints_voor(self, stage: dict) -> list:
+        """Tussensprint(en) uit het cyclingstage-tijdschema, per etappe bewaard."""
+        url = stage["stage_url"]
+        if url in self._sprints_cache:
+            return self._sprints_cache[url]
+        try:
+            sprints = await self._job(_fetch_times, stage["race_url"],
+                                      stage.get("idx"), stage.get("one_day"))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Tijdschema mislukt voor %s: %s", url, err)
+            return []
+        self._sprints_cache[url] = sprints
+        return sprints
+
+    async def _rank_maps(self, stage: dict) -> dict:
+        """Klassementen van een etappe als {positie: waarde}, per etappe bewaard.
+
+        Hiermee wordt de dagwinst berekend: koppelen op positie via de
+        kolom "Prev", nooit op naam.
+        """
+        url = stage["stage_url"]
+        if url in self._prevrank_cache:
+            return self._prevrank_cache[url]
+        try:
+            maps = await self._job(_fetch_rank_maps, url, stage.get("one_day"))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Vorige stand mislukt voor %s: %s", url, err)
+            return {}
+        if maps:
+            self._prevrank_cache[url] = maps
+        return maps
 
     async def _climbs_for(self, race_url: str) -> dict:
         if race_url in self._climbs_cache:
@@ -1735,6 +1809,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
             "points_top": [],
             "kom_top": [],
             "youth_top": [],
+            "channels": [],
+            "channels_detail": [],
         }
 
         vandaag = next((s for s in stages if s["date"] == today), None)
@@ -1760,6 +1836,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
                                 else f"Etappe {toon['idx']} \u00b7 {_short_race(toon['race_name'])}")
             if dames:
                 entry["eyebrow"] += " \u00b7 Dames"
+            # waar de etappe te zien is; uit dezelfde tv-gids als de tegel
+            zenders = await self._zenders_voor(toon, today)
+            entry["channels_detail"] = zenders
+            entry["channels"] = [f"{c['name']} {c['time']}".strip()
+                                 for c in zenders if c.get("name")]
         if data is not None:
             entry["last_stage_label"] = (
                 _short_race(laatst["race_name"], 34) if laatst.get("one_day")
@@ -1769,6 +1850,16 @@ class CyclingCoordinator(DataUpdateCoordinator):
             entry["points_top"] = data.get("points_top") or []
             entry["kom_top"] = data.get("kom_top") or []
             entry["youth_top"] = data.get("youth_top") or []
+            # dagwinst en -verlies, net als bij de tegelkoers: de stand van
+            # de vorige etappe op positie koppelen via de kolom "Prev"
+            eerder = [s for s in stages if s["date"] < laatst["date"]]
+            if eerder and not laatst.get("one_day"):
+                pmaps = await self._rank_maps(eerder[-1])
+                if pmaps:
+                    _gain_time_by_rank(entry["gc_top"], pmaps.get("gc"))
+                    _gain_time_by_rank(entry["youth_top"], pmaps.get("youth"))
+                    _gain_pts_by_rank(entry["points_top"], pmaps.get("points"))
+                    _gain_pts_by_rank(entry["kom_top"], pmaps.get("kom"))
         return entry
 
     async def _races_block(self, primair, andere, today):
@@ -1829,7 +1920,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
             self._names_cache[stage_url] = result
         return result
 
-    async def _upcoming_entry(self, s: dict, today: date) -> dict:
+    async def _upcoming_entry(self, s: dict, today: date,
+                              met_sprints: bool = False) -> dict:
         url = s["stage_url"]
         cached = self._upcoming_cache.get(url)
         if cached is not None:
@@ -1861,7 +1953,17 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 # korte klimmen (bv. Montmartre, 1,1 km) ziet de GPX-detectie niet;
                 # PCS kent ze wel, inclusief hoe vaak ze worden verreden
                 gpx_climbs = await self._job(_fetch_stage_climbs, s["stage_url"], {})
+            # De koersen in de pop-up tekenen hun profiel uit deze lijst, dus
+            # de starttijd en de verwachte finish horen erbij — anders staat
+            # er bij hen alleen een dag op de badge en bij de tegelkoers ook
+            # de tijden. De echte finishtijd van cyclingstage gaat voor op de
+            # schatting.
+            start_time = meta.get("start_time") or ""
             e = {
+                "start_time": start_time,
+                "finish_est": cs_route.get("finish_time") or _finish_est(
+                    start_time, dist, meta.get("profile_score"),
+                    meta.get("vertical"), meta.get("stage_type")),
                 "departure": meta.get("departure") or cs_route.get("departure") or "",
                 "arrival": meta.get("arrival") or cs_route.get("arrival") or "",
                 "distance_km": dist,
@@ -1891,6 +1993,13 @@ class CyclingCoordinator(DataUpdateCoordinator):
         _tag = _type_tag(e.get("stage_type"))
         if _tag:
             e["eyebrow"] += f" \u00b7 {_tag}"
+        # de tussensprint alleen bij de etappe die als profiel getekend
+        # wordt; in de profieltjes van "Komende dagen" is hij toch niet te
+        # zien en zou hij alleen ruimte kosten
+        if met_sprints:
+            sprints = await self._sprints_voor(s)
+            if sprints:
+                e["sprints"] = sprints
         return e
 
     async def _build_upcoming(self, cur_idx: int, shown: dict,
@@ -1936,9 +2045,19 @@ class CyclingCoordinator(DataUpdateCoordinator):
         pool = uniek
         out = []
         diag = []
+        # De kaart tekent voor elke koers in de pop-up de eerste etappe uit
+        # deze lijst als profiel. Daar hoort de tussensprint bij, net als op
+        # de tegel — maar alleen daar, want elke sprint kost een verzoek bij
+        # cyclingstage. De koers van de tegel heeft zijn eigen sprints al.
+        tegel_key = _race_slug(shown.get("race_url", ""))
+        eerste_van = set()
         for s in pool[:self._opt(CONF_UPCOMING_N)]:
             try:
-                e = await self._upcoming_entry(s, today)
+                key = _race_slug(s["race_url"])
+                met_sprints = (getoond is not None and key in getoond
+                               and key != tegel_key and key not in eerste_van)
+                eerste_van.add(key)
+                e = await self._upcoming_entry(s, today, met_sprints)
                 if e:
                     out.append(e)
                     if len(diag) < 3:
@@ -1969,10 +2088,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._upcoming_cache.clear()
                 self._elev_cache.clear()
                 self._gpx_beschikbaar.clear()
-                self._channels_cache = None
-                self._sprints_cache = None
+                self._tv_cache = None
+                self._sprints_cache.clear()
                 self._other_cache.clear()
-                self._prevrank_cache = None
+                self._prevrank_cache.clear()
                 self._names_cache.clear()
                 self._prose_cache.clear()
             except Exception as err:  # noqa: BLE001
@@ -2104,14 +2223,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             elif len(finished) >= 2:
                 prev_fin = finished[-2]
         if prev_fin is not None and last_fin_data:
-            pkey = prev_fin["stage_url"]
-            if self._prevrank_cache and self._prevrank_cache[0] == pkey:
-                pmaps = self._prevrank_cache[1]
-            else:
-                pmaps = await self._job(_fetch_rank_maps,
-                                        pkey, prev_fin.get("one_day"))
-                if pmaps:
-                    self._prevrank_cache = (pkey, pmaps)
+            pmaps = await self._rank_maps(prev_fin)
             if pmaps:
                 gains_set += _gain_time_by_rank(last_fin_data.get("gc"), pmaps.get("gc"))
                 gains_set += _gain_time_by_rank(last_fin_data.get("youth_top"),
@@ -2145,13 +2257,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             shown_data["distance"] = elevation[-1][0]
 
         # tussensprint(en) uit het cyclingstage-tijdschema
-        skey = shown["stage_url"]
-        if self._sprints_cache and self._sprints_cache[0] == skey:
-            sprints = self._sprints_cache[1]
-        else:
-            sprints = await self._job(_fetch_times, shown["race_url"],
-                                      shown.get("idx"), shown.get("one_day"))
-            self._sprints_cache = (skey, sprints)
+        sprints = await self._sprints_voor(shown)
 
         # de aanklikbare koersen in de pop-up: eerst de getoonde koers, dan
         # de andere die tegelijk lopen, elk met hun eigen uitslag en standen
@@ -2268,17 +2374,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             shown_data.get("start_time"), svg_stage["distance_km"],
             svg_stage["profile_score"], svg_stage["vertical_m"],
             shown_data.get("stage_type"))
-        channels = []
-        if days_until <= 6:            # de tv-gids toont ~6 dagen vooruit
-            ckey = (today.isoformat(), shown["stage_url"])
-            if self._channels_cache and self._channels_cache[0] == ckey:
-                channels = self._channels_cache[1]
-            else:
-                channels = await self._job(
-                    _fetch_channels, shown["race_url"], shown.get("idx"),
-                    shown.get("one_day"), shown.get("race_name"))
-                if channels:
-                    self._channels_cache = (ckey, channels)
+        channels = await self._zenders_voor(shown, today)
 
         return {
             "state": shown["race_name"],

@@ -5,7 +5,8 @@ andere zijn in de pop-up aan te klikken. Deze tests draaien de coordinator
 met een gestubde `_fetch_stage`, dus zonder netwerk.
 """
 import asyncio
-from datetime import date
+import re
+from datetime import date, timedelta
 
 import pytest
 
@@ -42,6 +43,10 @@ def coordinator(wt, monkeypatch):
 
     co._job = _job
     monkeypatch.setattr(wt, "_fetch_roster", lambda *a: {})
+    # een koersblok haalt ook de tv-gids en de vorige stand op; die gaan
+    # hier niet het net op
+    monkeypatch.setattr(wt, "_fetch_tv_html", lambda *a: "")
+    monkeypatch.setattr(wt, "_fetch_rank_maps", lambda *a: {})
     return co
 
 
@@ -208,3 +213,184 @@ def test_koers_die_omvalt_haalt_de_rest_niet_onderuit(wt, coordinator, monkeypat
 
     assert [r["key"] for r in uit["races"]] == [
         "tour-de-france", "tour-de-france-femmes"]
+
+
+# ── evenveel te zien als bij de tegelkoers ──────────────────────────
+
+# De koersen in de pop-up horen hetzelfde beeld te geven als de koers op
+# de tegel: waar hij te zien is, de klassementen mét dagwinst, en op het
+# profiel de starttijd en de tussensprint.
+
+ZENDER = [{"name": "NPO 1", "time": "14:15", "logo": ""}]
+
+
+def test_koersblok_krijgt_zijn_eigen_tv_zenders(wt, coordinator, monkeypatch):
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag(finished=False))
+    monkeypatch.setattr(wt, "_fetch_tv_html", lambda *a: "<html>")
+    monkeypatch.setattr(wt, "_channels_from", lambda *a: list(ZENDER))
+    stages = _stages(FEMMES["url"], FEMMES["name"], [VANDAAG], women=True)
+
+    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
+
+    assert blok["channels_detail"] == ZENDER
+    assert blok["channels"] == ["NPO 1 14:15"]
+
+
+def test_tv_gids_wordt_maar_een_keer_opgehaald(wt, coordinator, monkeypatch):
+    """Op die pagina staan álle koersen; één verzoek volstaat."""
+    opgehaald = []
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag(finished=False))
+    monkeypatch.setattr(wt, "_fetch_tv_html",
+                        lambda *a: opgehaald.append(1) or "<html>")
+    monkeypatch.setattr(wt, "_channels_from", lambda *a: list(ZENDER))
+
+    andere = []
+    for n in range(3):
+        ev = dict(FEMMES, name=f"Koers {n}", url=f"race/koers-{n}/2026")
+        andere.append(_kandidaat(ev, _stages(ev["url"], ev["name"], [VANDAAG])))
+    coordinator._options[wt.CONF_MAX_OTHER] = 3
+
+    uit = _draai(coordinator, PRIMAIR, andere)
+
+    assert len(uit["races"]) == 4
+    assert len(opgehaald) == 1, f"{len(opgehaald)} verzoeken voor de tv-gids"
+
+
+def test_geen_zenders_voor_een_koers_die_nog_ver_weg_is(wt, coordinator,
+                                                        monkeypatch):
+    """De tv-gids toont ~6 dagen vooruit; verder vragen heeft geen zin."""
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag(finished=False))
+    monkeypatch.setattr(wt, "_fetch_tv_html", lambda *a: "<html>")
+    monkeypatch.setattr(wt, "_channels_from", lambda *a: list(ZENDER))
+    stages = _stages(FEMMES["url"], FEMMES["name"],
+                     [VANDAAG + timedelta(days=20)], women=True)
+
+    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
+
+    assert blok["channels_detail"] == []
+
+
+def test_mislukte_tv_gids_kost_niet_het_hele_koersblok(wt, coordinator,
+                                                       monkeypatch):
+    def _stuk(*a):
+        raise RuntimeError("wielerflits ligt eruit")
+
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag(finished=False))
+    monkeypatch.setattr(wt, "_fetch_tv_html", _stuk)
+    stages = _stages(FEMMES["url"], FEMMES["name"], [VANDAAG], women=True)
+
+    uit = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])
+
+    assert len(uit["races"]) == 2, "het koersblok is verdwenen"
+    assert uit["races"][1]["channels_detail"] == []
+
+
+def test_dagwinst_ook_in_de_andere_koersen(wt, coordinator, monkeypatch):
+    """Dezelfde berekening als op de tegel: koppelen op positie, niet op naam."""
+    uitslag = dict(_uitslag(), gc=[
+        {"rank": 1, "rider": "Vollering Demi", "time": "9:14:02", "prev": 1},
+        {"rank": 2, "rider": "Kopecky Lotte", "time": "9:14:36", "prev": 2},
+    ], points_top=[
+        {"rank": 1, "rider": "Wiebes Lorena", "points": 120, "prev": 1},
+    ])
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: uitslag)
+    monkeypatch.setattr(wt, "_fetch_rank_maps", lambda *a: {
+        "gc": {1: "6:10:00", 2: "6:10:20"},
+        "points": {1: 95}, "kom": {}, "youth": {},
+    })
+    stages = _stages(FEMMES["url"], FEMMES["name"],
+                     [date(2026, 7, 16), date(2026, 7, 17)], women=True)
+
+    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
+
+    # nummer 2 verloor 14 seconden op de leider: (34) - (20)
+    assert blok["gc_top"][1]["gain_s"] == 14
+    assert blok["points_top"][0]["gain"] == 25
+
+
+def test_zonder_vorige_etappe_geen_dagwinst(wt, coordinator, monkeypatch):
+    """Bij de eerste etappe valt er niets te vergelijken."""
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag())
+    gevraagd = []
+    monkeypatch.setattr(wt, "_fetch_rank_maps",
+                        lambda *a: gevraagd.append(a) or {})
+    stages = _stages(FEMMES["url"], FEMMES["name"], [date(2026, 7, 17)],
+                     women=True)
+
+    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
+
+    assert gevraagd == []
+    assert "gain_s" not in blok["gc_top"][0]
+
+
+def test_tussensprint_alleen_bij_de_eerste_etappe_van_een_popupkoers(
+        wt, coordinator):
+    """Die etappe wordt als profiel getekend; de rest is een profieltje."""
+    gevraagd = []
+
+    async def _entry(s, today, met_sprints=False):
+        gevraagd.append((s["stage_url"], met_sprints))
+        return {"race_key": wt._race_slug(s["race_url"])}
+
+    stages = _stages(FEMMES["url"], FEMMES["name"],
+                     [VANDAAG, date(2026, 7, 19), date(2026, 7, 20)], women=True)
+
+    async def _stages_for(ev, today):
+        return stages
+
+    coordinator._upcoming_entry = _entry
+    coordinator._stages_for = _stages_for
+    coordinator._calendar = [FEMMES]
+    shown = {"stage_url": "race/tour-de-france/2026/stage-14",
+             "race_url": "race/tour-de-france/2026", "date": VANDAAG}
+
+    asyncio.run(coordinator._build_upcoming(
+        99, shown, [], VANDAAG, {"tour-de-france-femmes"}))
+
+    assert [m for _u, m in gevraagd] == [True, False, False]
+
+
+def test_geen_tussensprint_voor_de_etappes_van_de_tegelkoers(wt, coordinator):
+    """Die staat al in de gewone attributen; nog eens ophalen is verspilling."""
+    gevraagd = []
+
+    async def _entry(s, today, met_sprints=False):
+        gevraagd.append(met_sprints)
+        return {"race_key": wt._race_slug(s["race_url"])}
+
+    coordinator._upcoming_entry = _entry
+    coordinator._calendar = []
+    eigen = _stages("race/tour-de-france/2026", "Tour de France",
+                    [date(2026, 7, 19), date(2026, 7, 20)])
+    shown = {"stage_url": "race/tour-de-france/2026/stage-14",
+             "race_url": "race/tour-de-france/2026", "date": VANDAAG}
+
+    asyncio.run(coordinator._build_upcoming(
+        99, shown, eigen, VANDAAG, {"tour-de-france"}))
+
+    assert gevraagd == [False, False]
+
+
+def test_komende_etappe_draagt_starttijd_en_verwachte_finish(wt, coordinator):
+    """Zonder die twee blijft de badge van een pop-upkoers zonder tijden."""
+    meta = {"ok": True, "departure": "Pau", "arrival": "Luchon",
+            "distance": 170.0, "vertical": 3000, "profile_score": 400,
+            "stage_type": "", "startlist_quality": None, "start_time": "12:50"}
+
+    async def _job(fn, *args):
+        if fn is wt._fetch_stage_meta:
+            return dict(meta)
+        if fn is wt._fetch_gpx:
+            return [], []
+        if fn is wt._fetch_stage_climbs:
+            return []
+        return fn(*args)
+
+    coordinator._job = _job
+    s = _stages(FEMMES["url"], FEMMES["name"], [date(2026, 7, 19)],
+                women=True)[0]
+
+    e = asyncio.run(coordinator._upcoming_entry(s, VANDAAG))
+
+    assert e["start_time"] == "12:50"
+    assert re.match(r"^\d{2}:\d{2}$", e["finish_est"]), e["finish_est"]

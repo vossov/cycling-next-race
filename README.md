@@ -11,8 +11,9 @@ volgt](#welke-niveaus-je-volgt). Koersen tegelijk? Dan toont de tegel er één:
 eerst de eerstvolgende etappe, dan de koers met een hoogteprofiel, en bij
 gelijke stand de mannen. De andere koers is in de pop-up aan te klikken:
 bovenin staat een knop per koers, in de kleur van de leiderstrui, en je
-krijgt er hetzelfde volledige beeld van — etappe, komende dagen, uitslag en
-klassementen. De koers van de tegel staat standaard open.
+krijgt er hetzelfde volledige beeld van — etappe met hoogteprofiel en
+starttijd, waar hij te zien is, komende dagen, uitslag en alle vier de
+klassementen met dagwinst. De koers van de tegel staat standaard open.
 
 ## Wat het laat zien
 
@@ -91,7 +92,7 @@ maar blijven van de tegel af.
 
 Wil je bijvoorbeeld de Ronde van Denemarken volgen zonder dat je dashboard
 verandert: zet *ProSeries mannen* bij het tweede lijstje. Die koersen krijgen
-dan een eigen knop in de pop-up, met uitslag, klassementen en
+dan een eigen knop in de pop-up, met uitslag, klassementen, tv-zenders en
 hoogteprofielen, terwijl de tegel de WorldTour blijft tonen.
 
 Lopen er meer koersen tegelijk dan er knoppen passen, dan gaan de niveaus van

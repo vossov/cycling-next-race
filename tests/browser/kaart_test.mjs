@@ -61,7 +61,9 @@ const attrs = {
         { rank: 2, rider: 'Kopecky Lotte', time: '9:14:36', move: -1, gain_s: 22 },
       ],
       points_top: [{ rank: 1, rider: 'Wiebes Lorena', points: 120, move: 0, gain: 25 }],
-      kom_top: [], youth_top: [] },
+      kom_top: [], youth_top: [],
+      // elke koers zijn eigen zenders, net als de koers op de tegel
+      channels_detail: [{ name: 'NPO 2', time: '15:30', logo: '' }] },
   ],
   last_stage_label: 'Etappe 13 · uitslag',
   last_result: [
@@ -208,6 +210,10 @@ for (const [naam, a] of Object.entries(gevallen)) {
     p.push(`kop na de klik: "${uit.na.titel}"`);
   if (uit.na.tekst.indexOf('Vollering') < 0)
     p.push('de uitslag van de tweede koers staat niet in zijn blok');
+  if (uit.na.tekst.indexOf('NPO 2') < 0)
+    p.push('de tweede koers toont zijn eigen zenders niet');
+  if (uit.na.tekst.indexOf('NPO 1') >= 0)
+    p.push('de tweede koers toont de zenders van de tegelkoers');
   // geel (#F3C700) hoort zwarte letters te krijgen, anders is het onleesbaar
   const GEEL = 'rgb(243, 199, 0)|rgb(14, 21, 32)';
   if (uit.start.kleur !== GEEL)
