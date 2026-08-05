@@ -379,6 +379,16 @@ SVG-conventies: `viewBox` breedte 440, kleuren via `currentColor` zodat het
 thema volgt, categoriekleuren `CAT={HC:'#E4572E','1':'#F2A03D','2':'#EBD24A',
 '3':'#7FB069','4':'#5FA8A0'}`, accent `#E4572E`.
 
+In de uitslag en de klassementen staat de ploeg achter de renner
+(`rennerMetPloeg`), met de naam zoals procyclingstats hem geeft. **Geen
+afkorting**: PCS levert die niet en er zelf een van maken (initialen of iets
+dergelijks) geeft iets dat op een officiële UCI-ploegcode lijkt zonder het te
+zijn — precies wat "nooit data verzinnen" verbiedt. Wil je toch echte codes,
+dan is dat een vaste tabel zoals `LEIDERSTRUI`, per jaar bij te houden en
+alleen na controle. Naam en ploeg zitten in hetzelfde vakje (`.naam` met
+ellipsis, `.ploeg` gedimd erbinnen), zodat bij weinig ruimte eerst de ploeg
+wegvalt en de rennernaam heel blijft; nagekeken op 360 px.
+
 ## Uitbrengen
 
 HACS toont de naam van een GitHub-release; zonder releases valt het terug op

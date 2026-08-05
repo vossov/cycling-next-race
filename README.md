@@ -23,7 +23,7 @@ klassementen met dagwinst. De koers van de tegel staat standaard open.
 - **Tussensprint(en)** uit het officiële tijdschema
 - **Start- en verwachte finishtijd**, gescrapet waar beschikbaar
 - **Uitslag en klassementen** (algemeen, punten, berg, jongeren) met
-  positieverandering en dagwinst
+  positieverandering, dagwinst en de ploeg achter elke renner
 - **Live positie** van het peloton tijdens de koers
 - **Tv-zenders** met uitzendtijden (wielerflits; alleen de Nederlandse
   uitzendingen worden getoond)
