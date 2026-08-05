@@ -27,8 +27,11 @@ DENEMARKEN = _ev("danmark-rundt", "Danmark Rundt", date(2026, 8, 4),
 
 
 @pytest.fixture
-def coordinator(wt):
+def coordinator(wt, monkeypatch):
     """Een coordinator die niets ophaalt: `_job` roept de functie direct aan."""
+    monkeypatch.setattr(wt, "_fetch_tv_html", lambda *a: "")
+    monkeypatch.setattr(wt, "_fetch_rank_maps", lambda *a: {})
+
     def _maak(opties=None):
         co = wt.CyclingCoordinator(None, opties)
 

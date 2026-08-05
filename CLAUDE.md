@@ -64,9 +64,13 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
 - Alle netwerk-/parse-werk loopt via `self._job(...)` →
   `async_add_executor_job`, want procyclingstats en urllib zijn blokkerend.
 - Caches op de coordinator (per dag of per koers geleegd bij een nieuwe dag):
-  `_elev_cache`, `_names_cache`, `_channels_cache`, `_sprints_cache`,
+  `_elev_cache`, `_names_cache`, `_tv_cache`, `_sprints_cache`,
   `_prevrank_cache`, `_roster_cache` (dict per koers), `_other_cache` (dict
   per etappe van de andere koersen; alleen afgeronde etappes komen erin).
+  `_tv_cache` bewaart de tv-gids als HTML — op die pagina staan álle koersen
+  van de dag, dus één verzoek bedient de tegel en de pop-up samen.
+  `_sprints_cache` en `_prevrank_cache` zijn dicts per etappe en geen enkele
+  plek, want de koersen in de pop-up vragen ze ook op.
   `_elev_cache` heeft `(etappe, aantal punten)` als sleutel: dezelfde etappe
   wordt als komende dag met 60 punten opgehaald en als getoonde etappe met
   200. Stond alleen de URL in de sleutel, dan kreeg het grote profiel de
@@ -135,9 +139,25 @@ en pas daarna nog gefilterd op `_mag_op_tegel`.
 
 De andere koersen komen terug via `_races_block` → het attribuut `races`: een
 lijst met de getoonde koers voorop (`primary: true`) en daarachter hoogstens
-`max_other` andere (standaard `MAX_ANDERE_KOERSEN`), elk met eigen
-`last_result`, `gc_top`, `points_top`, `kom_top` en `youth_top`. De kaart
-maakt daar knoppen van bovenin de pop-up; de eerste staat open.
+`max_other` andere (standaard `MAX_ANDERE_KOERSEN`). De kaart maakt daar
+knoppen van bovenin de pop-up; de eerste staat open.
+
+Zo'n blok geeft hetzelfde beeld als de tegelkoers:
+
+- `last_result`, `gc_top`, `points_top`, `kom_top`, `youth_top` — met
+  dagwinst, op dezelfde manier berekend als op de tegel: de stand van de
+  vorige etappe via `_rank_maps` en koppelen op **positie** (kolom "Prev"),
+  nooit op naam.
+- `channels` en `channels_detail` — waar die koers te zien is, uit dezelfde
+  tv-gids. `_zenders_voor` slaat een koers over die verder dan zes dagen weg
+  is, want zo ver kijkt de gids niet vooruit.
+- Het profiel komt uit `upcoming` (zie hieronder), inclusief `start_time`,
+  `finish_est` en de tussensprint.
+
+`_zenders_voor`, `_sprints_voor` en `_rank_maps` slikken hun eigen fouten en
+geven leeg terug. Dat moet: `_races_block` vangt een uitzondering per blok af
+door het hele blok te laten vallen, en een hikje bij wielerflits hoort geen
+koers uit de pop-up te laten verdwijnen.
 
 Elk koersblok draagt `jersey`: de kleur van de leiderstrui uit de tabel
 `LEIDERSTRUI`, met de procyclingstats-naam als sleutel. Dat is een vaste
@@ -154,6 +174,15 @@ koers als profiel en de rest als "Komende dagen". Dat scheelt een tweede
 profiel in de attributen, en het is meteen de reden dat "Komende dagen" per
 koers wordt opgesplitst zodra er meer dan één is — bij één koers blijft dat
 overzicht alle koersen door elkaar tonen, zoals eerder.
+
+Omdat dat profiel uit `upcoming` komt, staan `start_time` en `finish_est` op
+elke etappe daarin (uit `_fetch_stage_meta`, dus zonder extra verzoek);
+anders zou de badge van een pop-upkoers alleen een dag tonen en die van de
+tegel ook de tijden. De tussensprint zit er alleen op de **eerste** etappe
+van een koers die een eigen blok heeft: dat is de etappe die als profiel
+getekend wordt, en elke sprint kost een verzoek bij cyclingstage. De
+tegelkoers krijgt hem niet uit `upcoming` — die staat al in de gewone
+attributen.
 
 `other_label`, `other_result` en `other_gc` blijven bestaan voor kaarten van
 vóór deze opzet; ze herhalen de eerste andere koers met een uitslag. De
@@ -258,7 +287,8 @@ etappes, of de profieltjes eruit. Beide kosten iets zichtbaars, dus dat is
 een keuze en geen vanzelfsprekendheid.
 
 `races` komt daar bovenop: een koersblok is ruwweg 4 kB (uitslag, algemeen,
-punten, berg, jongeren) en er passen er `max_other` naast de getoonde. In de
+punten, berg, jongeren; de zenders erbij zijn een paar honderd bytes) en er
+passen er `max_other` naast de getoonde. In de
 praktijk is dat er één — mannen en vrouwen — dus zo'n 28 kB. Bewust géén
 hoogteprofiel in het blok; dat komt uit `upcoming` via `race_key`, anders was
 het een stuk meer. Wordt het te veel, dan is `max_other` verlagen de
@@ -356,6 +386,16 @@ bestaan, en dat tegel en pop-up dezelfde hash delen.
 SVG-conventies: `viewBox` breedte 440, kleuren via `currentColor` zodat het
 thema volgt, categoriekleuren `CAT={HC:'#E4572E','1':'#F2A03D','2':'#EBD24A',
 '3':'#7FB069','4':'#5FA8A0'}`, accent `#E4572E`.
+
+In de uitslag en de klassementen staat de ploeg achter de renner
+(`rennerMetPloeg`), met de naam zoals procyclingstats hem geeft. **Geen
+afkorting**: PCS levert die niet en er zelf een van maken (initialen of iets
+dergelijks) geeft iets dat op een officiële UCI-ploegcode lijkt zonder het te
+zijn — precies wat "nooit data verzinnen" verbiedt. Wil je toch echte codes,
+dan is dat een vaste tabel zoals `LEIDERSTRUI`, per jaar bij te houden en
+alleen na controle. Naam en ploeg zitten in hetzelfde vakje (`.naam` met
+ellipsis, `.ploeg` gedimd erbinnen), zodat bij weinig ruimte eerst de ploeg
+wegvalt en de rennernaam heel blijft; nagekeken op 360 px.
 
 ## Uitbrengen
 

@@ -76,6 +76,21 @@ function tijdwinst(s) {
 
 /* ── tekstblokken ────────────────────────────────────────────────── */
 
+/** Renner met zijn ploeg erachter.
+ *
+ * De ploegnaam staat zoals procyclingstats hem geeft — daar staat geen
+ * afkorting bij, en er zelf een van maken levert iets op dat op een
+ * officiële UCI-code lijkt maar het niet is. Naam en ploeg staan in
+ * hetzelfde vakje, zodat op een smal scherm eerst de ploeg wegvalt en de
+ * rennernaam blijft staan.
+ */
+function rennerMetPloeg(x) {
+  const ploeg = x.team
+    ? `<span class="ploeg">(${esc(x.team)})</span>`
+    : '';
+  return `<span class="naam">${esc(x.rider)}${ploeg}</span>`;
+}
+
 /** Uitslag of klassement op tijd (uitslag, algemeen, jongeren). */
 function tijdlijst(titel, rijen, opties = {}) {
   if (!rijen || !rijen.length) return '';
@@ -85,7 +100,7 @@ function tijdlijst(titel, rijen, opties = {}) {
       const extra = opties.verschillen
         ? beweging(x.move) + tijdwinst(x.gain_s)
         : '';
-      return `<li><span class="pos">${esc(x.rank)}</span><span class="naam">${esc(x.rider)}</span><span class="wrd">${esc(tijd)}${extra}</span></li>`;
+      return `<li><span class="pos">${esc(x.rank)}</span>${rennerMetPloeg(x)}<span class="wrd">${esc(tijd)}${extra}</span></li>`;
     })
     .join('');
   return `<section><h3>${esc(titel)}</h3><ol>${regels}</ol></section>`;
@@ -97,7 +112,7 @@ function puntenlijst(titel, rijen) {
   const regels = rijen
     .map((x) => {
       const winst = x.gain ? `<span class="mv" style="color:#7FB069">+${esc(x.gain)}</span>` : '';
-      return `<li><span class="pos">${esc(x.rank)}</span><span class="naam">${esc(x.rider)}</span><span class="wrd">${esc(x.points)}${beweging(x.move)}${winst}</span></li>`;
+      return `<li><span class="pos">${esc(x.rank)}</span>${rennerMetPloeg(x)}<span class="wrd">${esc(x.points)}${beweging(x.move)}${winst}</span></li>`;
     })
     .join('');
   return `<section><h3>${esc(titel)}</h3><ol>${regels}</ol></section>`;
@@ -195,7 +210,9 @@ function koersblok(a, race, meerdere) {
 
   const delen = [
     profiel ? svgDetail({ attributes: profiel }) : '',
-    race.primary ? zenders(a.channels_detail) : '',
+    // elke koers zijn eigen zenders; een sensor van vóór `races` heeft ze
+    // alleen bovenaan staan, en dan blijft het bij de tegelkoers
+    zenders(race.primary ? a.channels_detail : u.channels_detail),
     komend.length
       ? `<section><h3>Komende dagen</h3>${svgKomend({ attributes: { upcoming: komend } })}</section>`
       : '',
@@ -423,6 +440,9 @@ const STIJL = `
   li > * + * { margin-left: 8px; }
   .pos { width: 1.6em; text-align: right; opacity: .55; font-variant-numeric: tabular-nums; }
   .naam { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* de ploeg deelt het vakje met de rennernaam: wordt het krap, dan valt
+     de ploeg als eerste weg en blijft de naam leesbaar */
+  .ploeg { opacity: .5; font-size: 12px; margin-left: 5px; }
   .wrd { font-variant-numeric: tabular-nums; opacity: .85; white-space: nowrap; }
   .mv { margin-left: 6px; font-size: 12px; }
 

@@ -57,11 +57,13 @@ const attrs = {
         { rank: 2, rider: 'Kopecky Lotte', team: 'SD Worx', time: '3:02:11' },
       ],
       gc_top: [
-        { rank: 1, rider: 'Vollering Demi', time: '9:14:02', move: 1, gain_s: -22 },
-        { rank: 2, rider: 'Kopecky Lotte', time: '9:14:36', move: -1, gain_s: 22 },
+        { rank: 1, rider: 'Vollering Demi', team: 'FDJ', time: '9:14:02', move: 1, gain_s: -22 },
+        { rank: 2, rider: 'Kopecky Lotte', team: 'SD Worx', time: '9:14:36', move: -1, gain_s: 22 },
       ],
       points_top: [{ rank: 1, rider: 'Wiebes Lorena', points: 120, move: 0, gain: 25 }],
-      kom_top: [], youth_top: [] },
+      kom_top: [], youth_top: [],
+      // elke koers zijn eigen zenders, net als de koers op de tegel
+      channels_detail: [{ name: 'NPO 2', time: '15:30', logo: '' }] },
   ],
   last_stage_label: 'Etappe 13 · uitslag',
   last_result: [
@@ -74,8 +76,8 @@ const attrs = {
     { rank: 2, rider: 'Vingegaard Jonas', time: '52:16:45', move: 1, gain_s: -14 },
     { rank: 3, rider: 'Evenepoel Remco', time: '52:19:12', move: -1, gain_s: 78 },
   ],
-  points_top: [{ rank: 1, rider: 'Philipsen Jasper', points: 302, move: 0, gain: 25 }],
-  kom_top: [{ rank: 1, rider: 'Ciccone Giulio', points: 84, move: 2, gain: 10 }],
+  points_top: [{ rank: 1, rider: 'Philipsen Jasper', team: 'Alpecin-Deceuninck', points: 302, move: 0, gain: 25 }],
+  kom_top: [{ rank: 1, rider: 'Ciccone Giulio', team: 'Lidl-Trek', points: 84, move: 2, gain: 10 }],
   youth_top: [{ rank: 1, rider: 'Evenepoel Remco', time: '52:19:12', move: 0, gain_s: 0 }],
   other_label: 'Tour de France Femmes · etappe 3', 
   other_result: [{ rank: 1, rider: 'Vollering Demi', time: '3:02:11' }],
@@ -208,6 +210,12 @@ for (const [naam, a] of Object.entries(gevallen)) {
     p.push(`kop na de klik: "${uit.na.titel}"`);
   if (uit.na.tekst.indexOf('Vollering') < 0)
     p.push('de uitslag van de tweede koers staat niet in zijn blok');
+  if (uit.na.tekst.indexOf('NPO 2') < 0)
+    p.push('de tweede koers toont zijn eigen zenders niet');
+  if (uit.na.tekst.indexOf('NPO 1') >= 0)
+    p.push('de tweede koers toont de zenders van de tegelkoers');
+  if (uit.na.tekst.indexOf('(SD Worx)') < 0)
+    p.push('de ploeg staat niet achter de renner');
   // geel (#F3C700) hoort zwarte letters te krijgen, anders is het onleesbaar
   const GEEL = 'rgb(243, 199, 0)|rgb(14, 21, 32)';
   if (uit.start.kleur !== GEEL)
