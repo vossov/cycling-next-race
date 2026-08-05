@@ -31,6 +31,14 @@ tv-zenders. Zowel mannen- als vrouwen-WorldTour.
   een reparatie, minor bij iets nieuws. Alleen aan README, CLAUDE.md of
   tests gezeten? Dan hoeft het niet — daar merkt een draaiende installatie
   niets van.
+- **Het nieuwe versienummer staat vooraan in het commitbericht**, als
+  `v0.7.1 — korte omschrijving`. Alleen op commits die het nummer echt
+  ophogen; geen prefix betekent dus dat de versie niet is aangeraakt, en dat
+  maakt een vergeten ophoging meteen zichtbaar. Merge-commits van GitHub
+  krijgen niets — de branchcommit eronder draagt het nummer. Reden: Home
+  Assistant meldt een nummer en jij wilt van dat nummer naar de commit; niet
+  elke versie krijgt een tag (`v0.6.0` nooit gekregen), en dan is
+  `git log --oneline` de enige plek waar het nog staat.
 - Degradeer netjes: een mislukte scrape logt op debug-niveau en geeft een lege
   lijst terug, nooit een exception naar boven.
 
@@ -365,6 +373,11 @@ Uitbrengen is dus: zet de wijziging mét ophoging op `main` en tag daarna
 `vX.Y.Z` met datzelfde nummer. De workflow weigert een tag die niet
 overeenkomt met de manifest — anders installeert HACS `v0.5.0` terwijl Home
 Assistant `0.4.0` rapporteert.
+
+Niet elke ophoging wordt uitgebracht: `v0.6.0` heeft in de manifest gestaan
+maar heeft nooit een tag gekregen. Zoek zo'n versie terug via het
+commitbericht (`git log --oneline --grep '^v0\.6\.0'`) of, voor commits van
+vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/const.py`.
 
 ## Openstaande punten
 
