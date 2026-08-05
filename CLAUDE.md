@@ -380,14 +380,38 @@ thema volgt, categoriekleuren `CAT={HC:'#E4572E','1':'#F2A03D','2':'#EBD24A',
 '3':'#7FB069','4':'#5FA8A0'}`, accent `#E4572E`.
 
 In de uitslag en de klassementen staat de ploeg achter de renner
-(`rennerMetPloeg`), met de naam zoals procyclingstats hem geeft. **Geen
-afkorting**: PCS levert die niet en er zelf een van maken (initialen of iets
-dergelijks) geeft iets dat op een officiële UCI-ploegcode lijkt zonder het te
-zijn — precies wat "nooit data verzinnen" verbiedt. Wil je toch echte codes,
-dan is dat een vaste tabel zoals `LEIDERSTRUI`, per jaar bij te houden en
-alleen na controle. Naam en ploeg zitten in hetzelfde vakje (`.naam` met
-ellipsis, `.ploeg` gedimd erbinnen), zodat bij weinig ruimte eerst de ploeg
-wegvalt en de rennernaam heel blijft; nagekeken op 360 px.
+(`rennerMetPloeg`): de officiële ploegcode als die bekend is (`team_code`),
+anders de volledige naam. Naam en ploeg zitten in hetzelfde vakje (`.naam`
+met ellipsis, `.ploeg` gedimd erbinnen), zodat bij weinig ruimte eerst de
+ploeg wegvalt en de rennernaam heel blijft; nagekeken op 360 px.
+
+### Ploegcodes
+
+De code komt van de **ploegpagina bij procyclingstats**
+(`_fetch_team_abbr` → `Team(team_url).abbreviation()`), niet uit de naam.
+Zelf initialen maken zou iets opleveren dat op een UCI-ploegcode lijkt
+zonder het te zijn; dat is precies wat "nooit data verzinnen" verbiedt.
+Vandaar ook de controle `^[A-Z0-9]{2,4}$`: geeft de pagina de volledige naam
+of iets anders terug, dan telt het niet als code en blijft de naam staan.
+
+Het adres van de ploegpagina komt uit de tabellen zelf: `_fetch_stage`
+vraagt `team_url` mee (met terugval op de oude veldenlijst als de pagina hem
+niet geeft) en zet `data["team_urls"]` als `{ploegnaam: adres}`. Dat blijft
+binnen de coordinator — in de rijen zou het alleen ruimte in de attributen
+kosten. De rijen krijgen alleen `team_code`, drie tekens.
+
+`_ploegcodes` haalt per ronde hoogstens `MAX_PLOEGCODES_PER_RONDE` (12)
+nieuwe codes op: een koers telt zo'n twintig ploegen en elke code is een
+eigen pagina, dus alles ineens maakt de eerste update na een herstart
+onnodig lang. Wat nog niet bekend is houdt zolang de volledige naam en volgt
+de ronde erna. `_abbr_cache` staat op ploegnaam en gaat een dag mee; een
+mislukte poging staat als `""` in de cache, zodat hij niet elke ronde
+opnieuw wordt geprobeerd maar morgen wel.
+
+Aanroepen gebeurt **na** `_repair_rows`: dat vergelijkt de ploegkolom met de
+startlijst, en die noemt de volledige naam. Ook op een uitslag uit
+`_other_cache`, anders krijgen de rijen die vorige ronde buiten de twaalf
+vielen nooit meer een code.
 
 ## Uitbrengen
 
@@ -428,3 +452,10 @@ Assistant `0.4.0` rapporteert.
 - `LEIDERSTRUI` dekt alleen de koersen waarvan de truikleur vaststaat. Voor
   de rest (Catalunya, Baskenland, Denemarken, Renewi, Groot-Brittannië …)
   is er bewust niets ingevuld. Aanvullen mag, maar alleen na controle.
+- **`Team.abbreviation()` is niet geverifieerd.** Of het pakket die methode
+  zo noemt in 0.2.8, en of `team_url` als veld in de uitslagtabellen wordt
+  geaccepteerd, blijkt pas in een draaiende Home Assistant — de sandbox komt
+  niet bij procyclingstats. Beide staan achter een terugval: geen `team_url`
+  betekent de oude veldenlijst, en geen bruikbare code betekent de volledige
+  ploegnaam. Blijft de code overal weg, zoek dan in het debuglogboek op
+  "Ploegcode"; daar staat wat de pagina wél teruggaf.

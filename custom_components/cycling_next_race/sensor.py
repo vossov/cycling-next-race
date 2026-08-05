@@ -77,6 +77,12 @@ MAX_ANDERE_KOERSEN = DEFAULT_MAX_OTHER
 # alleen maar verzoeken: er staan er toch maar 1 + `max_other` in beeld.
 MAX_ACTIEVE_KOERSEN = 6
 
+# Hoeveel ploegcodes er per ronde nieuw worden opgehaald. Een koers telt zo'n
+# twintig ploegen en elke code is een eigen pagina; die allemaal ineens halen
+# maakt de eerste update na een herstart onnodig lang. De rest volgt de
+# volgende ronde en houdt tot die tijd de volledige ploegnaam.
+MAX_PLOEGCODES_PER_RONDE = 12
+
 # Kleur van de leiderstrui, voor de knoppen bovenin de pop-up.
 #
 # Dit is een vaste lijst, geen bron: procyclingstats geeft de kleur van een
@@ -625,6 +631,30 @@ def _fetch_roster(race_url):
     return out
 
 
+def _fetch_team_abbr(team_url):
+    """De officiële ploegcode van de ploegpagina bij procyclingstats.
+
+    Komt van de bron: er wordt niets uit de naam afgeleid. Een verzonnen
+    afkorting lijkt op een UCI-ploegcode zonder het te zijn, en dat is
+    precies wat dit project niet doet. Geeft "" als de pagina geen
+    bruikbare code noemt; dan blijft de volledige naam staan.
+    """
+    from procyclingstats import Team
+
+    try:
+        code = (_safe(Team(team_url).abbreviation, "") or "").strip().upper()
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Ploegcode ophalen mislukt voor %s: %s", team_url, err)
+        return ""
+    # een code is kort en bestaat uit letters/cijfers; alles daarbuiten is
+    # iets anders (de volledige naam, een leeg veld, HTML-ruis)
+    if not re.match(r"^[A-Z0-9]{2,4}$", code):
+        if code:
+            _LOGGER.debug("Ploegcode van %s onbruikbaar: %r", team_url, code)
+        return ""
+    return code
+
+
 def _name_key(s):
     """Naamsleutel die niet afhangt van de volgorde van voor- en achternaam."""
     parts = [p for p in (_slug_norm(w) for w in re.split(r"[\s,]+", s or "")) if p]
@@ -699,13 +729,28 @@ def _fetch_stage(stage_url: str, one_day: bool = False,
     data["climbs_raw"] = _safe(
         lambda: st.climbs("climb_name", "climb_url", "category"), []) or []
 
-    results = _safe(
-        lambda: st.results("rank", "rider_name", "team_name", "time", "status"), []) or []
+    # adres van de ploegpagina per ploegnaam. Blijft binnen deze functie en
+    # gaat níét mee in de rijen: de coordinator zoekt er de ploegcode mee op,
+    # en in de attributen zou het alleen ruimte kosten.
+    team_urls: dict[str, str] = {}
+
+    def _onthoud_ploeg(r):
+        naam = (r.get("team_name") or "").strip()
+        adres = (r.get("team_url") or "").strip()
+        if naam and adres and naam not in team_urls:
+            team_urls[naam] = adres
+
+    results = _safe(lambda: st.results(
+        "rank", "rider_name", "team_name", "team_url", "time", "status"), []) or []
+    if not results:   # oudere pagina zonder ploeglink
+        results = _safe(
+            lambda: st.results("rank", "rider_name", "team_name", "time", "status"), []) or []
     _fix_names(results, _row_names(st, "stage"), "uitslag")
     clean = []
     for r in results:
         if r.get("rank") in (None, "") or r.get("status") not in (None, "DF", ""):
             continue
+        _onthoud_ploeg(r)
         clean.append({
             "rank": r.get("rank"),
             "rider": (r.get("rider_name") or "").strip(),
@@ -718,10 +763,15 @@ def _fetch_stage(stage_url: str, one_day: bool = False,
     data["finished"] = bool(clean)
 
     gc = _safe(lambda: st.gc(
-        "rank", "rider_name", "team_name", "time", "prev_rank"), []) or []
+        "rank", "rider_name", "team_name", "team_url", "time", "prev_rank"), []) or []
+    if not gc:
+        gc = _safe(lambda: st.gc(
+            "rank", "rider_name", "team_name", "time", "prev_rank"), []) or []
     if not gc:
         gc = _safe(lambda: st.gc("rank", "rider_name", "team_name", "time"), []) or []
     _fix_names(gc, _row_names(st, "gc"), "klassement")
+    for _g in gc:
+        _onthoud_ploeg(_g)
     data["gc"] = [{
         "rank": g.get("rank"),
         "rider": (g.get("rider_name") or "").strip(),
@@ -750,7 +800,10 @@ def _fetch_stage(stage_url: str, one_day: bool = False,
 
     def _standings(fn, table_key, n=5):
         rows = _safe(lambda: fn(
-            "rank", "rider_name", "team_name", "points", "prev_rank"), []) or []
+            "rank", "rider_name", "team_name", "team_url", "points", "prev_rank"), []) or []
+        if not rows:
+            rows = _safe(lambda: fn(
+                "rank", "rider_name", "team_name", "points", "prev_rank"), []) or []
         if not rows:
             rows = _safe(lambda: fn("rank", "rider_name", "team_name", "points"), []) or []
         if not rows:
@@ -761,6 +814,7 @@ def _fetch_stage(stage_url: str, one_day: bool = False,
             rider = (r.get("rider_name") or "").strip()
             if not rider:
                 continue
+            _onthoud_ploeg(r)
             out.append({"rank": r.get("rank"), "rider": rider,
                         "team": (r.get("team_name") or "").strip(),
                         "points": r.get("points"),
@@ -774,10 +828,15 @@ def _fetch_stage(stage_url: str, one_day: bool = False,
     data["kom_top"] = _standings(st.kom, "kom")
 
     youth = _safe(lambda: st.youth(
-        "rank", "rider_name", "team_name", "time", "prev_rank"), []) or []
+        "rank", "rider_name", "team_name", "team_url", "time", "prev_rank"), []) or []
+    if not youth:
+        youth = _safe(lambda: st.youth(
+            "rank", "rider_name", "team_name", "time", "prev_rank"), []) or []
     if not youth:
         youth = _safe(lambda: st.youth("rank", "rider_name", "team_name", "time"), []) or []
     _fix_names(youth, _row_names(st, "youth"), "jongeren")
+    for _y in youth:
+        _onthoud_ploeg(_y)
     data["youth_top"] = [{
         "rank": g.get("rank"),
         "rider": (g.get("rider_name") or "").strip(),
@@ -789,6 +848,7 @@ def _fetch_stage(stage_url: str, one_day: bool = False,
     for _row, _d in zip(data["youth_top"], _delta_col(st, "youth")[0]):
         if _d is not None:
             _row["gain_s"] = _d
+    data["team_urls"] = team_urls
     return data
 
 
@@ -1635,6 +1695,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._prevrank_cache: dict[str, dict] = {}
         self._names_cache: dict[str, list] = {}
         self._prose_cache: dict[str, list] = {}
+        # ploegnaam -> officiële code. Blijft een seizoen lang gelijk, dus
+        # alleen bij een nieuwe kalenderdag opnieuw; een mislukte poging
+        # staat als "" in de cache en wordt dan morgen weer geprobeerd.
+        self._abbr_cache: dict[str, str] = {}
         self._names_diag: list = []
 
     def _opt(self, sleutel: str) -> int:
@@ -1732,6 +1796,35 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._sprints_cache[url] = sprints
         return sprints
 
+    async def _ploegcodes(self, data: dict) -> None:
+        """Zet de officiële ploegcode op elke rij, waar PCS hem geeft.
+
+        De code komt van de ploegpagina bij procyclingstats; er wordt niets
+        uit de naam afgeleid. Per ronde worden er hoogstens
+        `MAX_PLOEGCODES_PER_RONDE` nieuwe opgehaald — een koers telt zo'n
+        twintig ploegen en elke code is een eigen pagina. Wat nog niet
+        bekend is houdt de volledige ploegnaam en volgt de volgende ronde.
+        """
+        adressen = data.get("team_urls") or {}
+        nieuw = 0
+        for sleutel in ("results", "gc", "points_top", "kom_top", "youth_top"):
+            for row in data.get(sleutel) or []:
+                naam = (row.get("team") or "").strip()
+                if not naam:
+                    continue
+                code = self._abbr_cache.get(naam)
+                if (code is None and naam in adressen
+                        and nieuw < MAX_PLOEGCODES_PER_RONDE):
+                    await asyncio.sleep(0.3)   # niet overspoelen
+                    code = await self._job(_fetch_team_abbr, adressen[naam])
+                    self._abbr_cache[naam] = code
+                    nieuw += 1
+                if code:
+                    row["team_code"] = code
+        if nieuw:
+            _LOGGER.debug("%s ploegcodes opgehaald (%s bekend)",
+                          nieuw, len(self._abbr_cache))
+
     async def _rank_maps(self, stage: dict) -> dict:
         """Klassementen van een etappe als {positie: waarde}, per etappe bewaard.
 
@@ -1765,10 +1858,14 @@ class CyclingCoordinator(DataUpdateCoordinator):
         """
         url = s["stage_url"]
         if url in self._other_cache:
-            return self._other_cache[url]
+            d = self._other_cache[url]
+            # de ploegcodes die vorige ronde nog niet aan de beurt waren
+            await self._ploegcodes(d)
+            return d
         d = await self._job(_fetch_stage, url, s.get("one_day"),
                             self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
         if not d.get("finished"):
+            await self._ploegcodes(d)
             return d
         rkey = s["race_url"]
         if rkey not in self._roster_cache and not s.get("one_day"):
@@ -1779,6 +1876,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
         if roster:
             for _k in ("results", "gc", "points_top", "kom_top", "youth_top"):
                 _repair_rows(d.get(_k), roster)
+        # ná het herstellen van de namen: `_repair_rows` vergelijkt de
+        # ploegkolom met de startlijst en die noemt de volledige naam
+        await self._ploegcodes(d)
         self._other_cache[url] = d
         return d
 
@@ -2094,6 +2194,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._prevrank_cache.clear()
                 self._names_cache.clear()
                 self._prose_cache.clear()
+                self._abbr_cache.clear()
             except Exception as err:  # noqa: BLE001
                 if self._calendar is None:
                     raise UpdateFailed(f"Kalender ophalen mislukt: {err}") from err
@@ -2212,6 +2313,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 names_fixed += _repair_rows(last_fin_data.get(_k), roster)
             if names_fixed:
                 _LOGGER.debug("%s scheve naam/namen hersteld via de startlijst", names_fixed)
+        # ploegcodes ná het herstellen van de namen: `_repair_rows` vergelijkt
+        # de ploegkolom met de startlijst, en die noemt de volledige naam
+        if last_fin_data:
+            await self._ploegcodes(last_fin_data)
 
         # dag-winst/-verlies: koppel de vorige stand op POSITIE (kolom "Prev"),
         # zodat er geen renners op naam gematcht hoeven te worden

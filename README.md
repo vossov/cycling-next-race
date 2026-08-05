@@ -23,7 +23,7 @@ klassementen met dagwinst. De koers van de tegel staat standaard open.
 - **Tussensprint(en)** uit het officiële tijdschema
 - **Start- en verwachte finishtijd**, gescrapet waar beschikbaar
 - **Uitslag en klassementen** (algemeen, punten, berg, jongeren) met
-  positieverandering, dagwinst en de ploeg achter elke renner
+  positieverandering, dagwinst en de ploegcode achter elke renner
 - **Live positie** van het peloton tijdens de koers
 - **Tv-zenders** met uitzendtijden (wielerflits; alleen de Nederlandse
   uitzendingen worden getoond)
@@ -31,7 +31,9 @@ klassementen met dagwinst. De koers van de tegel staat standaard open.
 
 Is er geen data, dan toont de integratie niets in plaats van iets verzonnens.
 Geen GPX betekent geen hoogtelijn, en geen profielgegevens betekent geen
-watchscore. Zo ook de kleur van de leiderstrui op de koersknoppen: die staat
+watchscore. De ploegcode achter een renner komt van de ploegpagina bij
+procyclingstats en wordt niet uit de naam afgeleid; kent die pagina er geen,
+dan staat de volledige ploegnaam er. Zo ook de kleur van de leiderstrui op de koersknoppen: die staat
 in een vaste lijst met koersen waarvan de kleur vaststaat (geel voor de Tour,
 roze voor de Giro, rood voor de Vuelta, en zo verder). Een koers die er niet
 in staat krijgt de gewone accentkleur — liever geen kleur dan een gegokte.

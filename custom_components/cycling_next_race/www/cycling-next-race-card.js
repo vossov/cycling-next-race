@@ -78,17 +78,16 @@ function tijdwinst(s) {
 
 /** Renner met zijn ploeg erachter.
  *
- * De ploegnaam staat zoals procyclingstats hem geeft — daar staat geen
- * afkorting bij, en er zelf een van maken levert iets op dat op een
- * officiële UCI-code lijkt maar het niet is. Naam en ploeg staan in
- * hetzelfde vakje, zodat op een smal scherm eerst de ploeg wegvalt en de
- * rennernaam blijft staan.
+ * Bij voorkeur de officiële ploegcode (`team_code`, drie letters), zoals
+ * procyclingstats die op de ploegpagina noemt. Kent de sensor hem nog
+ * niet — hij haalt er een paar per ronde op — dan staat de volledige naam
+ * er zolang. Naam en ploeg delen hetzelfde vakje, zodat op een smal
+ * scherm eerst de ploeg wegvalt en de rennernaam blijft staan.
  */
 function rennerMetPloeg(x) {
-  const ploeg = x.team
-    ? `<span class="ploeg">(${esc(x.team)})</span>`
-    : '';
-  return `<span class="naam">${esc(x.rider)}${ploeg}</span>`;
+  const ploeg = x.team_code || x.team;
+  const achter = ploeg ? `<span class="ploeg">(${esc(ploeg)})</span>` : '';
+  return `<span class="naam">${esc(x.rider)}${achter}</span>`;
 }
 
 /** Uitslag of klassement op tijd (uitslag, algemeen, jongeren). */
