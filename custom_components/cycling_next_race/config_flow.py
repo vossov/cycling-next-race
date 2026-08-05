@@ -17,18 +17,24 @@ from homeassistant.config_entries import (
 )
 
 from .const import (
+    CONF_EXTRA_ON_DASHBOARD,
+    CONF_EXTRA_RACES,
     CONF_GC_N,
+    CONF_HIDDEN_RACES,
     CONF_LIVE_SCAN_MINUTES,
+    CONF_MAX_OTHER,
     CONF_RESULT_N,
     CONF_SCAN_MINUTES,
     CONF_UPCOMING_DAYS,
     CONF_UPCOMING_N,
     DOMAIN,
     MAX_LIVE_SCAN_MINUTES,
+    MAX_OTHER_LIMIT,
     MAX_RIDERS,
     MAX_SCAN_MINUTES,
     MAX_UPCOMING_DAYS,
     MIN_LIVE_SCAN_MINUTES,
+    MIN_OTHER,
     MIN_RIDERS,
     MIN_SCAN_MINUTES,
     MIN_UPCOMING_DAYS,
@@ -104,6 +110,23 @@ class CyclingNextRaceOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_LIVE_SCAN_MINUTES, default=huidig[CONF_LIVE_SCAN_MINUTES]
                 ): _aantal(MIN_LIVE_SCAN_MINUTES, MAX_LIVE_SCAN_MINUTES),
+                # Welke koersen er te zien zijn. De koersen worden bij hun
+                # procyclingstats-naam genoemd (`danmark-rundt`); een
+                # volledig adres van die site mag ook en wordt teruggebracht
+                # tot die naam.
+                vol.Optional(
+                    CONF_EXTRA_RACES, default=huidig[CONF_EXTRA_RACES]
+                ): str,
+                vol.Optional(
+                    CONF_EXTRA_ON_DASHBOARD,
+                    default=bool(huidig[CONF_EXTRA_ON_DASHBOARD]),
+                ): bool,
+                vol.Optional(
+                    CONF_HIDDEN_RACES, default=huidig[CONF_HIDDEN_RACES]
+                ): str,
+                vol.Optional(
+                    CONF_MAX_OTHER, default=huidig[CONF_MAX_OTHER]
+                ): _aantal(MIN_OTHER, MAX_OTHER_LIMIT),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

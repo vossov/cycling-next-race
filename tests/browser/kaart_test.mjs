@@ -47,9 +47,9 @@ const attrs = {
   // koersen die tegelijk lopen met hun eigen uitslag en standen
   races: [
     { primary: true, key: 'tour-de-france', label: 'Tour de France',
-      race_name: 'Tour de France', women: false },
+      race_name: 'Tour de France', women: false, jersey: '#F3C700' },
     { key: 'tour-de-france-femmes', label: 'Tour de France Femmes · Dames',
-      race_name: 'Tour de France Femmes', women: true,
+      race_name: 'Tour de France Femmes', women: true, jersey: '#F3C700',
       eyebrow: 'Etappe 4 · Tour de France Femmes · Dames', show_state: 'Overmorgen',
       last_stage_label: 'Etappe 3 · Tour de France Femmes',
       last_result: [
@@ -179,9 +179,17 @@ for (const [naam, a] of Object.entries(gevallen)) {
       blokken, (b) => getComputedStyle(b).display !== 'none');
     const titel = () => r.querySelector('.titel').textContent;
 
-    const start = { open: zichtbaar(), titel: titel() };
+    // de open knop hoort de kleur van de leiderstrui te dragen
+    const kleur = (k) => {
+      const s = getComputedStyle(k);
+      return `${s.backgroundColor}|${s.color}`;
+    };
+
+    const start = { open: zichtbaar(), titel: titel(), kleur: kleur(knoppen[0]) };
     if (knoppen.length > 1) knoppen[1].click();
     const na = { open: zichtbaar(), titel: titel(),
+                 kleur: knoppen[1] ? kleur(knoppen[1]) : '',
+                 dicht: kleur(knoppen[0]),
                  tekst: blokken[1] ? blokken[1].textContent : '' };
     return { knoppen: knoppen.length, blokken: blokken.length, start, na,
              labels: Array.prototype.map.call(knoppen, (k) => k.textContent) };
@@ -200,6 +208,14 @@ for (const [naam, a] of Object.entries(gevallen)) {
     p.push(`kop na de klik: "${uit.na.titel}"`);
   if (uit.na.tekst.indexOf('Vollering') < 0)
     p.push('de uitslag van de tweede koers staat niet in zijn blok');
+  // geel (#F3C700) hoort zwarte letters te krijgen, anders is het onleesbaar
+  const GEEL = 'rgb(243, 199, 0)|rgb(14, 21, 32)';
+  if (uit.start.kleur !== GEEL)
+    p.push(`de open knop draagt de leiderstrui niet: ${uit.start.kleur}`);
+  if (uit.na.kleur !== GEEL)
+    p.push(`de kleur verhuist niet mee naar de aangeklikte knop: ${uit.na.kleur}`);
+  if (uit.na.dicht.indexOf('rgb(243, 199, 0)') === 0)
+    p.push('de dichte knop houdt de kleur van de leiderstrui');
   if (p.length) { console.log(`FOUT  koerskeuze: ${p.join(', ')}`); mislukt++; }
   else console.log(`ok    koerskeuze — ${uit.labels.join(' | ')}`);
 

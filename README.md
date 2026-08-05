@@ -4,14 +4,14 @@ Home Assistant-integratie die de eerstvolgende WorldTour-wielerwedstrijd op je
 dashboard zet — met hoogteprofiel, cols, tussensprint, uitslagen, klassementen
 en de Nederlandse tv-zenders.
 
-Zowel de mannen- als de vrouwen-WorldTour worden gevolgd — op dit moment
-alleen die twee kalenders; de opzet laat ruimte om er later andere koersen
-naast te zetten. Koersen tegelijk? Dan toont de tegel er één: eerst de
-eerstvolgende etappe, dan de koers met een hoogteprofiel, en bij gelijke
-stand de mannen. De andere koers is in de pop-up aan te klikken: bovenin
-staat een knop per koers, en je krijgt er hetzelfde volledige beeld van —
-etappe, komende dagen, uitslag en klassementen. De koers van de tegel staat
-standaard open.
+Zowel de mannen- als de vrouwen-WorldTour worden gevolgd, en daar zet je bij
+de instellingen zelf koersen bij of vanaf — zie [Welke koersen je
+ziet](#welke-koersen-je-ziet). Koersen tegelijk? Dan toont de tegel er één:
+eerst de eerstvolgende etappe, dan de koers met een hoogteprofiel, en bij
+gelijke stand de mannen. De andere koers is in de pop-up aan te klikken:
+bovenin staat een knop per koers, in de kleur van de leiderstrui, en je
+krijgt er hetzelfde volledige beeld van — etappe, komende dagen, uitslag en
+klassementen. De koers van de tegel staat standaard open.
 
 ## Wat het laat zien
 
@@ -29,7 +29,10 @@ standaard open.
 
 Is er geen data, dan toont de integratie niets in plaats van iets verzonnens.
 Geen GPX betekent geen hoogtelijn, en geen profielgegevens betekent geen
-watchscore.
+watchscore. Zo ook de kleur van de leiderstrui op de koersknoppen: die staat
+in een vaste lijst met koersen waarvan de kleur vaststaat (geel voor de Tour,
+roze voor de Giro, rood voor de Vuelta, en zo verder). Een koers die er niet
+in staat krijgt de gewone accentkleur — liever geen kleur dan een gegokte.
 
 ## Installatie via HACS
 
@@ -65,8 +68,40 @@ Achter **Configureren** bij de integratie stel je in:
 | Komende etappes tonen tot (dagen vooruit) | 7 |
 | Verversen elke (minuten) | 30 |
 | Verversen tijdens een koers (minuten) | 5 |
+| Koersen erbij | leeg |
+| Koersen erbij mogen ook op het dashboard | uit |
+| Koersen weglaten | leeg |
+| Aantal koersen naast de getoonde in de pop-up | 2 |
 
 Wijzigingen gaan meteen in; de integratie herlaadt zichzelf.
+
+### Welke koersen je ziet
+
+Standaard volgt de integratie de WorldTour, bij de mannen en bij de vrouwen.
+Wil je er een koers bij die daar niet in zit — een ProSeries-koers zoals de
+Ronde van Denemarken bijvoorbeeld — zet hem dan bij **Koersen erbij**. Noem
+de koers zoals procyclingstats dat doet:
+
+```
+danmark-rundt, tour-of-britain
+```
+
+Die naam staat in het adres van de koers op procyclingstats:
+`procyclingstats.com/race/`**`danmark-rundt`**`/2026`. Het hele adres
+plakken mag ook; er wordt vanzelf de naam uit gehaald. Meerdere koersen
+scheid je met een komma.
+
+Een koers erbij verschijnt als **knop in de pop-up**, met eigen uitslag,
+klassementen en hoogteprofielen. De tegel op het dashboard blijft de
+WorldTour tonen. Wil je dat zo'n koers de tegel ook mag pakken, zet dan
+*Koersen erbij mogen ook op het dashboard* aan.
+
+**Koersen weglaten** werkt andersom en op dezelfde manier: wat je daar
+neerzet verschijnt nergens, ook niet op de tegel.
+
+Het jaartal hoef je niet mee te geven; de integratie kijkt naar het lopende
+jaar. Bestaat een koers daarin niet onder die naam, dan komt er een
+waarschuwing in het logboek en gaat de rest gewoon door.
 
 ## Dashboard
 
@@ -256,6 +291,7 @@ Wat niet in de interface staat, staat bovenin `sensor.py`:
 |---|---|
 | `GPX_OVERRIDE` | eigen GPX-adres per koers, als er geen publieke is |
 | `CYCLINGSTAGE_ROUTE`, `CYCLINGSTAGE_ONEDAY` | adressen van de etappeteksten per koers |
+| `LEIDERSTRUI` | kleur van de leiderstrui per koers, voor de knoppen in de pop-up |
 
 ## Versies en updates
 

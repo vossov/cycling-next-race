@@ -20,11 +20,19 @@
           "upcoming_n": "Maximaal aantal komende etappes",
           "upcoming_days": "Komende etappes tonen tot (dagen vooruit)",
           "scan_minutes": "Verversen elke (minuten)",
-          "live_scan_minutes": "Verversen tijdens een koers (minuten)"
+          "live_scan_minutes": "Verversen tijdens een koers (minuten)",
+          "extra_races": "Koersen erbij",
+          "extra_on_dashboard": "Koersen erbij mogen ook op het dashboard",
+          "hidden_races": "Koersen weglaten",
+          "max_other": "Aantal koersen naast de getoonde in de pop-up"
         },
         "data_description": {
           "scan_minutes": "Hoe vaak procyclingstats wordt geraadpleegd buiten koersen om.",
-          "live_scan_minutes": "Tijdens een live etappe, zodat de positie van het peloton meebeweegt."
+          "live_scan_minutes": "Tijdens een live etappe, zodat de positie van het peloton meebeweegt.",
+          "extra_races": "Koersen buiten de WorldTour, gescheiden door komma's, met de naam die procyclingstats gebruikt — bijvoorbeeld danmark-rundt. Een volledig adres van die site mag ook. Ze verschijnen als knop in de pop-up.",
+          "extra_on_dashboard": "Uit: de tegel blijft de WorldTour tonen en de koersen erbij staan alleen in de pop-up.",
+          "hidden_races": "Koersen die nergens verschijnen, op dezelfde manier genoteerd.",
+          "max_other": "0 laat alleen de getoonde koers zien. Elke koers erbij kost verzoeken bij procyclingstats en ruimte in de attributen."
         }
       }
     }
