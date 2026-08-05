@@ -21,17 +21,15 @@
           "upcoming_days": "Show upcoming stages up to (days ahead)",
           "scan_minutes": "Refresh every (minutes)",
           "live_scan_minutes": "Refresh during a race (minutes)",
-          "extra_races": "Additional races",
-          "extra_on_dashboard": "Additional races may also take the dashboard tile",
-          "hidden_races": "Races to leave out",
+          "levels": "Levels on the dashboard",
+          "levels_popup": "Levels in the pop-up only",
           "max_other": "Races next to the shown one in the pop-up"
         },
         "data_description": {
           "scan_minutes": "How often procyclingstats is queried outside of races.",
           "live_scan_minutes": "During a live stage, so the peloton's position keeps up.",
-          "extra_races": "Races outside the WorldTour, comma separated, using the name procyclingstats uses — for example danmark-rundt. A full address from that site works too. They show up as a button in the pop-up.",
-          "extra_on_dashboard": "Off: the tile keeps showing the WorldTour and the additional races only appear in the pop-up.",
-          "hidden_races": "Races that never show up, written the same way.",
+          "levels": "These levels may take the tile and also appear in the pop-up.",
+          "levels_popup": "These levels get a button in the pop-up but stay off the tile. Put ProSeries here to follow races like the Tour of Denmark without changing your dashboard.",
           "max_other": "0 shows only the race on the tile. Every extra race costs requests at procyclingstats and room in the attributes."
         }
       }

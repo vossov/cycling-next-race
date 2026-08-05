@@ -66,34 +66,54 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
   profiel heeft, want `_gpx_rang` heeft dat nodig om te kiezen wélke koers
   getoond wordt.
 
-### Welke koersen meedoen
+### Welke niveaus meedoen
 
-`_fetch_calendar` haalt de WorldTour op (circuit 1 en 24). Wat de gebruiker
-daarvan te zien krijgt gaat door `_kalender_met_opties`:
+Een niveau is een `circuit=`-nummer bij procyclingstats. `NIVEAUS` in
+`const.py` koppelt nummer → naam, of het een vrouwenkalender is, en of het
+nummer geverifieerd is:
 
-- `extra_races` — koersen buiten die kalender, als procyclingstats-naam
-  (`danmark-rundt`) of als volledig adres; `_lees_koersen` en `_koers_slug`
-  brengen dat terug tot de naam. `_fetch_extra_race` haalt zo'n koers los op
-  via zijn eigen `race/<naam>/<jaar>/overview` — géén circuit-id, want welk
-  nummer bij ProSeries hoort is van hieruit niet te controleren en een fout
-  nummer levert stil een lege kalender op. De data komen uit de etappelijst,
-  en anders uit start-/einddatum; lukt geen van beide, dan valt de koers weg
-  met een waarschuwing in het logboek.
-- `hidden_races` — dezelfde notatie, maar dan eruit. Weglaten wint van erbij
-  zetten.
-- Een koers uit `extra_races` draagt `extra: True` en mag standaard alleen in
-  de pop-up (`_mag_op_tegel`); met `extra_on_dashboard` mag hij ook de tegel
-  pakken. Blijft er anders geen enkele koers voor de tegel over, dan komt hij
-  er alsnog op — een lege tegel helpt niemand.
+| nummer | niveau | geverifieerd |
+|---|---|---|
+| 1 | WorldTour mannen | ja |
+| 24 | WorldTour vrouwen | ja |
+| 26 | ProSeries mannen | **nee** |
+| 27 | ProSeries vrouwen | **nee** |
 
-De koersen erbij worden met de kalender mee ververst: `_extra_sleutel` bevat
-`(_calendar_fetched, de ingevulde koersen)`, dus opnieuw ophalen gebeurt bij
-een nieuwe kalenderdag of zodra de instelling wijzigt.
+De ProSeries-nummers konden van hieruit niet worden nagekeken: de proxy laat
+procyclingstats niet door (403 op de CONNECT). Een verkeerd nummer levert
+stil een lege kalender op, dus dat wordt zichtbaar gemaakt in plaats van
+gegokt: `_fetch_calendar` logt een waarschuwing bij nul koersen (met de
+toevoeging dat het nummer niet geverifieerd is) en geeft naast de koersen
+een telling per niveau terug, die als `levels_diag` in de attributen komt.
+Blijkt een nummer fout, dan is dat één regel in `NIVEAUS`.
 
-`self._calendar` blijft de kale WorldTour-kalender; de samengestelde lijst
-heet in `_async_update_data` `koersen` en gaat als parameter mee naar
-`_build_upcoming`. Indexen (`cur_idx`) horen bij die lijst, niet bij
-`self._calendar`.
+Twee instellingen, allebei een keuzelijst over dezelfde tabel:
+
+- `levels` — mag op de tegel én in de pop-up. Standaard `["1", "24"]`, dus
+  precies wat de integratie altijd al deed. Leeg gevinkt valt terug op die
+  standaard; een sensor zonder koersen helpt niemand.
+- `levels_popup` — komt er alleen in de pop-up bij.
+
+`_niveaus_alles` is de unie en bepaalt wat er wordt opgehaald;
+`_mag_op_tegel` kijkt of het `level` van een koers in `_niveaus_tegel` zit.
+Een koers zonder `level` (kalender uit een oudere versie, of een test) wordt
+niet uitgesloten.
+
+Elke koers uit de kalender draagt `level` en krijgt zijn `women`-vlag uit de
+tabel; die staat niet op de kalenderpagina zelf. `self._calendar` bevat dus
+alle gekozen niveaus door elkaar — er is geen tweede lijst en `cur_idx`
+hoort gewoon bij `self._calendar`.
+
+Staat er een niveau alleen in de pop-up, dan mag dat de rest niet
+verdringen:
+
+- `actief` (de kandidaten voor de tegel) sorteert koersen die op de tegel
+  mogen vooraan vóór het afkappen op `MAX_ACTIEVE_KOERSEN`.
+- `andere_koersen` (de knoppen) doet hetzelfde, zodat de vrouwen-WorldTour
+  vóór een ProSeries-koers komt.
+- `_build_upcoming` slaat koersen van een pop-up-niveau over die geen eigen
+  blok in `races` hebben gekregen; hun etappes zijn dan toch nergens te zien
+  en zouden alleen `upcoming_n` opvullen.
 
 ### Keuze van de getoonde koers
 
@@ -237,14 +257,15 @@ het een stuk meer. Wordt het te veel, dan is `max_other` verlagen de
 goedkoopste stap; dat is nu een instelling en hoeft niet meer in de code.
 **Niet gemeten in een draaiende Home Assistant, alleen geschat.**
 
-Koersen erbij zetten kost dus evenredig: elke koers die in beeld komt is een
-extra blok in `races` én zijn etappes in `upcoming`. Wie er meerdere bij zet
-en tegen de grens aanloopt, verlaagt `max_other` of `upcoming_n`.
+Een niveau erbij kost niets zolang er niet méér koersen in beeld komen:
+`max_other` begrenst het aantal blokken en `upcoming_n` het aantal etappes.
+Wat het wél kost zijn verzoeken bij procyclingstats — een kalenderpagina per
+niveau per dag, en een etappelijst per koers die in het venster valt.
 
 ## Diagnose-attributen
 
 Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:
-`gpx_diag`, `times_diag`, `names_diag`, `gain_headers`, `gain_raw`,
+`gpx_diag`, `times_diag`, `names_diag`, `levels_diag`, `gain_headers`, `gain_raw`,
 `names_fixed`, `gains_set`, `roster_size`, `elevation_source`.
 
 ## Dashboard
@@ -355,18 +376,15 @@ Assistant `0.4.0` rapporteert.
   bouwen het optieschema op met gestubde HA-modules, wat niets zegt over de
   vraag of het scherm verschijnt en de entry laadt.
 - Overweeg de diagnose-attributen te verwijderen zodra alles stabiel draait.
-- `_fetch_extra_race` is nooit tegen de echte site gedraaid: de sandbox komt
-  niet bij procyclingstats. Of `Race.name()`, `Race.startdate()` en
-  `Race.enddate()` in versie 0.2.8 heten zoals hier aangenomen, blijkt pas in
-  een draaiende Home Assistant. Alle drie staan in `_safe(...)`, dus een
-  verkeerde naam laat de koers weg met een waarschuwing in plaats van een
-  crash — maar dan werkt de instelling ook niet.
-- Voor koersen erbij is bewust géén circuitkeuze gemaakt (ProSeries en
-  dergelijke). Welk `circuit=`-nummer daarbij hoort is van hieruit niet te
-  controleren, en een verkeerd nummer geeft stil een lege kalender. De koers
-  bij naam ophalen is te controleren voor de gebruiker: die naam staat in het
-  adres. Wil je later toch een circuitkeuze, verifieer het nummer eerst in
-  een draaiende installatie.
+- **De ProSeries-circuitnummers (26 en 27) zijn niet geverifieerd.** Kijk ze
+  na zodra er een omgeving is die bij procyclingstats kan: open
+  `races.php?year=<jaar>&circuit=26&class=&filter=Filter` en kijk of daar de
+  ProSeries-kalender staat. `levels_diag` op de sensor laat intussen zien of
+  een niveau koersen oplevert. Klopt een nummer niet, pas dan `NIVEAUS` in
+  `const.py` aan — verder verandert er niets.
+- Meer niveaus toevoegen (Europe Tour, nationale kampioenschappen) kan met
+  een regel in `NIVEAUS`, maar alleen met een nummer dat is nagekeken. Europe
+  Tour is bewust weggelaten: die lijst is enorm en het nummer is onzeker.
 - `LEIDERSTRUI` dekt alleen de koersen waarvan de truikleur vaststaat. Voor
   de rest (Catalunya, Baskenland, Denemarken, Renewi, Groot-Brittannië …)
   is er bewust niets ingevuld. Aanvullen mag, maar alleen na controle.

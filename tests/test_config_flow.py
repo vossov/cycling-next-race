@@ -53,6 +53,26 @@ def test_opgeslagen_opties_zijn_de_voorinvulling(flow_mod, const):
     assert schema({})[const.CONF_RESULT_N] == 20
 
 
+def _standaard(schema, sleutel):
+    return next(m for m in schema.schema if str(m) == sleutel).default()
+
+
+def test_gekozen_niveaus_staan_voorgevinkt(flow_mod, const):
+    schema = _optieschema(flow_mod, {const.CONF_LEVELS_POPUP: ["26"]})
+    assert _standaard(schema, const.CONF_LEVELS) == const.DEFAULT_LEVELS
+    assert _standaard(schema, const.CONF_LEVELS_POPUP) == ["26"]
+
+
+def test_onbekend_opgeslagen_niveau_blokkeert_het_scherm_niet(flow_mod, const):
+    """Een keuzelijst met een waarde buiten de opties weigert Home Assistant.
+
+    Verdwijnt er ooit een niveau uit NIVEAUS, dan zou het optiescherm van
+    wie dat niveau had aangevinkt niet meer opengaan.
+    """
+    schema = _optieschema(flow_mod, {const.CONF_LEVELS: ["1", "999"]})
+    assert _standaard(schema, const.CONF_LEVELS) == ["1"]
+
+
 def test_flow_is_single_instance(flow_mod, const):
     """Twee keer toevoegen moet afketsen op dezelfde unieke id."""
     assert flow_mod.DOMAIN == const.DOMAIN

@@ -52,8 +52,16 @@ def _installeer_stubs():
           SOURCE_IMPORT="import")
     _stub("homeassistant.const", Platform=types.SimpleNamespace(SENSOR="sensor"))
     _stub("homeassistant.core", HomeAssistant=_klasse("HomeAssistant"))
-    _stub("homeassistant.helpers")
+    helpers = _stub("homeassistant.helpers")
     _stub("homeassistant.helpers.entity_platform", AddEntitiesCallback=object)
+    # cv.multi_select levert in HA een lijst met vinkjes op; hier volstaat
+    # een validator die de keuzes teruggeeft zoals ze binnenkomen. De
+    # config flow doet `from homeassistant.helpers import
+    # config_validation`, dus hij moet ook als attribuut op het pakket
+    # staan en niet alleen in sys.modules.
+    helpers.config_validation = _stub(
+        "homeassistant.helpers.config_validation",
+        multi_select=lambda opties: (lambda waarde: waarde))
     _stub("homeassistant.helpers.update_coordinator",
           DataUpdateCoordinator=_klasse("DataUpdateCoordinator"),
           CoordinatorEntity=_klasse("CoordinatorEntity"),

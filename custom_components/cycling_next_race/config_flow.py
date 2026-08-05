@@ -15,12 +15,12 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
+from homeassistant.helpers import config_validation as cv
 
 from .const import (
-    CONF_EXTRA_ON_DASHBOARD,
-    CONF_EXTRA_RACES,
     CONF_GC_N,
-    CONF_HIDDEN_RACES,
+    CONF_LEVELS,
+    CONF_LEVELS_POPUP,
     CONF_LIVE_SCAN_MINUTES,
     CONF_MAX_OTHER,
     CONF_RESULT_N,
@@ -39,6 +39,7 @@ from .const import (
     MIN_SCAN_MINUTES,
     MIN_UPCOMING_DAYS,
     NAME,
+    NIVEAU_KEUZE,
     OPTION_DEFAULTS,
 )
 
@@ -46,6 +47,18 @@ from .const import (
 def _aantal(minimum: int, maximum: int):
     """Geheel getal binnen grenzen."""
     return vol.All(vol.Coerce(int), vol.Range(min=minimum, max=maximum))
+
+
+def _lijst(waarde) -> list[str]:
+    """Opgeslagen niveaus als lijst met bekende nummers.
+
+    Wat er niet meer bestaat valt weg: een keuzelijst met een waarde die
+    niet in de opties staat weigert Home Assistant, en dan is het scherm
+    niet meer te openen.
+    """
+    if not isinstance(waarde, (list, tuple)):
+        waarde = [waarde] if waarde else []
+    return [str(v) for v in waarde if str(v) in NIVEAU_KEUZE]
 
 
 class CyclingNextRaceConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -110,20 +123,14 @@ class CyclingNextRaceOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_LIVE_SCAN_MINUTES, default=huidig[CONF_LIVE_SCAN_MINUTES]
                 ): _aantal(MIN_LIVE_SCAN_MINUTES, MAX_LIVE_SCAN_MINUTES),
-                # Welke koersen er te zien zijn. De koersen worden bij hun
-                # procyclingstats-naam genoemd (`danmark-rundt`); een
-                # volledig adres van die site mag ook en wordt teruggebracht
-                # tot die naam.
+                # Welke niveaus meedoen. Aanvinken wat op het dashboard mag
+                # komen, en los daarvan wat je alleen in de pop-up wilt zien.
                 vol.Optional(
-                    CONF_EXTRA_RACES, default=huidig[CONF_EXTRA_RACES]
-                ): str,
+                    CONF_LEVELS, default=_lijst(huidig[CONF_LEVELS])
+                ): cv.multi_select(NIVEAU_KEUZE),
                 vol.Optional(
-                    CONF_EXTRA_ON_DASHBOARD,
-                    default=bool(huidig[CONF_EXTRA_ON_DASHBOARD]),
-                ): bool,
-                vol.Optional(
-                    CONF_HIDDEN_RACES, default=huidig[CONF_HIDDEN_RACES]
-                ): str,
+                    CONF_LEVELS_POPUP, default=_lijst(huidig[CONF_LEVELS_POPUP])
+                ): cv.multi_select(NIVEAU_KEUZE),
                 vol.Optional(
                     CONF_MAX_OTHER, default=huidig[CONF_MAX_OTHER]
                 ): _aantal(MIN_OTHER, MAX_OTHER_LIMIT),

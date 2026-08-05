@@ -4,9 +4,10 @@ Home Assistant-integratie die de eerstvolgende WorldTour-wielerwedstrijd op je
 dashboard zet — met hoogteprofiel, cols, tussensprint, uitslagen, klassementen
 en de Nederlandse tv-zenders.
 
-Zowel de mannen- als de vrouwen-WorldTour worden gevolgd, en daar zet je bij
-de instellingen zelf koersen bij of vanaf — zie [Welke koersen je
-ziet](#welke-koersen-je-ziet). Koersen tegelijk? Dan toont de tegel er één:
+Standaard worden de mannen- en de vrouwen-WorldTour gevolgd; in de
+instellingen vink je zelf aan welke niveaus meedoen en welke daarvan alleen
+in de pop-up mogen — zie [Welke niveaus je
+volgt](#welke-niveaus-je-volgt). Koersen tegelijk? Dan toont de tegel er één:
 eerst de eerstvolgende etappe, dan de koers met een hoogteprofiel, en bij
 gelijke stand de mannen. De andere koers is in de pop-up aan te klikken:
 bovenin staat een knop per koers, in de kleur van de leiderstrui, en je
@@ -68,40 +69,42 @@ Achter **Configureren** bij de integratie stel je in:
 | Komende etappes tonen tot (dagen vooruit) | 7 |
 | Verversen elke (minuten) | 30 |
 | Verversen tijdens een koers (minuten) | 5 |
-| Koersen erbij | leeg |
-| Koersen erbij mogen ook op het dashboard | uit |
-| Koersen weglaten | leeg |
+| Niveaus op het dashboard | WorldTour mannen + vrouwen |
+| Niveaus alleen in de pop-up | geen |
 | Aantal koersen naast de getoonde in de pop-up | 2 |
 
 Wijzigingen gaan meteen in; de integratie herlaadt zichzelf.
 
-### Welke koersen je ziet
+### Welke niveaus je volgt
 
-Standaard volgt de integratie de WorldTour, bij de mannen en bij de vrouwen.
-Wil je er een koers bij die daar niet in zit — een ProSeries-koers zoals de
-Ronde van Denemarken bijvoorbeeld — zet hem dan bij **Koersen erbij**. Noem
-de koers zoals procyclingstats dat doet:
+Je vinkt aan welke niveaus meedoen. Er zijn er vier:
 
-```
-danmark-rundt, tour-of-britain
-```
+- WorldTour mannen
+- WorldTour vrouwen
+- ProSeries mannen
+- ProSeries vrouwen
 
-Die naam staat in het adres van de koers op procyclingstats:
-`procyclingstats.com/race/`**`danmark-rundt`**`/2026`. Het hele adres
-plakken mag ook; er wordt vanzelf de naam uit gehaald. Meerdere koersen
-scheid je met een komma.
+Dat gebeurt in twee lijstjes. **Niveaus op het dashboard** mogen de tegel
+pakken én staan in de pop-up; standaard zijn dat de twee WorldTours, precies
+zoals het altijd was. **Niveaus alleen in de pop-up** komen er als knop bij,
+maar blijven van de tegel af.
 
-Een koers erbij verschijnt als **knop in de pop-up**, met eigen uitslag,
-klassementen en hoogteprofielen. De tegel op het dashboard blijft de
-WorldTour tonen. Wil je dat zo'n koers de tegel ook mag pakken, zet dan
-*Koersen erbij mogen ook op het dashboard* aan.
+Wil je bijvoorbeeld de Ronde van Denemarken volgen zonder dat je dashboard
+verandert: zet *ProSeries mannen* bij het tweede lijstje. Die koersen krijgen
+dan een eigen knop in de pop-up, met uitslag, klassementen en
+hoogteprofielen, terwijl de tegel de WorldTour blijft tonen.
 
-**Koersen weglaten** werkt andersom en op dezelfde manier: wat je daar
-neerzet verschijnt nergens, ook niet op de tegel.
+Lopen er meer koersen tegelijk dan er knoppen passen, dan gaan de niveaus van
+het dashboard voor. Met *Aantal koersen naast de getoonde* bepaal je hoeveel
+knoppen er naast de tegelkoers passen.
 
-Het jaartal hoef je niet mee te geven; de integratie kijkt naar het lopende
-jaar. Bestaat een koers daarin niet onder die naam, dan komt er een
-waarschuwing in het logboek en gaat de rest gewoon door.
+> **Let op bij ProSeries.** De WorldTour-nummers waarmee de kalender wordt
+> opgehaald zijn nagekeken op procyclingstats, die van ProSeries niet. Levert
+> een niveau geen koersen op, dan staat dat in het logboek én in het attribuut
+> `levels_diag` van de sensor (**Ontwikkelhulpmiddelen → Statussen**), met het
+> aantal koersen per niveau. Staat daar `ProSeries mannen: 0` terwijl er wel
+> koersen zijn, dan klopt het nummer niet; het is één regel in
+> `NIVEAUS` in `const.py`.
 
 ## Dashboard
 
@@ -292,6 +295,12 @@ Wat niet in de interface staat, staat bovenin `sensor.py`:
 | `GPX_OVERRIDE` | eigen GPX-adres per koers, als er geen publieke is |
 | `CYCLINGSTAGE_ROUTE`, `CYCLINGSTAGE_ONEDAY` | adressen van de etappeteksten per koers |
 | `LEIDERSTRUI` | kleur van de leiderstrui per koers, voor de knoppen in de pop-up |
+
+En in `const.py`:
+
+| Constante | Betekenis |
+|---|---|
+| `NIVEAUS` | de niveaus met hun circuitnummer bij procyclingstats |
 
 ## Versies en updates
 
