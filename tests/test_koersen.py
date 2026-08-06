@@ -394,3 +394,135 @@ def test_komende_etappe_draagt_starttijd_en_verwachte_finish(wt, coordinator):
 
     assert e["start_time"] == "12:50"
     assert re.match(r"^\d{2}:\d{2}$", e["finish_est"]), e["finish_est"]
+
+
+# ── officiële ploegcode ─────────────────────────────────────────────
+
+# De code komt van de ploegpagina bij procyclingstats. Er wordt niets uit
+# de naam afgeleid: een zelfgemaakte afkorting lijkt op een UCI-ploegcode
+# zonder het te zijn.
+
+def _stub_pcs(monkeypatch, code):
+    """Vervangt het procyclingstats-pakket door een Team met deze code."""
+    import sys
+    import types
+
+    class _Team:
+        def __init__(self, url):
+            self.url = url
+
+        def abbreviation(self):
+            if isinstance(code, Exception):
+                raise code
+            return code
+
+    mod = types.ModuleType("procyclingstats")
+    mod.Team = _Team
+    monkeypatch.setitem(sys.modules, "procyclingstats", mod)
+
+
+def test_ploegcode_komt_van_de_ploegpagina(wt, monkeypatch):
+    _stub_pcs(monkeypatch, " uad ")
+    assert wt._fetch_team_abbr("team/uae-team-emirates-2026") == "UAD"
+
+
+@pytest.mark.parametrize("waarde", [
+    "UAE Team Emirates",       # de volledige naam, geen code
+    "",                        # niets ingevuld
+    None,
+    "TEAMCODE",                # te lang om een ploegcode te zijn
+    RuntimeError("pagina weg"),
+])
+def test_onbruikbare_ploegcode_wordt_niet_getoond(wt, monkeypatch, waarde):
+    """Liever de volledige naam dan iets dat op een code lijkt."""
+    _stub_pcs(monkeypatch, waarde)
+    assert wt._fetch_team_abbr("team/x-2026") == ""
+
+
+@pytest.fixture
+def zonder_pauze(wt, monkeypatch):
+    async def _slaap(_seconden):
+        return None
+
+    monkeypatch.setattr(wt.asyncio, "sleep", _slaap)
+
+
+def _data(ploegen, per_lijst=1):
+    rijen = [{"rank": i + 1, "rider": f"Renner {i}", "team": p}
+             for i, p in enumerate(ploegen)]
+    return {"results": rijen,
+            "gc": [dict(r) for r in rijen[:per_lijst]],
+            "team_urls": {p: f"team/{p.lower()}-2026" for p in ploegen}}
+
+
+def test_ploegcode_komt_op_elke_rij(wt, coordinator, monkeypatch, zonder_pauze):
+    opgehaald = []
+    monkeypatch.setattr(wt, "_fetch_team_abbr",
+                        lambda url: opgehaald.append(url) or url[5:8].upper())
+    data = _data(["Alpha", "Beta"])
+
+    asyncio.run(coordinator._ploegcodes(data))
+
+    assert [r["team_code"] for r in data["results"]] == ["ALP", "BET"]
+    assert data["gc"][0]["team_code"] == "ALP"
+    # één verzoek per ploeg, niet per rij
+    assert len(opgehaald) == 2
+
+
+def test_ploegcode_wordt_maar_een_keer_opgehaald(wt, coordinator, monkeypatch,
+                                                 zonder_pauze):
+    opgehaald = []
+    monkeypatch.setattr(wt, "_fetch_team_abbr",
+                        lambda url: opgehaald.append(url) or "ABC")
+
+    asyncio.run(coordinator._ploegcodes(_data(["Alpha"])))
+    asyncio.run(coordinator._ploegcodes(_data(["Alpha"])))
+
+    assert len(opgehaald) == 1
+
+
+def test_mislukte_ploegcode_wordt_niet_elke_ronde_herhaald(
+        wt, coordinator, monkeypatch, zonder_pauze):
+    """Wel opnieuw bij een nieuwe kalenderdag; die leegt de cache."""
+    opgehaald = []
+    monkeypatch.setattr(wt, "_fetch_team_abbr",
+                        lambda url: opgehaald.append(url) or "")
+    data = _data(["Alpha"])
+
+    asyncio.run(coordinator._ploegcodes(data))
+    asyncio.run(coordinator._ploegcodes(data))
+
+    assert len(opgehaald) == 1
+    assert "team_code" not in data["results"][0], "lege code hoort niet op de rij"
+
+
+def test_ploeg_zonder_adres_houdt_zijn_naam(wt, coordinator, monkeypatch,
+                                            zonder_pauze):
+    monkeypatch.setattr(wt, "_fetch_team_abbr", lambda url: "ABC")
+    data = _data(["Alpha"])
+    data["team_urls"] = {}
+
+    asyncio.run(coordinator._ploegcodes(data))
+
+    assert "team_code" not in data["results"][0]
+    assert data["results"][0]["team"] == "Alpha"
+
+
+def test_niet_alle_ploegcodes_in_een_keer(wt, coordinator, monkeypatch,
+                                          zonder_pauze):
+    """Een koers telt zo'n twintig ploegen; die niet in één ronde ophalen."""
+    opgehaald = []
+    monkeypatch.setattr(wt, "_fetch_team_abbr",
+                        lambda url: opgehaald.append(url) or "ABC")
+    ploegen = [f"Ploeg{n:02d}" for n in range(wt.MAX_PLOEGCODES_PER_RONDE + 3)]
+    data = _data(ploegen)
+
+    asyncio.run(coordinator._ploegcodes(data))
+    assert len(opgehaald) == wt.MAX_PLOEGCODES_PER_RONDE
+    zonder = [r for r in data["results"] if "team_code" not in r]
+    assert len(zonder) == 3, "de rest hoort zijn volledige naam te houden"
+
+    # de volgende ronde komt de rest erbij
+    asyncio.run(coordinator._ploegcodes(data))
+    assert len(opgehaald) == len(ploegen)
+    assert all("team_code" in r for r in data["results"])

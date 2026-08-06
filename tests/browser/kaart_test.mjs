@@ -52,9 +52,10 @@ const attrs = {
       race_name: 'Tour de France Femmes', women: true, jersey: '#F3C700',
       eyebrow: 'Etappe 4 · Tour de France Femmes · Dames', show_state: 'Overmorgen',
       last_stage_label: 'Etappe 3 · Tour de France Femmes',
+      // met team_code: die gaat voor op de volledige naam
       last_result: [
-        { rank: 1, rider: 'Vollering Demi', team: 'FDJ', time: '3:02:11' },
-        { rank: 2, rider: 'Kopecky Lotte', team: 'SD Worx', time: '3:02:11' },
+        { rank: 1, rider: 'Vollering Demi', team: 'FDJ', team_code: 'FST', time: '3:02:11' },
+        { rank: 2, rider: 'Kopecky Lotte', team: 'SD Worx', team_code: 'SDW', time: '3:02:11' },
       ],
       gc_top: [
         { rank: 1, rider: 'Vollering Demi', team: 'FDJ', time: '9:14:02', move: 1, gain_s: -22 },
@@ -214,8 +215,11 @@ for (const [naam, a] of Object.entries(gevallen)) {
     p.push('de tweede koers toont zijn eigen zenders niet');
   if (uit.na.tekst.indexOf('NPO 1') >= 0)
     p.push('de tweede koers toont de zenders van de tegelkoers');
+  if (uit.na.tekst.indexOf('(SDW)') < 0)
+    p.push('de ploegcode staat niet achter de renner');
+  // het klassement heeft nog geen code: daar hoort de volledige naam te staan
   if (uit.na.tekst.indexOf('(SD Worx)') < 0)
-    p.push('de ploeg staat niet achter de renner');
+    p.push('zonder ploegcode valt de kaart niet terug op de volledige naam');
   // geel (#F3C700) hoort zwarte letters te krijgen, anders is het onleesbaar
   const GEEL = 'rgb(243, 199, 0)|rgb(14, 21, 32)';
   if (uit.start.kleur !== GEEL)
