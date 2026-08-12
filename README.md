@@ -333,7 +333,7 @@ daar beheer je de lijst zelf — en blijft de oude weg over.
 > **Werkte tot en met 0.9.1 niet.** Dat is de reden dat je de foutkaart
 > misschien nog steeds zag. De registratie las de modus van Lovelace uit een
 > veld dat er niet was: `hass.data["lovelace"]` is tot Home Assistant 2024.12
-> een dict, daarna een object met `mode`, en pas vanaf 2026.6 een object met
+> een dict, daarna een object met `mode`, en pas vanaf 2026.2 een object met
 > `resource_mode` — en juist die laatste naam werd uitgelezen. De uitkomst
 > was op elke versie hetzelfde: geen resource, altijd de oude weg. Vanaf
 > 0.10.0 wordt de vraag aan de resourcelijst zelf gesteld (kan die schrijven,

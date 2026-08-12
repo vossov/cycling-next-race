@@ -254,12 +254,22 @@ for (const [design, marge] of [['default', '10px'], ['ha', '8px 16px 16px'],
     if (dlg) dlg.showModal();
     const kop = r.querySelector('.kaartkop');
     const icoon = r.querySelector('.aftel-icoon');
+    // staat het icoon werkelijk midden in zijn rondje? De svg is een
+    // blokelement, dus dat gaat niet vanzelf
+    const svg = icoon ? icoon.querySelector('svg') : null;
+    let scheef = null;
+    if (icoon && svg) {
+      const a = icoon.getBoundingClientRect();
+      const b = svg.getBoundingClientRect();
+      scheef = Math.round(Math.abs((b.left + b.width / 2) - (a.left + a.width / 2)));
+    }
     return {
       klasse: el.className,
       dialoogklasse: dlg ? dlg.className : '',
       marge: getComputedStyle(el).padding,
       kop: kop ? kop.textContent : '',
       icoonbreedte: icoon ? getComputedStyle(icoon).width : '',
+      scheef: scheef,
       svgs: r.querySelectorAll('svg').length,
       nan: /NaN|undefined/.test(r.innerHTML),
     };
@@ -275,6 +285,8 @@ for (const [design, marge] of [['default', '10px'], ['ha', '8px 16px 16px'],
   if (uit.nan) p.push('NaN of undefined');
   if (design === 'bubble' && uit.icoonbreedte !== '38px')
     p.push(`het icoon staat niet in een rondje (breedte ${uit.icoonbreedte})`);
+  if (design === 'bubble' && uit.scheef !== 0)
+    p.push(`het icoon staat ${uit.scheef}px uit het midden van zijn rondje`);
   if (p.length) { console.log(`FOUT  vormgeving ${design}: ${p.join(', ')}`); mislukt++; }
   else console.log(`ok    vormgeving ${design} — marge ${uit.marge}, ${uit.svgs} svg`);
 
@@ -354,6 +366,35 @@ for (const [design, marge] of [['default', '10px'], ['ha', '8px 16px 16px'],
   if (uit.met.inhoud === 0) p.push('in de bewerkmodus wordt niets getekend');
   if (p.length) { console.log(`FOUT  preview-modus: ${p.join(', ')}`); mislukt++; }
   else console.log('ok    preview-modus — verborgen op het dashboard, zichtbaar in het bewerkscherm');
+}
+
+// ── entiteit verdwijnt nadat de kaart zich verborgen heeft ───────
+{
+  const uit = await page.evaluate(([alle]) => {
+    document.getElementById('doel').innerHTML = '';
+    const kaart = document.createElement('cycling-next-race-card');
+    kaart.setConfig({ entity: 'sensor.cycling_next_race', visible_days: 2 });
+    document.getElementById('doel').appendChild(kaart);
+    // koers ver weg: de kaart verbergt zichzelf
+    kaart.hass = { states: { 'sensor.cycling_next_race': {
+      state: 'x', last_updated: 'een',
+      attributes: { ...alle, days_until: 30, show_state: 'Gepland' } } } };
+    const verborgen = getComputedStyle(kaart).display === 'none';
+    // en daarna is de sensor er niet meer, bijvoorbeeld na hernoemen
+    kaart.hass = { states: {} };
+    return {
+      verborgen,
+      zichtbaar: getComputedStyle(kaart).display !== 'none',
+      melding: kaart.shadowRoot.textContent.indexOf('bestaat niet') >= 0,
+    };
+  }, [attrs]);
+
+  const p = [];
+  if (!uit.verborgen) p.push('de kaart verborg zich niet bij een koers ver weg');
+  if (!uit.zichtbaar) p.push('de melding blijft onzichtbaar op een kaart die zich verborgen had');
+  if (!uit.melding) p.push('er staat geen melding over de ontbrekende sensor');
+  if (p.length) { console.log(`FOUT  sensor verdwijnt: ${p.join(', ')}`); mislukt++; }
+  else console.log('ok    sensor verdwijnt — de kaart komt terug in beeld met een melding');
 }
 
 // ── zichtbaarheid en aftelweergave ───────────────────────────────

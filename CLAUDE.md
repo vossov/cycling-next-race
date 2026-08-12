@@ -333,9 +333,11 @@ wanneer wij opzetten.
 
 **De modus van Lovelace is niet aan een veldnaam af te lezen.** Tot en met
 0.9.1 keek `_als_lovelace_resource` naar `lovelace.resource_mode` en dat gaf
-op élke uitgebrachte versie `None`: `hass.data["lovelace"]` is t/m HA
-2024.12 een **dict**, van 2025.2 t/m 2026.1 een dataclass met `mode`, en pas
-vanaf 2026.6 een dataclass met `resource_mode`. De registratie viel dus
+op élke versie waarop de integratie ooit draaide `None`:
+`hass.data["lovelace"]` is t/m HA 2024.12 een **dict**, van 2025.2 t/m
+2026.1 een dataclass met `mode`, en pas vanaf 2026.2 een dataclass met
+`resource_mode` (daar is `mode` hernoemd, omdat de modus van de resources
+losstaat van die van de dashboards). De registratie viel dus
 altijd stil terug op extra_js_url — precies de weg die de foutkaart
 oplevert waar gebruikers over klaagden, terwijl het commentaar in de code
 beweerde dat dat opgelost was. `_resourcecollectie` leest daarom beide
@@ -390,6 +392,19 @@ Schrijf sleutels in `this._config` voluit (`view: view`, niet de verkorte
 vorm), want die test leest ze met een regex. De optietabel in de README
 loopt tot de eerste regel die geen tabelrij is; tabellen met de wáárden van
 een optie horen daaronder.
+
+**`ha-form` houdt zijn eigen data bij.** Het formulier één keer opbouwen en
+daarna alleen `this._config` bijwerken is niet genoeg: `ha-form` doet
+`this.data = {...this.data, ...nieuw}` en stuurt bij een wijziging zijn
+eigen data terug. Home Assistant roept `setConfig` op hetzelfde
+editor-element opnieuw aan zodra de configuratie buiten het formulier om
+verandert — `hui-element-editor._setConfig()` doet dat onder meer na elke
+wijziging in de code-editor achter *Toon code-editor*, en het element wordt
+alleen weggegooid als het kaarttype verandert. Zonder `this._form.data =
+this._config` in `_teken` bleef het formulier op de oude waarden staan en
+sloeg de eerstvolgende wijziging die oude waarden weer op. Met `sections`
+en `title`, die `_wijzig` juist weglaat als ze niets toevoegen, betekende
+dat: sleutels stilzwijgend kwijt.
 
 `setConfig` mag nooit een uitzondering gooien — Home Assistant maakt daar
 een foutkaart van, en die is voor de gebruiker niet te repareren. Wat er

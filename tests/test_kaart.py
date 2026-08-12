@@ -206,6 +206,9 @@ class _NepResources:
             if i["id"] == item_id:
                 i.update(updates)
 
+    async def async_delete_item(self, item_id):
+        self.items = [i for i in self.items if i["id"] != item_id]
+
 
 class _NepYamlResources:
     """Bootst ResourceYAMLCollection na.
@@ -353,6 +356,36 @@ def test_lovelace_met_resource_mode_wordt_herkend(wt):
 
     assert asyncio.run(init._als_lovelace_resource(hass, "/x.js")) is True
     assert res.aangemaakt
+
+
+def test_verwijderen_haalt_de_resource_weg(wt):
+    """Anders blijft de frontend een adres ophalen dat niet meer bestaat."""
+    import asyncio
+
+    init = _init()
+    res = _NepResources([
+        {"id": "a1", "res_type": "module", "url": f"{init.KAART_URL}?v=1"},
+        {"id": "a2", "res_type": "module", "url": "/local/iets-anders.js"},
+    ])
+    hass = _NepHass(_NepLovelace(res))
+    hass.data[f"{init.DOMAIN}_kaart_geregistreerd"] = True
+
+    asyncio.run(init.async_remove_entry(hass, None))
+
+    assert [i["id"] for i in res.items] == ["a2"], "de kaart staat er nog, of te veel weg"
+    assert f"{init.DOMAIN}_kaart_geregistreerd" not in hass.data, (
+        "opnieuw toevoegen zonder herstart meldt de kaart dan niet meer aan"
+    )
+
+
+def test_verwijderen_zonder_resourcelijst_gaat_goed(wt):
+    """In YAML-modus valt er niets op te ruimen; dat mag niet stukgaan."""
+    import asyncio
+
+    init = _init()
+    hass = _NepHass(_NepLovelace(_NepYamlResources(), modus="yaml"))
+    asyncio.run(init.async_remove_entry(hass, None))
+    asyncio.run(init.async_remove_entry(_NepHass(), None))
 
 
 def test_lovelace_zonder_modusveld_wordt_herkend(wt):

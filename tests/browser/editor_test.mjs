@@ -92,6 +92,22 @@ for (const metHaForm of [false, true]) {
       events: gewijzigd.length,
       laatste: gewijzigd[gewijzigd.length - 1] || null,
       stub: Kaart.getStubConfig(),
+      // een tweede setConfig moet in het formulier terechtkomen; anders
+      // blijft het staan op de configuratie van de eerste keer
+      tweedeSetConfig: (() => {
+        const e4 = Kaart.getConfigElement();
+        document.getElementById('doel').appendChild(e4);
+        e4.hass = { states: {} };
+        e4.setConfig({ entity: 'sensor.cycling_next_race', view: 'profile' });
+        e4.setConfig({ entity: 'sensor.cycling_next_race', view: 'countdown',
+                       design: 'bubble' });
+        const f = e4.shadowRoot.querySelector('ha-form');
+        if (f) return { via: 'ha-form', view: (f._data || {}).view,
+                        design: (f._data || {}).design };
+        const s = e4.shadowRoot.querySelector('[name="view"]');
+        return { via: 'terugval', view: s ? s.value : '',
+                 design: e4.shadowRoot.querySelector('[name="design"]').value };
+      })(),
       // een kaart die met de stub begint hoort alle onderdelen te tonen
       stubGevuld: (() => {
         const k = document.createElement('cycling-next-race-card');
@@ -99,9 +115,13 @@ for (const metHaForm of [false, true]) {
         return { sections: k._config.sections };
       })(),
       // alles aangevinkt en een lege kop horen niet in de opgeslagen
-      // configuratie te belanden: dat is hetzelfde als ze weglaten
+      // configuratie te belanden: dat is hetzelfde als ze weglaten. Maar de
+      // editor moet er daarna zélf nog mee kunnen tekenen — een sleutel die
+      // alleen uit de doorgegeven configuratie verdwijnt mag niet ook uit
+      // zijn eigen state verdwijnen
       allesAan: (() => {
         const e3 = Kaart.getConfigElement();
+        document.getElementById('doel').appendChild(e3);
         e3.setConfig({ entity: 'sensor.cycling_next_race' });
         let doorgegeven = null;
         e3.addEventListener('config-changed', (e) => { doorgegeven = e.detail.config; });
@@ -112,7 +132,13 @@ for (const metHaForm of [false, true]) {
           sections: ['profile', 'tv', 'upcoming', 'result', 'gc', 'points', 'kom', 'youth'],
           title: '',
         });
-        return doorgegeven || {};
+        let opnieuw = 'ok';
+        try {
+          e3.hass = { states: {} };
+        } catch (err) {
+          opnieuw = err.message;
+        }
+        return { ...(doorgegeven || {}), _opnieuw: opnieuw };
       })(),
       // onzin in de configuratie mag niet blijven staan
       opgeschoond: (() => {
@@ -158,6 +184,12 @@ for (const metHaForm of [false, true]) {
       problemen.push('alles aangevinkt komt als lijst in de configuratie terecht');
     if (uit.allesAan.title !== undefined)
       problemen.push('een lege kop komt in de configuratie terecht');
+    if (uit.allesAan._opnieuw !== 'ok')
+      problemen.push(`tekent niet opnieuw na een wijziging: ${uit.allesAan._opnieuw}`);
+    if (uit.tweedeSetConfig.view !== 'countdown' || uit.tweedeSetConfig.design !== 'bubble')
+      problemen.push(
+        `een tweede setConfig komt niet in het formulier: ${JSON.stringify(uit.tweedeSetConfig)}`
+      );
     if (uit.opgeschoond.design !== 'default')
       problemen.push(`onbekende vormgeving blijft staan: ${uit.opgeschoond.design}`);
     if (String(uit.opgeschoond.sections) !== 'gc')

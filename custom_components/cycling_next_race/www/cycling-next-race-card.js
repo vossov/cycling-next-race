@@ -559,10 +559,12 @@ const STIJL = `
   .thema-bubble .kaartkop { padding: 2px 8px 8px; }
   .thema-bubble .aftel-icoon {
     width: 38px; height: 38px; border-radius: 50%; opacity: 1;
-    text-align: center;
     background: var(--secondary-background-color, rgba(127, 127, 127, .18));
   }
-  .thema-bubble .aftel-icoon svg { width: 22px; height: 22px; margin-top: 8px; }
+  /* de svg staat hierboven op display:block, dus centreren gaat met
+     automatische zijmarges en niet met text-align — dat doet niets voor
+     een blokbox en liet het icoon tegen de linkerrand staan */
+  .thema-bubble .aftel-icoon svg { width: 22px; height: 22px; margin: 8px auto; }
   .thema-bubble .aftel-wanneer {
     border-radius: 14px; padding: 4px 10px; opacity: 1;
     background: var(--secondary-background-color, rgba(127, 127, 127, .18));
@@ -671,6 +673,9 @@ class CyclingNextRaceCard extends HTMLElement {
     if (!root) return;
     const thema = `thema-${this._config.design}`;
     if (!st) {
+      // uit zichzelf terug in beeld: had de kaart zich eerder verborgen en
+      // verdwijnt daarna de entiteit, dan bleef deze melding onzichtbaar
+      this.style.display = 'block';
       root.innerHTML = `<style>${STIJL}</style><ha-card class="${thema}"><div class="leeg">${esc(this._config.entity)} bestaat niet.</div></ha-card>`;
       return;
     }
@@ -923,7 +928,16 @@ class CyclingNextRaceCardEditor extends HTMLElement {
       delete schoon.sections;
     }
     if (!schoon.title) delete schoon.title;
-    this._config = schoon;
+    // Wat naar Home Assistant gaat mag kort zijn, maar wat het formulier
+    // zelf uitleest moet compleet blijven: `_teken` leest `sections` en
+    // `title` rechtstreeks, en zonder deze aanvulling liep een volgende
+    // tekenronde stuk op een sleutel die net verwijderd was.
+    this._config = {
+      ...schoon,
+      design: vormgeving(config.design),
+      sections: secties(config.sections),
+      title: config.title || '',
+    };
     this.dispatchEvent(
       new CustomEvent('config-changed', {
         detail: { config: schoon },
@@ -937,7 +951,13 @@ class CyclingNextRaceCardEditor extends HTMLElement {
     if (!this.shadowRoot || !this._config) return;
 
     if (customElements.get('ha-form')) {
-      if (this._form) return; // al opgebouwd; alleen data bijwerken
+      if (this._form) {
+        // al opgebouwd; alleen de waarden bijwerken. Zonder deze regel
+        // bleef het formulier staan op de configuratie van de eerste
+        // setConfig, en ging een latere wijziging van buitenaf verloren
+        this._form.data = this._config;
+        return;
+      }
       const form = document.createElement('ha-form');
       form.hass = this._hass;
       form.data = this._config;

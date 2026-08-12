@@ -41,6 +41,34 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Haal de kaart uit de resourcelijst als de integratie eruit gaat.
+
+    Zolang de registratie stilzwijgend faalde viel er niets op te ruimen —
+    `add_extra_js_url` staat alleen in het geheugen en is na een herstart
+    weg. Nu er werkelijk een regel in `.storage/lovelace_resources`
+    terechtkomt, blijft die zonder dit staan en haalt de frontend bij elke
+    paginalading een adres op dat niet meer bestaat.
+
+    Het statische pad zelf blijft wel staan; dat kan Home Assistant pas bij
+    een herstart kwijt. Faalt het opruimen, dan is dat geen reden om het
+    verwijderen te laten mislukken.
+    """
+    resources = _resourcecollectie(hass)
+    verwijder = getattr(resources, "async_delete_item", None)
+    if callable(verwijder):
+        try:
+            await resources.async_get_info()
+            for item in list(resources.async_items() or []):
+                if str(item.get("url", "")).split("?")[0] == KAART_URL:
+                    await verwijder(item["id"])
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Kaart uit de resourcelijst halen lukte niet: %s", err)
+
+    # opnieuw toevoegen zonder herstart moet de kaart weer aanmelden
+    hass.data.pop(_KAART_GEREGISTREERD, None)
+
+
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Herlaad zodra de opties zijn gewijzigd, zodat ze meteen gelden."""
     await hass.config_entries.async_reload(entry.entry_id)
@@ -106,12 +134,17 @@ def _resourcecollectie(hass: HomeAssistant):
     |------------------|---------------------------|-----------------|
     | t/m 2024.12      | dict                      | `mode`          |
     | 2025.2 – 2026.1  | dataclass `LovelaceData`  | `mode`          |
-    | vanaf 2026.6     | dataclass `LovelaceData`  | `resource_mode` |
+    | vanaf 2026.2     | dataclass `LovelaceData`  | `resource_mode` |
+
+    (Nagekeken in de broncode van die versies; in 2026.2 is `mode`
+    hernoemd omdat de modus van de resources losstaat van die van de
+    dashboards.)
 
     Op de modus aftasten met één vaste attribuutnaam ging daarom altijd mis:
     de vraag `getattr(lovelace, "resource_mode", None) != "storage"` was op
-    elke uitgebrachte versie waar, waarna de kaart stil terugviel op
-    `add_extra_js_url` — juist de weg die de foutkaart oplevert.
+    elke versie waar waarop deze integratie ooit gedraaid heeft, waarna de
+    kaart stil terugviel op `add_extra_js_url` — juist de weg die de
+    foutkaart oplevert.
 
     Vandaar dat de vraag nu aan de collectie zelf wordt gesteld in plaats
     van aan een veldnaam: alleen `ResourceStorageCollection` kan items
