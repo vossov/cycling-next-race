@@ -234,6 +234,101 @@ for (const [naam, a] of Object.entries(gevallen)) {
   await page.screenshot({ path: 'kaart-koerskeuze.png', fullPage: true });
 }
 
+// ── vormgeving ───────────────────────────────────────────────────
+// Elke vormgeving moet dezelfde kaart opleveren, alleen anders opgemaakt.
+// De ha-card-vervanger hierboven zet zijn achtergrond en afronding inline,
+// en inline wint van onze stijlen; daarom kijken we naar de binnenmarge.
+for (const [design, marge] of [['default', '10px'], ['ha', '8px 16px 16px'],
+                               ['bubble', '12px 14px']]) {
+  const uit = await page.evaluate(([design, alle]) => {
+    document.getElementById('doel').innerHTML = '';
+    const kaart = document.createElement('cycling-next-race-card');
+    kaart.setConfig({ entity: 'sensor.cycling_next_race', design: design,
+                      view: 'countdown', title: 'Wielrennen' });
+    document.getElementById('doel').appendChild(kaart);
+    kaart.hass = { states: { 'sensor.cycling_next_race': {
+      state: 'x', last_updated: design, attributes: alle } } };
+    const r = kaart.shadowRoot;
+    const el = r.querySelector('ha-card');
+    const dlg = r.querySelector('dialog');
+    if (dlg) dlg.showModal();
+    const kop = r.querySelector('.kaartkop');
+    const icoon = r.querySelector('.aftel-icoon');
+    return {
+      klasse: el.className,
+      dialoogklasse: dlg ? dlg.className : '',
+      marge: getComputedStyle(el).padding,
+      kop: kop ? kop.textContent : '',
+      icoonbreedte: icoon ? getComputedStyle(icoon).width : '',
+      svgs: r.querySelectorAll('svg').length,
+      nan: /NaN|undefined/.test(r.innerHTML),
+    };
+  }, [design, attrs]);
+
+  const p = [];
+  if (uit.klasse.indexOf(`thema-${design}`) < 0)
+    p.push(`ha-card mist de klasse thema-${design}: "${uit.klasse}"`);
+  if (uit.dialoogklasse.indexOf(`thema-${design}`) < 0)
+    p.push(`het venster mist de klasse thema-${design}: "${uit.dialoogklasse}"`);
+  if (uit.marge !== marge) p.push(`binnenmarge ${uit.marge}, verwacht ${marge}`);
+  if (uit.kop !== 'Wielrennen') p.push(`de eigen kop ontbreekt: "${uit.kop}"`);
+  if (uit.nan) p.push('NaN of undefined');
+  if (design === 'bubble' && uit.icoonbreedte !== '38px')
+    p.push(`het icoon staat niet in een rondje (breedte ${uit.icoonbreedte})`);
+  if (p.length) { console.log(`FOUT  vormgeving ${design}: ${p.join(', ')}`); mislukt++; }
+  else console.log(`ok    vormgeving ${design} — marge ${uit.marge}, ${uit.svgs} svg`);
+
+  await page.screenshot({ path: `kaart-design-${design}.png` });
+}
+
+// ── onderdelen van het detailvenster ─────────────────────────────
+{
+  const uit = await page.evaluate(([alle]) => {
+    const venster = (sections) => {
+      document.getElementById('doel').innerHTML = '';
+      const kaart = document.createElement('cycling-next-race-card');
+      const config = { entity: 'sensor.cycling_next_race' };
+      if (sections) config.sections = sections;
+      kaart.setConfig(config);
+      document.getElementById('doel').appendChild(kaart);
+      kaart.hass = { states: { 'sensor.cycling_next_race': {
+        state: 'x', last_updated: String(sections), attributes: alle } } };
+      const r = kaart.shadowRoot;
+      return {
+        tekst: r.querySelector('dialog').textContent,
+        secties: r.querySelectorAll('section').length,
+        profielen: r.querySelectorAll('dialog svg').length,
+      };
+    };
+    return {
+      alles: venster(null),
+      twee: venster(['result', 'gc']),
+      leeg: venster([]),
+      // zonder profiel wordt de eerste etappe van een pop-upkoers nergens
+      // getekend; die hoort dan bij "Komende dagen" te staan
+      komend: venster(['upcoming']),
+    };
+  }, [attrs]);
+
+  const p = [];
+  if (uit.alles.tekst.indexOf('Bergklassement') < 0)
+    p.push('zonder keuze staat niet alles in het venster');
+  if (uit.twee.tekst.indexOf('Algemeen klassement') < 0)
+    p.push('een gekozen onderdeel ontbreekt');
+  if (uit.twee.tekst.indexOf('Bergklassement') >= 0)
+    p.push('een niet gekozen onderdeel staat er toch in');
+  if (uit.twee.tekst.indexOf('Komende dagen') >= 0)
+    p.push('"Komende dagen" staat er ondanks de keuze');
+  if (uit.twee.profielen !== 0)
+    p.push(`${uit.twee.profielen} profielen terwijl het profiel niet gekozen is`);
+  if (uit.leeg.secties !== uit.alles.secties)
+    p.push('een lege keuze levert niet hetzelfde op als geen keuze');
+  if (uit.komend.tekst.indexOf('Etappe 4 · Tour de France Femmes') < 0)
+    p.push('zonder profiel valt de eerste etappe van een pop-upkoers weg');
+  if (p.length) { console.log(`FOUT  onderdelen: ${p.join(', ')}`); mislukt++; }
+  else console.log(`ok    onderdelen — alles ${uit.alles.secties} secties, keuze ${uit.twee.secties}`);
+}
+
 // ── preview-modus: nooit verbergen ───────────────────────────────
 {
   const uit = await page.evaluate(([alle]) => {

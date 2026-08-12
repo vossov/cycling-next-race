@@ -116,9 +116,9 @@ templates in de raw-config te plakken en geen extra frontend-kaarten te
 installeren.
 
 **Voeg hem toe zoals elke andere kaart.** Bewerk je dashboard, kies *Kaart
-toevoegen* en zoek op *Cycling Next Race*. De kaart heeft een eigen
-instelscherm: de sensor staat er al in en de twee schakelaars zet je met een
-klik. YAML komt er niet aan te pas.
+toevoegen* en zoek op *Cycling Next Race*. Elke optie hieronder staat in het
+instelscherm van de kaart: de sensor is al ingevuld, de vormgeving en de
+onderdelen kies je aan. YAML komt er niet aan te pas.
 
 Liever toch typen? Dit volstaat:
 
@@ -132,12 +132,41 @@ De sensor wordt vanzelf gevonden.
 |---|---|---|
 | `entity` | `sensor.cycling_next_race` | welke sensor de kaart uitleest |
 | `view` | `profile` | `profile` toont het hoogteprofiel, `countdown` een regel met het aftellen |
+| `design` | `default` | vormgeving: `default`, `ha` of `bubble` — zie hieronder |
 | `visible_days` | `2` (`0` bij `countdown`) | vanaf hoeveel dagen voor de koers de kaart verschijnt; `0` is altijd |
 | `details` | `true` | een tik opent het detailvenster |
+| `sections` | alles | welke onderdelen in dat venster staan; niets gekozen betekent alles |
+| `title` | leeg | eigen kop boven de kaart |
 
 Lopen er meerdere koersen tegelijk, dan staan ze in dat detailvenster als
 knoppen naast elkaar; de koers van de tegel staat open en de andere zijn
 één tik ver. Is er maar één koers, dan is er niets extra's te zien.
+
+### Vormgeving
+
+| `design` | Wat je krijgt |
+|---|---|
+| `default` | de eigen opmaak van de kaart: oranje accent, eigen venster |
+| `ha` | volgt het actieve Home Assistant-thema — dezelfde binnenmarge, koptekst, afronding en accentkleur (`--primary-color`) als een ingebouwde kaart |
+| `bubble` | in de trant van Bubble Card: sterke afronding, het icoon in een rondje, de status in een pilletje en een venster dat onder aan het scherm plakt |
+
+De `bubble`-vormgeving is **nagebouwd, niet overgenomen**: je hebt Bubble Card
+er niet voor nodig en de kaart gebruikt er niets van. Het is een stijl die
+erop lijkt, geen echte Bubble Card.
+
+De hoogteprofielen houden in elke vormgeving hun eigen kleuren. Die tekencode
+is gedeeld met de button-card-templates in `lovelace/` en moet daar gelijk aan
+blijven; kleuren die het thema volgen zouden die twee uit elkaar laten lopen.
+
+### Onderdelen van het detailvenster
+
+`sections` bepaalt wat er in het venster staat, in deze vaste volgorde:
+`profile` (hoogteprofiel), `tv` (tv-zenders), `upcoming` (komende dagen),
+`result` (uitslag), `gc` (algemeen klassement), `points` (punten), `kom`
+(berg), `youth` (jongeren).
+
+Niets aangevinkt betekent alles — wil je helemaal geen venster, zet dan
+`details` uit.
 
 ### Voorbeelden
 
@@ -147,8 +176,37 @@ Alles wat je kunt instellen, met de standaardwaarden erbij:
 type: custom:cycling-next-race-card
 entity: sensor.cycling_next_race   # welke sensor
 view: profile                      # of: countdown
+design: default                    # of: ha, bubble
 visible_days: 2                    # vandaag en morgen
 details: true                      # tik opent het detailvenster
+title: ''                          # geen kop
+sections:                          # alles; laat weg voor hetzelfde effect
+  - profile
+  - tv
+  - upcoming
+  - result
+  - gc
+  - points
+  - kom
+  - youth
+```
+
+**In de stijl van je thema**, zodat de kaart niet uit de toon valt:
+
+```yaml
+type: custom:cycling-next-race-card
+design: ha
+title: Wielrennen
+```
+
+**Alleen de uitslag en het algemeen klassement**, zonder profiel en zenders
+in het venster:
+
+```yaml
+type: custom:cycling-next-race-card
+sections:
+  - result
+  - gc
 ```
 
 **Het profiel al een week vooruit.** Handig als je wilt zien wat eraan komt:
@@ -246,10 +304,12 @@ werkt de sensor gewoon door en zie je alleen de kaart niet. Loop dit na:
    probleem in de browser (stap 4). Krijg je een 404, dan is het bestand niet
    geserveerd — ga naar stap 3.
 3. **Wat zegt het logboek?** Zoek op `cycling_next_race`. Bij succes staat er
-   `Lovelace-kaart aangemeld via ... op /cycling_next_race/...`. Staat er in plaats
-   daarvan `Kaartbestand niet gevonden`, dan mist `www/` in je installatie:
-   controleer of `custom_components/cycling_next_race/www/` bestaat en
-   installeer anders opnieuw via HACS.
+   `Lovelace-kaart aangemeld als Lovelace-resource op /cycling_next_race/...`.
+   Staat er in plaats daarvan `Kaartbestand niet gevonden`, dan mist `www/`
+   in je installatie: controleer of
+   `custom_components/cycling_next_race/www/` bestaat en installeer anders
+   opnieuw via HACS. Staat er een waarschuwing over `extra_js_url`, lees dan
+   de volgende paragraaf.
 4. **Leeg de browsercache.** De frontend bewaart scripts hardnekkig. Een
    harde herlaad (Ctrl+Shift+R, op mobiel de app-cache legen) haalt de kaart
    alsnog op. Dit is verreweg de meest voorkomende oorzaak vlak na een
@@ -265,11 +325,24 @@ kort op; komt het net te laat, dan valt hij terug op een foutkaart.
 Het gaat vanzelf over zodra het script in de cache van de browser staat, dus
 je ziet het vooral één keer na een update.
 
-Sinds versie 0.4 zet de integratie de kaart in de resourcelijst van
-Lovelace in plaats van hem los mee te geven. Lovelace laadt zijn resources
-en wacht daarop vóór het tekenen, waardoor die race weg is. Alleen in
-YAML-modus kan dat niet — daar beheer je de lijst zelf — en blijft de oude
-weg over.
+De integratie zet de kaart daarom in de resourcelijst van Lovelace in plaats
+van hem los mee te geven: Lovelace laadt zijn resources en wacht daarop vóór
+het tekenen, waardoor die race weg is. Alleen in YAML-modus kan dat niet —
+daar beheer je de lijst zelf — en blijft de oude weg over.
+
+> **Werkte tot en met 0.9.1 niet.** Dat is de reden dat je de foutkaart
+> misschien nog steeds zag. De registratie las de modus van Lovelace uit een
+> veld dat er niet was: `hass.data["lovelace"]` is tot Home Assistant 2024.12
+> een dict, daarna een object met `mode`, en pas vanaf 2026.6 een object met
+> `resource_mode` — en juist die laatste naam werd uitgelezen. De uitkomst
+> was op elke versie hetzelfde: geen resource, altijd de oude weg. Vanaf
+> 0.10.0 wordt de vraag aan de resourcelijst zelf gesteld (kan die schrijven,
+> dan is het de opslagvariant), zodat een volgende hernoeming er niets meer
+> toe doet. Blijft het na een herstart en een harde herlaad tóch gebeuren,
+> kijk dan in het logboek: staat daar de waarschuwing over `extra_js_url`,
+> dan draait Lovelace in YAML-modus en zet je
+> `/cycling_next_race/cycling-next-race-card.js` zelf als module in je
+> resourcelijst.
 
 Zie je het toch nog, open het dashboard dan op een computer in plaats van in
 de app. De foutkaart toont daar de melding, en in de ontwikkelaarsconsole

@@ -4,6 +4,7 @@ Het tekenwerk van de profielen staat op twee plekken: in de
 button-card-templates en in de kaart. Deze tests bewaken dat die twee niet
 uiteenlopen, plus de zaken die de kaart onbruikbaar maken als ze ontbreken.
 """
+import itertools
 import json
 import re
 from pathlib import Path
@@ -141,7 +142,11 @@ def test_readme_beschrijft_dezelfde_opties():
     opties = _configsleutels(kaart)
 
     readme = (WORTEL / "README.md").read_text(encoding="utf-8")
-    tabel = readme[readme.index("| Optie |"):readme.index("### Voorbeelden")]
+    # alleen de optietabel zelf: tot de eerste regel die geen tabelrij meer
+    # is. Verderop staan tabellen met de waarden van een optie, en die
+    # zouden anders als optienaam meetellen
+    regels = readme[readme.index("| Optie |"):].splitlines()
+    tabel = "\n".join(itertools.takewhile(lambda r: r.startswith("|"), regels))
     beschreven = set(re.findall(r"\|\s*`(\w+)`\s*\|", tabel))
 
     assert opties == beschreven, (
@@ -177,7 +182,7 @@ def test_stempel_verandert_mee_met_het_bestand(wt, const):
 # ── hoe de kaart bij de frontend komt ───────────────────────────────
 
 class _NepResources:
-    """Bootst de resourcecollectie van Lovelace na."""
+    """Bootst ResourceStorageCollection na: die kan items schrijven."""
 
     def __init__(self, items=None):
         self.items = list(items or [])
@@ -202,15 +207,43 @@ class _NepResources:
                 i.update(updates)
 
 
+class _NepYamlResources:
+    """Bootst ResourceYAMLCollection na.
+
+    Die kent alleen deze twee methoden — schrijven kan er niet, want in
+    YAML-modus beheert de gebruiker de lijst zelf. Precies daaraan is de
+    modus te herkennen, ongeacht hoe het modusveld in die versie heet.
+    """
+
+    loaded = True
+
+    def __init__(self, items=None):
+        self.items = list(items or [])
+
+    async def async_get_info(self):
+        return {"resources": len(self.items)}
+
+    def async_items(self):
+        return self.items
+
+
 class _NepLovelace:
-    def __init__(self, resources, modus="storage"):
+    """De vorm van `hass.data["lovelace"]` vanaf Home Assistant 2025.2.
+
+    Het veld met de modus heet daar `mode` en heet vanaf 2026.6
+    `resource_mode`; welke van de twee erop staat is instelbaar, want de
+    registratie mag van geen van beide afhangen.
+    """
+
+    def __init__(self, resources, modus="storage", modusveld="mode"):
         self.resources = resources
-        self.resource_mode = modus
+        if modusveld:
+            setattr(self, modusveld, modus)
 
 
 class _NepHass:
     def __init__(self, lovelace=None):
-        self.data = {"lovelace": lovelace} if lovelace else {}
+        self.data = {"lovelace": lovelace} if lovelace is not None else {}
 
 
 def _init():
@@ -264,10 +297,8 @@ def test_yaml_modus_valt_terug(wt):
     import asyncio
 
     init = _init()
-    res = _NepResources()
-    hass = _NepHass(_NepLovelace(res, modus="yaml"))
+    hass = _NepHass(_NepLovelace(_NepYamlResources(), modus="yaml"))
     assert asyncio.run(init._als_lovelace_resource(hass, "/x.js")) is False
-    assert res.aangemaakt == []
 
 
 def test_zonder_lovelace_valt_terug(wt):
@@ -275,6 +306,69 @@ def test_zonder_lovelace_valt_terug(wt):
 
     init = _init()
     assert asyncio.run(init._als_lovelace_resource(_NepHass(), "/x.js")) is False
+
+
+# De vorm van hass.data["lovelace"] is drie keer veranderd. Elke keer dat de
+# registratie daarop struikelde viel de kaart terug op add_extra_js_url, en
+# juist die weg levert de foutkaart op waar het dashboard mee opent. Vandaar
+# een test per vorm.
+
+def test_lovelace_als_dict_wordt_herkend(wt):
+    """Home Assistant t/m 2024.12: `hass.data["lovelace"]` is een dict.
+
+    `getattr(dict, "resources")` levert daar niets op; wie het zo leest
+    registreert nooit een resource.
+    """
+    import asyncio
+
+    init = _init()
+    res = _NepResources()
+    hass = _NepHass({"mode": "storage", "resources": res})
+    gelukt = asyncio.run(init._als_lovelace_resource(hass, f"{init.KAART_URL}?v=1"))
+
+    assert gelukt is True
+    assert res.aangemaakt == [{"res_type": "module", "url": f"{init.KAART_URL}?v=1"}]
+
+
+def test_lovelace_met_alleen_mode_wordt_herkend(wt):
+    """Home Assistant 2025.2 t/m 2026.1: dataclass met `mode`, geen
+    `resource_mode`."""
+    import asyncio
+
+    init = _init()
+    res = _NepResources()
+    hass = _NepHass(_NepLovelace(res, modusveld="mode"))
+
+    assert asyncio.run(init._als_lovelace_resource(hass, "/x.js")) is True
+    assert res.aangemaakt
+
+
+def test_lovelace_met_resource_mode_wordt_herkend(wt):
+    """Home Assistant vanaf 2026.6: het veld heet `resource_mode`."""
+    import asyncio
+
+    init = _init()
+    res = _NepResources()
+    hass = _NepHass(_NepLovelace(res, modusveld="resource_mode"))
+
+    assert asyncio.run(init._als_lovelace_resource(hass, "/x.js")) is True
+    assert res.aangemaakt
+
+
+def test_lovelace_zonder_modusveld_wordt_herkend(wt):
+    """Een volgende hernoeming mag de registratie niet weer stilleggen.
+
+    De modus komt daarom van de collectie zelf — kan die schrijven, dan is
+    het de opslagvariant — en niet van een veldnaam die per versie wisselt.
+    """
+    import asyncio
+
+    init = _init()
+    res = _NepResources()
+    hass = _NepHass(_NepLovelace(res, modusveld=None))
+
+    assert asyncio.run(init._als_lovelace_resource(hass, "/x.js")) is True
+    assert res.aangemaakt
 
 
 def test_kaart_registreert_zich_niet_dubbel():

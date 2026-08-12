@@ -72,19 +72,73 @@ async def _registreer_kaart(hass: HomeAssistant) -> None:
         return
 
     if await _als_lovelace_resource(hass, url):
-        weg = "Lovelace-resource"
-    else:
-        # Terugval voor YAML-modus, waar de resourcelijst niet te wijzigen is.
-        # Het script komt dan op elke pagina en Lovelace wacht er niet op,
-        # waardoor een kaart soms als "Configuratiefout" verschijnt tot je
-        # ververst.
-        add_extra_js_url(hass, url)
-        weg = "extra_js_url"
+        hass.data[_KAART_GEREGISTREERD] = True
+        # op info-niveau: zonder deze regel in het log is de kaart niet
+        # aangemeld, en dat is precies wat je wilt weten als hij niet verschijnt
+        _LOGGER.info("Lovelace-kaart aangemeld als Lovelace-resource op %s", url)
+        return
 
+    # Terugval voor YAML-modus, waar de resourcelijst niet te wijzigen is.
+    # Het script komt dan op elke pagina en Lovelace wacht er niet op,
+    # waardoor een kaart soms als "Configuratiefout" verschijnt tot je
+    # ververst. Vandaar een waarschuwing in plaats van een mededeling: dit
+    # is de weg waarop dat gebeurt, en dan wil je in het log kunnen zien
+    # dat het deze is.
+    add_extra_js_url(hass, url)
     hass.data[_KAART_GEREGISTREERD] = True
-    # op info-niveau: zonder deze regel in het log is de kaart niet aangemeld,
-    # en dat is precies wat je wilt weten als hij niet verschijnt
-    _LOGGER.info("Lovelace-kaart aangemeld via %s op %s", weg, url)
+    _LOGGER.warning(
+        "Lovelace-kaart aangemeld via extra_js_url op %s. Lovelace wacht "
+        "daar niet op, dus de kaart kan bij het openen van een dashboard "
+        "kort als 'Configuratiefout' verschijnen. Draait Lovelace in "
+        "YAML-modus, zet dan zelf %s in de resourcelijst.",
+        url,
+        url,
+    )
+
+
+def _resourcecollectie(hass: HomeAssistant):
+    """De resourcecollectie van Lovelace, of None als die niet bruikbaar is.
+
+    `hass.data["lovelace"]` heeft drie vormen gehad, en dat is precies waar
+    het eerder op misging:
+
+    | Home Assistant   | vorm                      | modusveld       |
+    |------------------|---------------------------|-----------------|
+    | t/m 2024.12      | dict                      | `mode`          |
+    | 2025.2 – 2026.1  | dataclass `LovelaceData`  | `mode`          |
+    | vanaf 2026.6     | dataclass `LovelaceData`  | `resource_mode` |
+
+    Op de modus aftasten met één vaste attribuutnaam ging daarom altijd mis:
+    de vraag `getattr(lovelace, "resource_mode", None) != "storage"` was op
+    elke uitgebrachte versie waar, waarna de kaart stil terugviel op
+    `add_extra_js_url` — juist de weg die de foutkaart oplevert.
+
+    Vandaar dat de vraag nu aan de collectie zelf wordt gesteld in plaats
+    van aan een veldnaam: alleen `ResourceStorageCollection` kan items
+    aanmaken en bijwerken. `ResourceYAMLCollection` kent enkel
+    `async_get_info` en `async_items` — daar beheert de gebruiker de lijst
+    zelf en valt er niets te schrijven. Dat onderscheid staat vast zolang
+    die twee klassen bestaan en overleeft dus een hernoemd veld.
+    """
+    lovelace = hass.data.get("lovelace")
+    if lovelace is None:
+        return None
+
+    if isinstance(lovelace, dict):
+        resources = lovelace.get("resources")
+    else:
+        resources = getattr(lovelace, "resources", None)
+    if resources is None:
+        return None
+
+    nodig = ("async_get_info", "async_items", "async_create_item", "async_update_item")
+    if not all(callable(getattr(resources, m, None)) for m in nodig):
+        _LOGGER.debug(
+            "Lovelace beheert zijn resources zelf (%s); de kaart gaat via "
+            "extra_js_url", type(resources).__name__
+        )
+        return None
+    return resources
 
 
 async def _als_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
@@ -98,9 +152,8 @@ async def _als_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
     Lukt alleen in storage-modus; in YAML-modus beheert de gebruiker de
     lijst zelf en is die hier niet te wijzigen.
     """
-    lovelace = hass.data.get("lovelace")
-    resources = getattr(lovelace, "resources", None)
-    if resources is None or getattr(lovelace, "resource_mode", None) != "storage":
+    resources = _resourcecollectie(hass)
+    if resources is None:
         return False
 
     try:

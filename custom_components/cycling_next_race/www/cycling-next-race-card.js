@@ -6,14 +6,20 @@
  *
  *   type: custom:cycling-next-race-card
  *
- * Opties:
+ * Opties (allemaal ook in de visuele editor, YAML is nergens nodig):
  *   entity        standaard sensor.cycling_next_race
  *   view          'profile' (standaard) toont het hoogteprofiel,
  *                 'countdown' een regel met de koers en het aftellen
+ *   design        vormgeving: 'default' (eigen opmaak), 'ha' (volgt het
+ *                 Home Assistant-thema) of 'bubble' (in de trant van
+ *                 Bubble Card, maar zonder die kaart nodig te hebben)
  *   visible_days  vanaf hoeveel dagen voor de koers de kaart verschijnt:
  *                 2 is vandaag en morgen, 7 de hele week, 0 altijd.
  *                 Standaard 2 bij profile en 0 bij countdown
  *   details       true (standaard) opent bij een tik het volledige overzicht
+ *   sections      welke onderdelen in dat overzicht staan; niets gekozen
+ *                 betekent alles (zie SECTIES)
+ *   title         eigen kop boven de kaart; leeg is geen kop
  *
  * Lopen er meerdere koersen tegelijk, dan staan ze in dat overzicht als
  * knoppen naast elkaar; de koers van de tegel staat open.
@@ -26,6 +32,48 @@
  */
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
+
+/* De onderdelen van het detailvenster, in de volgorde waarin ze staan.
+ * Wie er een aan- of uitzet doet dat met `sections`; niets gekozen betekent
+ * alles, zodat een kaart zonder die optie blijft tonen wat hij altijd toonde. */
+const SECTIES = [
+  { key: 'profile', label: 'Hoogteprofiel' },
+  { key: 'tv', label: 'Tv-zenders' },
+  { key: 'upcoming', label: 'Komende dagen' },
+  { key: 'result', label: 'Uitslag' },
+  { key: 'gc', label: 'Algemeen klassement' },
+  { key: 'points', label: 'Puntenklassement' },
+  { key: 'kom', label: 'Bergklassement' },
+  { key: 'youth', label: 'Jongerenklassement' },
+];
+
+const SECTIE_SLEUTELS = SECTIES.map(function (s) { return s.key; });
+
+/* De vormgevingen. 'default' is de opmaak die de kaart altijd had; 'ha'
+ * volgt de variabelen van het actieve Home Assistant-thema; 'bubble' is een
+ * eigen nabootsing van de stijl van Bubble Card — die kaart zelf is er niet
+ * voor nodig en wordt ook niet gebruikt. */
+const VORMGEVING = [
+  { value: 'default', label: 'Standaard (eigen opmaak)' },
+  { value: 'ha', label: 'Home Assistant-thema' },
+  { value: 'bubble', label: 'Bubble-stijl' },
+];
+
+const VORMGEVING_SLEUTELS = VORMGEVING.map(function (v) { return v.value; });
+
+/** De vormgeving uit een configuratie; onbekend valt terug op 'default'. */
+function vormgeving(waarde) {
+  return VORMGEVING_SLEUTELS.indexOf(String(waarde)) >= 0 ? String(waarde) : 'default';
+}
+
+/** De gekozen secties; leeg of onzin betekent alles. */
+function secties(waarde) {
+  if (!Array.isArray(waarde)) return SECTIE_SLEUTELS.slice();
+  const gekozen = waarde.filter(function (s) {
+    return SECTIE_SLEUTELS.indexOf(String(s)) >= 0;
+  }).map(String);
+  return gekozen.length ? gekozen : SECTIE_SLEUTELS.slice();
+}
 
 /* ── hulpjes ─────────────────────────────────────────────────────── */
 
@@ -181,10 +229,22 @@ function tekstOp(kleur) {
   return helder > 0.6 ? '#0E1520' : '#fff';
 }
 
-/** De stijl van de open knop: de leiderstrui, anders het accent. */
-function knopStijl(race) {
-  const kleur = veiligeKleur(race.jersey) || ACCENT;
-  return `background:${kleur};border-color:${kleur};color:${tekstOp(kleur)}`;
+/** De stijl van de open knop: de leiderstrui, anders het accent.
+ *
+ * In de Home Assistant-vormgeving is dat accent de primaire kleur van het
+ * actieve thema. Of daar zwarte of witte letters op moeten is hier niet te
+ * berekenen — het is een CSS-variabele en geen hexwaarde — dus komt de
+ * letterkleur uit `--text-primary-color`, waar Home Assistant precies dat
+ * in bijhoudt. Een echte truikleur blijft in elke vormgeving de truikleur.
+ */
+function knopStijl(race, design) {
+  const trui = veiligeKleur(race.jersey);
+  if (trui) return `background:${trui};border-color:${trui};color:${tekstOp(trui)}`;
+  if (design === 'ha') {
+    const p = `var(--primary-color,${ACCENT})`;
+    return `background:${p};border-color:${p};color:var(--text-primary-color,#fff)`;
+  }
+  return `background:${ACCENT};border-color:${ACCENT};color:${tekstOp(ACCENT)}`;
 }
 
 /** De komende etappes die bij deze koers horen. */
@@ -197,33 +257,45 @@ function komendVoor(a, race, meerdere) {
   return alles.filter((u) => u.race_key === race.key);
 }
 
-/** Alles van één koers: profiel, komende dagen, uitslag en klassementen. */
-function koersblok(a, race, meerdere) {
+/** Alles van één koers: profiel, komende dagen, uitslag en klassementen.
+ *
+ * `gekozen` is de lijst uit `sections`; wat er niet in staat wordt
+ * overgeslagen. De volgorde ligt hier vast en niet in de configuratie —
+ * een lijst die ook de volgorde bepaalt levert bij een half ingevulde
+ * keuze een onvoorspelbaar venster op.
+ */
+function koersblok(a, race, meerdere, gekozen) {
+  const aan = (sleutel) => gekozen.indexOf(sleutel) >= 0;
   const eigen = komendVoor(a, race, meerdere);
   // de getoonde etappe van de tegelkoers staat niet in upcoming; die van een
   // andere koers is er juist de eerste van, en hoort dus niet nog eens
   // onder "Komende dagen"
   const profiel = race.primary ? a : eigen[0];
-  const komend = race.primary ? eigen : eigen.slice(1);
+  // staat het profiel uit, dan wordt die eerste etappe nergens meer
+  // getekend en hoort hij gewoon bij "Komende dagen" — anders viel hij
+  // tussen wal en schip
+  const komend = race.primary || !aan('profile') ? eigen : eigen.slice(1);
   const u = race.primary ? a : race;
 
   const delen = [
-    profiel ? svgDetail({ attributes: profiel }) : '',
+    aan('profile') && profiel ? svgDetail({ attributes: profiel }) : '',
     // elke koers zijn eigen zenders; een sensor van vóór `races` heeft ze
     // alleen bovenaan staan, en dan blijft het bij de tegelkoers
-    zenders(race.primary ? a.channels_detail : u.channels_detail),
-    komend.length
+    aan('tv') ? zenders(race.primary ? a.channels_detail : u.channels_detail) : '',
+    aan('upcoming') && komend.length
       ? `<section><h3>Komende dagen</h3>${svgKomend({ attributes: { upcoming: komend } })}</section>`
       : '',
-    tijdlijst(u.last_stage_label || 'Uitslag', u.last_result),
-    tijdlijst('Algemeen klassement', u.gc_top, { verschillen: true }),
-    puntenlijst('Puntenklassement', u.points_top),
-    puntenlijst('Bergklassement', u.kom_top),
-    tijdlijst('Jongerenklassement', u.youth_top, { verschillen: true }),
+    aan('result') ? tijdlijst(u.last_stage_label || 'Uitslag', u.last_result) : '',
+    aan('gc') ? tijdlijst('Algemeen klassement', u.gc_top, { verschillen: true }) : '',
+    aan('points') ? puntenlijst('Puntenklassement', u.points_top) : '',
+    aan('kom') ? puntenlijst('Bergklassement', u.kom_top) : '',
+    aan('youth')
+      ? tijdlijst('Jongerenklassement', u.youth_top, { verschillen: true })
+      : '',
   ];
   // alleen bij de tegelkoers: de losse uitslag van een oudere sensor, die
   // anders dubbel zou staan met het eigen blok van die koers
-  if (race.primary && !meerdere) {
+  if (race.primary && !meerdere && aan('result')) {
     delen.push(tijdlijst(a.other_label || '', a.other_result));
   }
 
@@ -450,6 +522,59 @@ const STIJL = `
   .zenders img { height: 20px; width: auto; border-radius: 3px;
                  vertical-align: middle; margin-right: 5px; }
   .scheiding { opacity: .45; margin: 0 6px; }
+
+  /* een eigen kop boven de kaart; zonder de optie "title" staat hij er niet */
+  .kaartkop {
+    font-size: 15px; font-weight: 700; padding: 2px 4px 8px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* ── vormgeving: Home Assistant ──────────────────────────────────── */
+  /* Volgt de variabelen van het actieve thema in plaats van onze eigen
+     kleuren: dezelfde binnenmarge, dezelfde koptekst en dezelfde afronding
+     als een ingebouwde kaart. Het accent wordt --primary-color; alleen de
+     hoogteprofielen houden hun eigen kleuren, want die tekencode is gedeeld
+     met de button-card-templates en mag niet uiteenlopen. */
+  ha-card.thema-ha { padding: 8px 16px 16px; }
+  .thema-ha .kaartkop {
+    font-size: 24px; font-weight: 400; padding: 10px 0 16px;
+    color: var(--ha-card-header-color, var(--primary-text-color, #e8eef4));
+  }
+  .thema-ha .aftel-icoon.live,
+  .thema-ha .aftel-wanneer.live { color: var(--primary-color, #E4572E); }
+  dialog.thema-ha {
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--ha-card-background, var(--card-background-color, #1c1c1c));
+  }
+
+  /* ── vormgeving: Bubble-stijl ────────────────────────────────────── */
+  /* Nagebouwd, niet overgenomen: Bubble Card zelf is hier niet voor nodig
+     en wordt ook niet gebruikt. Wat de stijl herkenbaar maakt is de sterke
+     afronding, het icoon in een rondje, de status in een pilletje en een
+     venster dat onder aan het scherm plakt. */
+  ha-card.thema-bubble {
+    border-radius: 32px; box-shadow: none; border: none; padding: 12px 14px;
+    background: var(--ha-card-background, var(--card-background-color, #1c1c1c));
+  }
+  .thema-bubble .kaartkop { padding: 2px 8px 8px; }
+  .thema-bubble .aftel-icoon {
+    width: 38px; height: 38px; border-radius: 50%; opacity: 1;
+    text-align: center;
+    background: var(--secondary-background-color, rgba(127, 127, 127, .18));
+  }
+  .thema-bubble .aftel-icoon svg { width: 22px; height: 22px; margin-top: 8px; }
+  .thema-bubble .aftel-wanneer {
+    border-radius: 14px; padding: 4px 10px; opacity: 1;
+    background: var(--secondary-background-color, rgba(127, 127, 127, .18));
+  }
+  .thema-bubble .koers { border-radius: 18px; padding: 6px 14px; }
+  dialog.thema-bubble {
+    border-radius: 32px 32px 0 0; width: 100%; max-width: 640px;
+    /* onderaan plakken, zoals de pop-up van Bubble Card. Oudere WebViews
+       plaatsen een modale dialog nog zelf; daar blijft hij in het midden
+       staan — alleen de plaats klopt dan niet, de kaart werkt gewoon. */
+    margin: auto auto 0;
+  }
 `;
 
 class CyclingNextRaceCard extends HTMLElement {
@@ -457,10 +582,19 @@ class CyclingNextRaceCard extends HTMLElement {
     return document.createElement('cycling-next-race-card-editor');
   }
 
+  /* De configuratie waarmee een nieuwe kaart begint.
+   *
+   * `sections` en `title` staan er bewust niet in. Een kaart zonder
+   * `sections` toont alles, ook onderdelen die er later bij komen; zou de
+   * volledige lijst hier staan, dan zou elke kaart die vandaag wordt
+   * aangemaakt een toekomstig onderdeel stilzwijgend missen. En een lege
+   * `title` is hetzelfde als geen title, dus die hoeft niet in de YAML.
+   */
   static getStubConfig() {
     return {
       entity: 'sensor.cycling_next_race',
       view: 'profile',
+      design: 'default',
       visible_days: 2,
       details: true,
     };
@@ -474,8 +608,11 @@ class CyclingNextRaceCard extends HTMLElement {
     this._config = {
       entity: 'sensor.cycling_next_race',
       view: view,
+      design: 'default',
       visible_days: view === 'countdown' ? 0 : 2,
       details: true,
+      sections: SECTIE_SLEUTELS.slice(),
+      title: '',
       ...gegeven,
     };
     // always_show uit een oudere configuratie betekent: geen grens
@@ -483,12 +620,25 @@ class CyclingNextRaceCard extends HTMLElement {
       this._config.visible_days = 0;
     }
     delete this._config.always_show;
+    // wat er ook in de configuratie stond, hierna staat er iets bruikbaars.
+    // setConfig mag niets gooien: Home Assistant maakt van elke uitzondering
+    // hier een foutkaart, en die is voor de gebruiker niet te repareren
+    this._config.design = vormgeving(this._config.design);
+    this._config.sections = secties(this._config.sections);
+    this._config.entity = String(this._config.entity || 'sensor.cycling_next_race');
     this._vorigeStatus = null;
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
+    // meteen opnieuw tekenen. Bij een wijziging in het bewerkscherm komt er
+    // geen nieuwe status voorbij, en zonder dit bleef de voorvertoning de
+    // oude vormgeving tonen
+    if (this._hass) this._teken(this._hass.states[this._config.entity]);
   }
 
   set hass(hass) {
     this._hass = hass;
+    // hass vóór setConfig: er is nog niets om mee te tekenen. Een
+    // uitzondering hier laat de kaart leeg achter
+    if (!this._config) return;
     const st = hass && hass.states[this._config.entity];
     // alleen hertekenen als er echt iets veranderd is
     const stempel = st ? `${st.state}|${st.last_updated}` : 'weg';
@@ -518,8 +668,10 @@ class CyclingNextRaceCard extends HTMLElement {
 
   _teken(st) {
     const root = this.shadowRoot;
+    if (!root) return;
+    const thema = `thema-${this._config.design}`;
     if (!st) {
-      root.innerHTML = `<style>${STIJL}</style><ha-card><div class="leeg">${esc(this._config.entity)} bestaat niet.</div></ha-card>`;
+      root.innerHTML = `<style>${STIJL}</style><ha-card class="${thema}"><div class="leeg">${esc(this._config.entity)} bestaat niet.</div></ha-card>`;
       return;
     }
 
@@ -542,9 +694,12 @@ class CyclingNextRaceCard extends HTMLElement {
     const klikbaar = this._config.details;
     const inhoud =
       this._config.view === 'countdown' ? aftelling(a) : svgTegel({ attributes: a });
+    const kop = this._config.title
+      ? `<div class="kaartkop">${esc(this._config.title)}</div>`
+      : '';
     root.innerHTML = `
       <style>${STIJL}</style>
-      <ha-card class="${klikbaar ? 'klikbaar' : ''}">${inhoud}</ha-card>
+      <ha-card class="${thema}${klikbaar ? ' klikbaar' : ''}">${kop}${inhoud}</ha-card>
       ${klikbaar ? this._dialoog(a) : ''}
     `;
 
@@ -562,6 +717,7 @@ class CyclingNextRaceCard extends HTMLElement {
   _dialoog(a) {
     const races = koersen(a);
     const meerdere = races.length > 1;
+    const design = this._config.design;
 
     // koersen mét naam eerst noemen in de kop; die volgt de keuze
     const keuze = meerdere
@@ -573,7 +729,7 @@ class CyclingNextRaceCard extends HTMLElement {
             const stip = kleur
               ? `<span class="trui" style="background:${kleur}"></span>`
               : '';
-            const stijl = i === 0 ? ` style="${knopStijl(r)}"` : '';
+            const stijl = i === 0 ? ` style="${knopStijl(r, design)}"` : '';
             return (
               `<button class="koers${i === 0 ? ' aan' : ''}" data-i="${i}"${stijl}>` +
               `${stip}${esc(r.label || r.race_name || 'Koers')}</button>`
@@ -582,16 +738,17 @@ class CyclingNextRaceCard extends HTMLElement {
           .join('')}</div>`
       : '';
 
+    const gekozen = this._config.sections;
     const blokken = races
       .map(
         (r, i) =>
-          `<div class="blok${i === 0 ? '' : ' uit'}">${koersblok(a, r, meerdere)}</div>`
+          `<div class="blok${i === 0 ? '' : ' uit'}">${koersblok(a, r, meerdere, gekozen)}</div>`
       )
       .join('');
 
     const kop = races[0].race_name || a.race_name || 'Wielrennen';
     return `
-      <dialog>
+      <dialog class="thema-${design}">
         <div class="kop">
           <span class="titel">${esc(kop)}</span>
           <button class="sluit" aria-label="Sluiten">&times;</button>
@@ -609,13 +766,14 @@ class CyclingNextRaceCard extends HTMLElement {
     const blokken = dlg.querySelectorAll('.blok');
     const titel = dlg.querySelector('.titel');
     const races = koersen(a);
+    const design = this._config.design;
     for (let i = 0; i < knoppen.length; i++) {
       knoppen[i].onclick = () => {
         for (let j = 0; j < knoppen.length; j++) {
           const aan = i === j;
           knoppen[j].className = aan ? 'koers aan' : 'koers';
           // de kleur van de leiderstrui verhuist mee naar de open knop
-          knoppen[j].setAttribute('style', aan ? knopStijl(races[j] || {}) : '');
+          knoppen[j].setAttribute('style', aan ? knopStijl(races[j] || {}, design) : '');
           blokken[j].className = aan ? 'blok' : 'blok uit';
         }
         const r = races[i] || {};
@@ -662,6 +820,15 @@ const VELDEN = [
     },
   },
   {
+    name: 'design',
+    label: 'Vormgeving',
+    uitleg:
+      'Eigen opmaak, het actieve Home Assistant-thema, of de stijl van ' +
+      'Bubble Card — die laatste is nagebouwd, de kaart zelf heb je er niet ' +
+      'voor nodig.',
+    selector: { select: { mode: 'dropdown', options: VORMGEVING } },
+  },
+  {
     name: 'visible_days',
     label: 'Tonen vanaf (dagen voor de koers)',
     uitleg: '2 is vandaag en morgen, 7 is de hele week vooruit, 0 is altijd.',
@@ -672,6 +839,26 @@ const VELDEN = [
     label: 'Detailvenster bij aantikken',
     uitleg: 'Opent uitslag, klassementen en tv-zenders.',
     selector: { boolean: {} },
+  },
+  {
+    name: 'sections',
+    label: 'Onderdelen in het detailvenster',
+    uitleg: 'Niets aangevinkt betekent alles.',
+    selector: {
+      select: {
+        multiple: true,
+        mode: 'list',
+        options: SECTIES.map(function (s) {
+          return { value: s.key, label: s.label };
+        }),
+      },
+    },
+  },
+  {
+    name: 'title',
+    label: 'Kop boven de kaart',
+    uitleg: 'Leeg laten als je er geen wilt.',
+    selector: { text: {} },
   },
 ];
 
@@ -687,6 +874,9 @@ const EDITOR_STIJL = `
     padding: 8px; border-radius: 8px; border: 1px solid var(--divider-color, #444);
     background: var(--card-background-color, #1c1c1c); color: inherit; font: inherit;
   }
+  .eigen .secties label { flex-direction: row; align-items: center; font-size: 13px; }
+  .eigen .secties label > * + * { margin-left: 8px; }
+  .eigen .secties label + label { margin-top: 2px; }
 `;
 
 class CyclingNextRaceCardEditor extends HTMLElement {
@@ -696,12 +886,17 @@ class CyclingNextRaceCardEditor extends HTMLElement {
     this._config = {
       entity: 'sensor.cycling_next_race',
       view,
+      design: 'default',
       visible_days: view === 'countdown' ? 0 : 2,
       details: true,
+      sections: SECTIE_SLEUTELS.slice(),
+      title: '',
       ...g,
     };
     if (g.always_show === true && g.visible_days === undefined) this._config.visible_days = 0;
     delete this._config.always_show;
+    this._config.design = vormgeving(this._config.design);
+    this._config.sections = secties(this._config.sections);
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     this._teken();
   }
@@ -712,11 +907,26 @@ class CyclingNextRaceCardEditor extends HTMLElement {
     else this._teken();
   }
 
+  /* Geef de nieuwe configuratie door aan Home Assistant.
+   *
+   * Twee sleutels gaan er eerst uit als ze niets toevoegen: alles
+   * aangevinkt is hetzelfde als niets kiezen, en een lege kop is hetzelfde
+   * als geen kop. Dat houdt de opgeslagen YAML kort, en belangrijker: een
+   * kaart zonder `sections` toont ook onderdelen die er later bij komen.
+   */
   _wijzig(config) {
-    this._config = config;
+    const schoon = { ...config };
+    if (
+      Array.isArray(schoon.sections) &&
+      schoon.sections.length === SECTIE_SLEUTELS.length
+    ) {
+      delete schoon.sections;
+    }
+    if (!schoon.title) delete schoon.title;
+    this._config = schoon;
     this.dispatchEvent(
       new CustomEvent('config-changed', {
-        detail: { config },
+        detail: { config: schoon },
         bubbles: true,
         composed: true,
       })
@@ -746,12 +956,21 @@ class CyclingNextRaceCardEditor extends HTMLElement {
       return;
     }
 
-    // terugval zonder ha-form
+    // Terugval zonder ha-form. In Home Assistant is dat element er altijd;
+    // dit is het vangnet voor het geval het ooit hernoemd wordt, want zonder
+    // editor is de kaart alleen nog in YAML in te stellen.
     const c = this._config;
     const stijl = document.createElement('style');
     stijl.textContent = EDITOR_STIJL;
     const doos = document.createElement('div');
     doos.className = 'eigen';
+    const keuze = (lijst, huidig) =>
+      lijst
+        .map(
+          (o) =>
+            `<option value="${esc(o.value)}"${o.value === huidig ? ' selected' : ''}>${esc(o.label)}</option>`
+        )
+        .join('');
     doos.innerHTML = `
       <label>Sensor<span class="uitleg">De sensor van Cycling Next Race.</span>
         <input type="text" name="entity" value="${esc(c.entity)}"></label>
@@ -760,20 +979,40 @@ class CyclingNextRaceCardEditor extends HTMLElement {
           <option value="profile"${c.view !== 'countdown' ? ' selected' : ''}>Hoogteprofiel</option>
           <option value="countdown"${c.view === 'countdown' ? ' selected' : ''}>Aftellen</option>
         </select></label>
+      <label>Vormgeving<span class="uitleg">Eigen opmaak, het Home Assistant-thema of de Bubble-stijl.</span>
+        <select name="design">${keuze(VORMGEVING, c.design)}</select></label>
       <label>Tonen vanaf (dagen voor de koers)
         <span class="uitleg">2 is vandaag en morgen, 7 is de hele week vooruit, 0 is altijd.</span>
         <input type="number" name="visible_days" min="0" max="60" value="${Number(c.visible_days) || 0}"></label>
       <label class="schakel"><input type="checkbox" name="details" ${c.details ? 'checked' : ''}>
         Detailvenster bij aantikken</label>
+      <div class="secties">Onderdelen in het detailvenster
+        <span class="uitleg">Niets aangevinkt betekent alles.</span>
+        ${SECTIES.map(
+          (s) =>
+            `<label><input type="checkbox" name="sections" value="${esc(s.key)}"` +
+            `${c.sections.indexOf(s.key) >= 0 ? ' checked' : ''}>${esc(s.label)}</label>`
+        ).join('')}
+      </div>
+      <label>Kop boven de kaart<span class="uitleg">Leeg laten als je er geen wilt.</span>
+        <input type="text" name="title" value="${esc(c.title)}"></label>
     `;
     doos.addEventListener('change', () => {
       const lees = (n) => doos.querySelector(`[name="${n}"]`);
+      const aangevinkt = [];
+      const vakjes = doos.querySelectorAll('[name="sections"]');
+      for (let i = 0; i < vakjes.length; i++) {
+        if (vakjes[i].checked) aangevinkt.push(vakjes[i].value);
+      }
       this._wijzig({
         type: 'custom:cycling-next-race-card',
         entity: lees('entity').value.trim() || 'sensor.cycling_next_race',
         view: lees('view').value,
+        design: vormgeving(lees('design').value),
         visible_days: Math.max(0, parseInt(lees('visible_days').value, 10) || 0),
         details: lees('details').checked,
+        sections: secties(aangevinkt),
+        title: lees('title').value.trim(),
       });
     });
     this.shadowRoot.innerHTML = '';
