@@ -234,6 +234,113 @@ for (const [naam, a] of Object.entries(gevallen)) {
   await page.screenshot({ path: 'kaart-koerskeuze.png', fullPage: true });
 }
 
+// ── vormgeving ───────────────────────────────────────────────────
+// Elke vormgeving moet dezelfde kaart opleveren, alleen anders opgemaakt.
+// De ha-card-vervanger hierboven zet zijn achtergrond en afronding inline,
+// en inline wint van onze stijlen; daarom kijken we naar de binnenmarge.
+for (const [design, marge] of [['default', '10px'], ['ha', '8px 16px 16px'],
+                               ['bubble', '12px 14px']]) {
+  const uit = await page.evaluate(([design, alle]) => {
+    document.getElementById('doel').innerHTML = '';
+    const kaart = document.createElement('cycling-next-race-card');
+    kaart.setConfig({ entity: 'sensor.cycling_next_race', design: design,
+                      view: 'countdown', title: 'Wielrennen' });
+    document.getElementById('doel').appendChild(kaart);
+    kaart.hass = { states: { 'sensor.cycling_next_race': {
+      state: 'x', last_updated: design, attributes: alle } } };
+    const r = kaart.shadowRoot;
+    const el = r.querySelector('ha-card');
+    const dlg = r.querySelector('dialog');
+    if (dlg) dlg.showModal();
+    const kop = r.querySelector('.kaartkop');
+    const icoon = r.querySelector('.aftel-icoon');
+    // staat het icoon werkelijk midden in zijn rondje? De svg is een
+    // blokelement, dus dat gaat niet vanzelf
+    const svg = icoon ? icoon.querySelector('svg') : null;
+    let scheef = null;
+    if (icoon && svg) {
+      const a = icoon.getBoundingClientRect();
+      const b = svg.getBoundingClientRect();
+      scheef = Math.round(Math.abs((b.left + b.width / 2) - (a.left + a.width / 2)));
+    }
+    return {
+      klasse: el.className,
+      dialoogklasse: dlg ? dlg.className : '',
+      marge: getComputedStyle(el).padding,
+      kop: kop ? kop.textContent : '',
+      icoonbreedte: icoon ? getComputedStyle(icoon).width : '',
+      scheef: scheef,
+      svgs: r.querySelectorAll('svg').length,
+      nan: /NaN|undefined/.test(r.innerHTML),
+    };
+  }, [design, attrs]);
+
+  const p = [];
+  if (uit.klasse.indexOf(`thema-${design}`) < 0)
+    p.push(`ha-card mist de klasse thema-${design}: "${uit.klasse}"`);
+  if (uit.dialoogklasse.indexOf(`thema-${design}`) < 0)
+    p.push(`het venster mist de klasse thema-${design}: "${uit.dialoogklasse}"`);
+  if (uit.marge !== marge) p.push(`binnenmarge ${uit.marge}, verwacht ${marge}`);
+  if (uit.kop !== 'Wielrennen') p.push(`de eigen kop ontbreekt: "${uit.kop}"`);
+  if (uit.nan) p.push('NaN of undefined');
+  if (design === 'bubble' && uit.icoonbreedte !== '38px')
+    p.push(`het icoon staat niet in een rondje (breedte ${uit.icoonbreedte})`);
+  if (design === 'bubble' && uit.scheef !== 0)
+    p.push(`het icoon staat ${uit.scheef}px uit het midden van zijn rondje`);
+  if (p.length) { console.log(`FOUT  vormgeving ${design}: ${p.join(', ')}`); mislukt++; }
+  else console.log(`ok    vormgeving ${design} — marge ${uit.marge}, ${uit.svgs} svg`);
+
+  await page.screenshot({ path: `kaart-design-${design}.png` });
+}
+
+// ── onderdelen van het detailvenster ─────────────────────────────
+{
+  const uit = await page.evaluate(([alle]) => {
+    const venster = (sections) => {
+      document.getElementById('doel').innerHTML = '';
+      const kaart = document.createElement('cycling-next-race-card');
+      const config = { entity: 'sensor.cycling_next_race' };
+      if (sections) config.sections = sections;
+      kaart.setConfig(config);
+      document.getElementById('doel').appendChild(kaart);
+      kaart.hass = { states: { 'sensor.cycling_next_race': {
+        state: 'x', last_updated: String(sections), attributes: alle } } };
+      const r = kaart.shadowRoot;
+      return {
+        tekst: r.querySelector('dialog').textContent,
+        secties: r.querySelectorAll('section').length,
+        profielen: r.querySelectorAll('dialog svg').length,
+      };
+    };
+    return {
+      alles: venster(null),
+      twee: venster(['result', 'gc']),
+      leeg: venster([]),
+      // zonder profiel wordt de eerste etappe van een pop-upkoers nergens
+      // getekend; die hoort dan bij "Komende dagen" te staan
+      komend: venster(['upcoming']),
+    };
+  }, [attrs]);
+
+  const p = [];
+  if (uit.alles.tekst.indexOf('Bergklassement') < 0)
+    p.push('zonder keuze staat niet alles in het venster');
+  if (uit.twee.tekst.indexOf('Algemeen klassement') < 0)
+    p.push('een gekozen onderdeel ontbreekt');
+  if (uit.twee.tekst.indexOf('Bergklassement') >= 0)
+    p.push('een niet gekozen onderdeel staat er toch in');
+  if (uit.twee.tekst.indexOf('Komende dagen') >= 0)
+    p.push('"Komende dagen" staat er ondanks de keuze');
+  if (uit.twee.profielen !== 0)
+    p.push(`${uit.twee.profielen} profielen terwijl het profiel niet gekozen is`);
+  if (uit.leeg.secties !== uit.alles.secties)
+    p.push('een lege keuze levert niet hetzelfde op als geen keuze');
+  if (uit.komend.tekst.indexOf('Etappe 4 · Tour de France Femmes') < 0)
+    p.push('zonder profiel valt de eerste etappe van een pop-upkoers weg');
+  if (p.length) { console.log(`FOUT  onderdelen: ${p.join(', ')}`); mislukt++; }
+  else console.log(`ok    onderdelen — alles ${uit.alles.secties} secties, keuze ${uit.twee.secties}`);
+}
+
 // ── preview-modus: nooit verbergen ───────────────────────────────
 {
   const uit = await page.evaluate(([alle]) => {
@@ -259,6 +366,35 @@ for (const [naam, a] of Object.entries(gevallen)) {
   if (uit.met.inhoud === 0) p.push('in de bewerkmodus wordt niets getekend');
   if (p.length) { console.log(`FOUT  preview-modus: ${p.join(', ')}`); mislukt++; }
   else console.log('ok    preview-modus — verborgen op het dashboard, zichtbaar in het bewerkscherm');
+}
+
+// ── entiteit verdwijnt nadat de kaart zich verborgen heeft ───────
+{
+  const uit = await page.evaluate(([alle]) => {
+    document.getElementById('doel').innerHTML = '';
+    const kaart = document.createElement('cycling-next-race-card');
+    kaart.setConfig({ entity: 'sensor.cycling_next_race', visible_days: 2 });
+    document.getElementById('doel').appendChild(kaart);
+    // koers ver weg: de kaart verbergt zichzelf
+    kaart.hass = { states: { 'sensor.cycling_next_race': {
+      state: 'x', last_updated: 'een',
+      attributes: { ...alle, days_until: 30, show_state: 'Gepland' } } } };
+    const verborgen = getComputedStyle(kaart).display === 'none';
+    // en daarna is de sensor er niet meer, bijvoorbeeld na hernoemen
+    kaart.hass = { states: {} };
+    return {
+      verborgen,
+      zichtbaar: getComputedStyle(kaart).display !== 'none',
+      melding: kaart.shadowRoot.textContent.indexOf('bestaat niet') >= 0,
+    };
+  }, [attrs]);
+
+  const p = [];
+  if (!uit.verborgen) p.push('de kaart verborg zich niet bij een koers ver weg');
+  if (!uit.zichtbaar) p.push('de melding blijft onzichtbaar op een kaart die zich verborgen had');
+  if (!uit.melding) p.push('er staat geen melding over de ontbrekende sensor');
+  if (p.length) { console.log(`FOUT  sensor verdwijnt: ${p.join(', ')}`); mislukt++; }
+  else console.log('ok    sensor verdwijnt — de kaart komt terug in beeld met een melding');
 }
 
 // ── zichtbaarheid en aftelweergave ───────────────────────────────

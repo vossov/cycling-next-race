@@ -326,9 +326,26 @@ De kaart gaat bij voorkeur in de **resourcelijst van Lovelace**
 resources en wacht daarop vóór het tekenen van de kaarten; bij extra_js_url
 gebeurt dat niet en verscheen er soms een foutkaart die na verversen weg
 was. Dat lukt alleen in storage-modus — in YAML-modus beheert de gebruiker
-de lijst zelf — en dan valt het terug op `add_extra_js_url`. `lovelace`
-staat in de manifest onder `after_dependencies`, zodat het er is wanneer wij
-opzetten.
+de lijst zelf — en dan valt het terug op `add_extra_js_url`, met een
+waarschuwing in het log zodat je kunt zien dat het die weg is geworden.
+`lovelace` staat in de manifest onder `after_dependencies`, zodat het er is
+wanneer wij opzetten.
+
+**De modus van Lovelace is niet aan een veldnaam af te lezen.** Tot en met
+0.9.1 keek `_als_lovelace_resource` naar `lovelace.resource_mode` en dat gaf
+op élke versie waarop de integratie ooit draaide `None`:
+`hass.data["lovelace"]` is t/m HA 2024.12 een **dict**, van 2025.2 t/m
+2026.1 een dataclass met `mode`, en pas vanaf 2026.2 een dataclass met
+`resource_mode` (daar is `mode` hernoemd, omdat de modus van de resources
+losstaat van die van de dashboards). De registratie viel dus
+altijd stil terug op extra_js_url — precies de weg die de foutkaart
+oplevert waar gebruikers over klaagden, terwijl het commentaar in de code
+beweerde dat dat opgelost was. `_resourcecollectie` leest daarom beide
+vormen en vraagt de modus aan de collectie zélf: alleen
+`ResourceStorageCollection` heeft `async_create_item`/`async_update_item`,
+`ResourceYAMLCollection` kent enkel `async_get_info` en `async_items`. Die
+capability-controle overleeft een volgende hernoeming; `tests/test_kaart.py`
+heeft een test per vorm.
 
 Omdat het script daardoor langs twee wegen kan binnenkomen, staat elke
 `customElements.define` achter een `customElements.get`-controle: twee keer
@@ -341,13 +358,61 @@ verschijnt; `0` betekent altijd, en dat is de standaard bij `countdown`
 (die weergave is juist bedoeld om er buiten koersen om te blijven staan).
 De verouderde `always_show: true` wordt nog geaccepteerd als `visible_days: 0`.
 
+`design` kiest de vormgeving: `default` (de eigen opmaak), `ha` (volgt de
+variabelen van het actieve HA-thema, accent `--primary-color`) of `bubble`
+(nagebootste Bubble Card-stijl — die kaart is er niet voor nodig en wordt
+ook niet gebruikt). Het zit in één `STIJL`-blok: `_teken` zet
+`thema-<design>` op `ha-card` én op `dialog`, de rest is CSS. Bewust geen
+tweede stijlvariabele, want `tests/test_browsercompat.py` scant `STIJL` en
+`EDITOR_STIJL` op te nieuwe CSS en zou een derde blok missen. Let daarbij
+op de gap-controle: elke selector met `display:flex` moet een eigen
+`> * + *`-marge hebben, dus voeg in een thema liever geen nieuwe
+flex-container toe.
+
+De hoogteprofielen volgen het thema **niet**: die tekencode is gedeeld met
+de button-card-templates en moet daar letterlijk gelijk aan blijven.
+
+`sections` bepaalt welke onderdelen in het detailvenster staan (`SECTIES`);
+de volgorde ligt in de code vast en niet in de configuratie. Leeg of onzin
+betekent alles, zodat een kaart zonder die optie blijft tonen wat hij altijd
+toonde — ook een onderdeel dat er later bij komt. Daarom staat `sections`
+niet in `getStubConfig`, en haalt `_wijzig` hem er weer uit zodra alles is
+aangevinkt (net als een lege `title`); anders zou elke kaart die vandaag
+wordt aangemaakt een toekomstig onderdeel stilzwijgend missen. Staat
+`profile` uit, dan schuift de eerste etappe van een pop-upkoers door naar
+"Komende dagen": die werd anders nergens meer getekend.
+
 De kaart heeft een visuele editor (`cycling-next-race-card-editor`) achter
 `getConfigElement()`. Die gebruikt `ha-form` als dat element bestaat en valt
-anders terug op een eigen formulier. Wie een kaartoptie toevoegt raakt drie
-plekken: `setConfig`, de lijst `VELDEN` in de editor, en de optietabel in de
-README; `tests/test_kaart.py` faalt als er één achterblijft. Schrijf sleutels
-in `this._config` voluit (`view: view`, niet de verkorte vorm), want die test
-leest ze met een regex.
+anders terug op een eigen formulier. Wie een kaartoptie toevoegt raakt vier
+plekken: `setConfig`, de lijst `VELDEN` in de editor, het terugvalformulier
+en de optietabel in de README; `tests/test_kaart.py` faalt als er één
+achterblijft, `tests/browser/editor_test.mjs` vergelijkt beide editorwegen.
+Schrijf sleutels in `this._config` voluit (`view: view`, niet de verkorte
+vorm), want die test leest ze met een regex. De optietabel in de README
+loopt tot de eerste regel die geen tabelrij is; tabellen met de wáárden van
+een optie horen daaronder.
+
+**`ha-form` houdt zijn eigen data bij.** Het formulier één keer opbouwen en
+daarna alleen `this._config` bijwerken is niet genoeg: `ha-form` doet
+`this.data = {...this.data, ...nieuw}` en stuurt bij een wijziging zijn
+eigen data terug. Home Assistant roept `setConfig` op hetzelfde
+editor-element opnieuw aan zodra de configuratie buiten het formulier om
+verandert — `hui-element-editor._setConfig()` doet dat onder meer na elke
+wijziging in de code-editor achter *Toon code-editor*, en het element wordt
+alleen weggegooid als het kaarttype verandert. Zonder `this._form.data =
+this._config` in `_teken` bleef het formulier op de oude waarden staan en
+sloeg de eerstvolgende wijziging die oude waarden weer op. Met `sections`
+en `title`, die `_wijzig` juist weglaat als ze niets toevoegen, betekende
+dat: sleutels stilzwijgend kwijt.
+
+`setConfig` mag nooit een uitzondering gooien — Home Assistant maakt daar
+een foutkaart van, en die is voor de gebruiker niet te repareren. Wat er
+binnenkomt wordt daarom genormaliseerd (`vormgeving()`, `secties()`) in
+plaats van afgekeurd. Datzelfde geldt voor `set hass` vóór `setConfig`: dat
+komt voor en moet stilletjes niets doen. En `setConfig` tekent zelf opnieuw
+als `hass` er al is; zonder dat bleef het bewerkscherm de oude vormgeving
+tonen, want daar komt geen nieuwe status voorbij.
 
 **De tekencode staat op twee plekken.** De drie SVG-functies (`svgTegel`,
 `svgDetail`, `svgKomend`) zijn letterlijk overgenomen uit de
