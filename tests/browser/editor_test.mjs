@@ -87,8 +87,13 @@ for (const metHaForm of [false, true]) {
       dagen.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
+    const voet = r.querySelector('.versie');
     return {
       bestaat: true, viaHaForm, velden, sectiekeuzes,
+      // de versie van de kaart hoort in het bewerkscherm te staan; anders
+      // is alleen die van de Python-kant te zien
+      voetregel: voet ? voet.textContent : '',
+      voetzichtbaar: voet ? getComputedStyle(voet).fontSize : '',
       events: gewijzigd.length,
       laatste: gewijzigd[gewijzigd.length - 1] || null,
       stub: Kaart.getStubConfig(),
@@ -186,6 +191,10 @@ for (const metHaForm of [false, true]) {
       problemen.push('een lege kop komt in de configuratie terecht');
     if (uit.allesAan._opnieuw !== 'ok')
       problemen.push(`tekent niet opnieuw na een wijziging: ${uit.allesAan._opnieuw}`);
+    if (!/^Cycling Next Race-kaart \d+\.\d+\.\d+$/.test(uit.voetregel))
+      problemen.push(`geen versie in het bewerkscherm: "${uit.voetregel}"`);
+    if (uit.voetzichtbaar !== '11px')
+      problemen.push(`de versieregel krijgt geen opmaak (${uit.voetzichtbaar})`);
     if (uit.tweedeSetConfig.view !== 'countdown' || uit.tweedeSetConfig.design !== 'bubble')
       problemen.push(
         `een tweede setConfig komt niet in het formulier: ${JSON.stringify(uit.tweedeSetConfig)}`

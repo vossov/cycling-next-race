@@ -315,6 +315,21 @@ werkt de sensor gewoon door en zie je alleen de kaart niet. Loop dit na:
    alsnog op. Dit is verreweg de meest voorkomende oorzaak vlak na een
    installatie.
 
+### Welke versie draait er eigenlijk?
+
+Twee nummers die uiteen kunnen lopen:
+
+- **De integratie.** Instellingen → Apparaten & Services → Cycling Next
+  Race. Dat is de Python-kant, en die klopt meteen na een update.
+- **De kaart.** Bewerk je dashboard, klik de kaart aan: onderaan het
+  instelscherm staat *Cycling Next Race-kaart 0.10.2*. Datzelfde nummer
+  staat in de ontwikkelaarsconsole achter `CYCLING-NEXT-RACE-CARD`.
+
+Staat daar een lager nummer dan bij de integratie, dan draait je browser
+nog een oude kaart uit de cache — stap 4 hierboven. Op een telefoon is er
+geen console, en dan is die regel in het instelscherm het enige
+aanknopingspunt.
+
 ### "Configuratiefout" die na verversen weg is
 
 Zie je op de plek van de kaart een rood vlak met *Configuratiefout*, en is
@@ -386,8 +401,10 @@ laatste commit en zie je een hash staan.
 
 Een nieuwe versie uitbrengen gaat zo:
 
-1. Verhoog `version` in `custom_components/cycling_next_race/manifest.json`
-   en `VERSION` in `const.py` — een test bewaakt dat die twee gelijk blijven.
+1. Verhoog `version` in `custom_components/cycling_next_race/manifest.json`,
+   `VERSION` in `const.py` en `VERSIE` bovenin
+   `www/cycling-next-race-card.js` — een test bewaakt dat die drie gelijk
+   blijven.
 2. Zet die wijziging op `main`.
 3. `git tag v0.4.0 && git push origin v0.4.0`
 

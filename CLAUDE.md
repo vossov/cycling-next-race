@@ -321,6 +321,15 @@ het kaartbestand komt (`_bestandsstempel`). Dat is bewust niet alleen
 browsers een oude kaart bleven tonen. `VERSION` in `const.py` moet nog steeds
 gelijk zijn aan `version` in de manifest; `tests/test_kaart.py` bewaakt beide.
 
+De kaart draagt datzelfde nummer nog een keer, als `VERSIE` bovenin het
+bestand: hij is statisch en weet niets van `const.py`. Dat nummer staat in
+de console én onder in het bewerkscherm van de kaart, en is de enige manier
+om te zien wélke kaart een browser draait — Home Assistant meldt bij de
+integratie de Python-kant, ook als de frontend nog een oude kaart uit de
+cache haalt. Op een telefoon is er geen console, dus die regel in het
+bewerkscherm is daar het enige aanknopingspunt. Ook dit nummer wordt door
+`tests/test_kaart.py` vergeleken.
+
 De kaart gaat bij voorkeur in de **resourcelijst van Lovelace**
 (`_als_lovelace_resource`), niet via `add_extra_js_url`. Lovelace laadt zijn
 resources en wacht daarop vóór het tekenen van de kaarten; bij extra_js_url
@@ -493,8 +502,9 @@ de laatste commit en staat er een hash in de updatekaart. `.github/workflows/
 release.yml` maakt de release zodra een tag `vX.Y.Z` wordt gepusht, en weigert
 als die tag niet overeenkomt met `version` in de manifest.
 
-Het versienummer staat op twee plekken: `version` in `manifest.json` en
-`VERSION` in `const.py`. `tests/test_kaart.py` bewaakt dat ze gelijk zijn.
+Het versienummer staat op drie plekken: `version` in `manifest.json`,
+`VERSION` in `const.py` en `VERSIE` bovenin de kaart.
+`tests/test_kaart.py` bewaakt dat ze gelijk zijn.
 Ophogen doe je in de commit met de wijziging zelf (zie "Werkafspraken"), niet
 pas hier; taggen is dan alleen nog het nummer dat er al staat vastleggen.
 

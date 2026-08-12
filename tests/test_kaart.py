@@ -102,6 +102,22 @@ def test_versie_komt_overeen_met_het_manifest(const):
     assert const.VERSION == manifest["version"]
 
 
+def test_kaart_noemt_dezelfde_versie(const):
+    """De kaart draagt zijn eigen nummer, want hij weet niets van const.py.
+
+    Dat nummer staat in de console en onder in het bewerkscherm, en is de
+    enige manier om te zien welke kaart je browser werkelijk draait — Home
+    Assistant meldt bij de integratie de versie van de Python-kant, ook als
+    de frontend nog een oude kaart uit de cache haalt. Loopt het hier uiteen,
+    dan wijst die aanwijzing de verkeerde kant op.
+    """
+    gevonden = re.search(r"const VERSIE = '([^']+)'", _kaart())
+    assert gevonden, "de kaart noemt nergens een versie"
+    assert gevonden.group(1) == const.VERSION, (
+        f"de kaart zegt {gevonden.group(1)}, const.py zegt {const.VERSION}"
+    )
+
+
 def test_manifest_vraagt_de_benodigde_onderdelen():
     """Zonder frontend en http kan de kaart niet geserveerd worden."""
     manifest = json.loads((COMPONENT / "manifest.json").read_text(encoding="utf-8"))
