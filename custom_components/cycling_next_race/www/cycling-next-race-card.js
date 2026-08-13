@@ -31,6 +31,16 @@
  * button-card-template werd meegeleverd.
  */
 
+/* De versie van deze kaart. Moet gelijk zijn aan `VERSION` in const.py en
+ * `version` in manifest.json; tests/test_kaart.py bewaakt alle drie.
+ *
+ * Waarom hij hier apart staat: dit bestand is statisch, het weet niets van
+ * de Python-kant. En juist het verschil tussen die twee is wat je wilt
+ * kunnen zien — Home Assistant meldt bij de integratie de versie van de
+ * Python-kant, terwijl je browser een oudere kaart uit de cache kan
+ * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
+const VERSIE = '0.10.2';
+
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
 /* De onderdelen van het detailvenster, in de volgorde waarin ze staan.
@@ -882,6 +892,8 @@ const EDITOR_STIJL = `
   .eigen .secties label { flex-direction: row; align-items: center; font-size: 13px; }
   .eigen .secties label > * + * { margin-left: 8px; }
   .eigen .secties label + label { margin-top: 2px; }
+  /* de versie van de kaart die je browser nu draait; zie de voetregel */
+  .versie { font-size: 11px; opacity: .55; padding: 12px 4px 2px; }
 `;
 
 class CyclingNextRaceCardEditor extends HTMLElement {
@@ -947,6 +959,20 @@ class CyclingNextRaceCardEditor extends HTMLElement {
     );
   }
 
+  /* De versie van de kaart, onder in het bewerkscherm.
+   *
+   * Zonder dit is in de interface alleen de versie van de Python-kant te
+   * zien (Apparaten & Services), en juist als die twee uiteenlopen — een
+   * oude kaart uit de browsercache — wil je dat kunnen vaststellen zonder
+   * de ontwikkelaarsconsole te openen. Op een telefoon kan dat niet eens.
+   */
+  _voetregel() {
+    const voet = document.createElement('div');
+    voet.className = 'versie';
+    voet.textContent = `Cycling Next Race-kaart ${VERSIE}`;
+    return voet;
+  }
+
   _teken() {
     if (!this.shadowRoot || !this._config) return;
 
@@ -970,8 +996,12 @@ class CyclingNextRaceCardEditor extends HTMLElement {
         e.stopPropagation();
         this._wijzig({ type: 'custom:cycling-next-race-card', ...e.detail.value });
       });
+      const stijlHaForm = document.createElement('style');
+      stijlHaForm.textContent = EDITOR_STIJL;
       this.shadowRoot.innerHTML = '';
+      this.shadowRoot.appendChild(stijlHaForm);
       this.shadowRoot.appendChild(form);
+      this.shadowRoot.appendChild(this._voetregel());
       this._form = form;
       return;
     }
@@ -1038,6 +1068,7 @@ class CyclingNextRaceCardEditor extends HTMLElement {
     this.shadowRoot.innerHTML = '';
     this.shadowRoot.appendChild(stijl);
     this.shadowRoot.appendChild(doos);
+    this.shadowRoot.appendChild(this._voetregel());
   }
 }
 
@@ -1056,4 +1087,8 @@ if (!window.customCards.some((k) => k.type === 'cycling-next-race-card')) {
   });
 }
 
-console.info('%c CYCLING-NEXT-RACE-CARD ', 'background:#E4572E;color:#fff;border-radius:3px');
+console.info(
+  `%c CYCLING-NEXT-RACE-CARD %c ${VERSIE} `,
+  'background:#E4572E;color:#fff;border-radius:3px 0 0 3px',
+  'background:#333;color:#fff;border-radius:0 3px 3px 0'
+);

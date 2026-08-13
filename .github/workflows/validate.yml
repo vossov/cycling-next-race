@@ -51,7 +51,7 @@ jobs:
           was=$(git show "origin/$BASIS:$pad" | lees)
           echo "was: $was, nu: $nu"
           if [ "$was" = "$nu" ]; then
-            echo "::error::de integratie is gewijzigd maar manifest.json staat nog op $was — hoog version in manifest.json én VERSION in const.py op (tests/test_kaart.py bewaakt dat die twee gelijk blijven)"
+            echo "::error::de integratie is gewijzigd maar manifest.json staat nog op $was — hoog version in manifest.json, VERSION in const.py én VERSIE in www/cycling-next-race-card.js op (tests/test_kaart.py bewaakt dat die drie gelijk blijven)"
             exit 1
           fi
 
