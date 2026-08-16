@@ -118,6 +118,22 @@ def test_kaart_noemt_dezelfde_versie(const):
     )
 
 
+def test_kaart_kent_dezelfde_niveaus_als_const(const):
+    """De niveaus staan twee keer: in const.py en in de kaart.
+
+    De kaart is statisch en kan die tabel niet opvragen, dus staat hij er
+    nog een keer in. Lopen ze uiteen, dan biedt de editor een niveau aan
+    dat de sensor niet levert (of andersom: een niveau dat je nergens meer
+    kunt uitzetten).
+    """
+    tekst = _kaart()
+    blok = tekst[tekst.index("const NIVEAUS = ["):tekst.index("const NIVEAU_SLEUTELS")]
+    gevonden = dict(re.findall(r"value:\s*'(\d+)',\s*label:\s*'([^']+)'", blok))
+    verwacht = {k: v["naam"] for k, v in const.NIVEAUS.items()}
+    assert gevonden == verwacht, (
+        f"kaart en const.py lopen uiteen: {set(gevonden.items()) ^ set(verwacht.items())}")
+
+
 def test_manifest_vraagt_de_benodigde_onderdelen():
     """Zonder frontend en http kan de kaart niet geserveerd worden."""
     manifest = json.loads((COMPONENT / "manifest.json").read_text(encoding="utf-8"))

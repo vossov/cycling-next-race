@@ -106,6 +106,16 @@ Twee instellingen, allebei een keuzelijst over dezelfde tabel:
   standaard; een sensor zonder koersen helpt niemand.
 - `levels_popup` — komt er alleen in de pop-up bij.
 
+**De integratie bepaalt wát er wordt opgehaald, de kaart wat er te zien is.**
+Sinds 0.11.0 heeft de kaart een eigen `levels` (zie "Dashboard"), zodat er
+bovenaan een dashboard iets anders kan staan dan verderop. Die keuze filtert
+alleen wat de sensor al levert — staat een niveau hier uit, dan kan geen
+enkele kaart het tonen. Wie zich afvraagt waarom een uitgezet niveau tóch in
+beeld komt, kijkt naar deze drie plekken: een leeg gevinkte `levels` valt
+terug op de WorldTour, `levels_popup` zet een niveau alsnog in de pop-up, en
+staat er van de gekozen niveaus niets te koersen dan pakt de tegel liever een
+koers uit de pop-up dan niets (`op_tegel or kandidaten`).
+
 `_niveaus_alles` is de unie en bepaalt wat er wordt opgehaald;
 `_mag_op_tegel` kijkt of het `level` van een koers in `_niveaus_tegel` zit.
 Een koers zonder `level` (kalender uit een oudere versie, of een test) wordt
@@ -295,6 +305,10 @@ het een stuk meer. Wordt het te veel, dan is `max_other` verlagen de
 goedkoopste stap; dat is nu een instelling en hoeft niet meer in de code.
 **Niet gemeten in een draaiende Home Assistant, alleen geschat.**
 
+`level` op elke etappe in `upcoming` en op elk blok in `races` kost een stuk
+of vijftien bytes per stuk — een paar honderd in totaal, en het alternatief
+(de kaart laten raden welk niveau een koers heeft) bestaat niet.
+
 Een niveau erbij kost niets zolang er niet méér koersen in beeld komen:
 `max_other` begrenst het aantal blokken en `upcoming_n` het aantal etappes.
 Wat het wél kost zijn verzoeken bij procyclingstats — een kalenderpagina per
@@ -381,6 +395,29 @@ flex-container toe.
 De hoogteprofielen volgen het thema **niet**: die tekencode is gedeeld met
 de button-card-templates en moet daar letterlijk gelijk aan blijven.
 
+`levels` bepaalt welke niveaus déze kaart laat zien, met dezelfde tabel als
+`NIVEAUS` in `const.py` — die staat nog een keer in de kaart, want die is
+statisch; `tests/test_kaart.py` vergelijkt de twee. Het is een keuze uit wat
+de sensor levert en géén tweede knop om koersen op te halen. Daarvoor draagt
+elk blok in `races` en elke etappe in `upcoming` een `level`, en elk blok
+bovendien `days_until`.
+
+Blijft er na het filteren geen koers over, dan verbergt de kaart zich (zoals
+bij `visible_days`); in de voorvertoning blijft hij staan met een melding,
+anders is hij in het bewerkscherm niet meer terug te vinden.
+
+Valt de koers van de sensor weg, dan schuift de kaart de eerste koers die
+wél mag naar de tegel (`tegelAttributen`): koersgegevens uit het blok in
+`races`, het etappeprofiel uit `upcoming` — precies zoals de pop-up dat al
+deed. Wat de sensor alleen voor zijn eigen koers levert (de live-positie,
+`countdown`, `date`, `type`) ontbreekt dan gewoon; niets bijverzinnen.
+
+Let op de verouderde `other_*`-uitslag in `koersblok`: die hoort bij een
+koers die de sénsor uitkoos en kan dus van een uitgezet niveau zijn. De
+voorwaarde telt daarom de koersen vóór het filteren (`koersen(a).length < 2`),
+niet erna — op `meerdere` afgaan liet zo'n koers alsnog binnen zodra het
+filter er één overhield.
+
 `sections` bepaalt welke onderdelen in het detailvenster staan (`SECTIES`);
 de volgorde ligt in de code vast en niet in de configuratie. Leeg of onzin
 betekent alles, zodat een kaart zonder die optie blijft tonen wat hij altijd
@@ -397,6 +434,8 @@ anders terug op een eigen formulier. Wie een kaartoptie toevoegt raakt vier
 plekken: `setConfig`, de lijst `VELDEN` in de editor, het terugvalformulier
 en de optietabel in de README; `tests/test_kaart.py` faalt als er één
 achterblijft, `tests/browser/editor_test.mjs` vergelijkt beide editorwegen.
+Vergeet daarbij de `setConfig` van de editor niet: die staat er los van die
+van de kaart en moet dezelfde standaardwaarden en normalisering hebben.
 Schrijf sleutels in `this._config` voluit (`view: view`, niet de verkorte
 vorm), want die test leest ze met een regex. De optietabel in de README
 loopt tot de eerste regel die geen tabelrij is; tabellen met de wáárden van
