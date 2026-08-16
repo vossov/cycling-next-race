@@ -17,7 +17,7 @@ const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 // De onderdelen van het detailvenster, in de volgorde waarin de kaart ze
 // zet. Hier met opzet uitgeschreven: een wijziging in de kaart hoort hier
 // zichtbaar te worden en niet stilzwijgend mee te bewegen.
-const SECTIES = ['profile', 'tv', 'upcoming', 'result', 'gc', 'points', 'kom', 'youth'];
+const SECTIES = ['profile', 'tv', 'upcoming', 'start', 'result', 'gc', 'points', 'kom', 'youth'];
 
 // De niveaus die de kaart aanbiedt, gelijk aan NIVEAUS in const.py. Ook hier
 // met opzet uitgeschreven; tests/test_kaart.py bewaakt de Python-kant.
@@ -143,7 +143,8 @@ for (const metHaForm of [false, true]) {
           type: 'custom:cycling-next-race-card',
           entity: 'sensor.cycling_next_race', view: 'profile', design: 'default',
           visible_days: 2, details: true,
-          sections: ['profile', 'tv', 'upcoming', 'result', 'gc', 'points', 'kom', 'youth'],
+          sections: ['profile', 'tv', 'upcoming', 'start', 'result', 'gc', 'points',
+                     'kom', 'youth'],
           levels: ['1', '24', '26', '27'],
           title: '',
         });
@@ -186,8 +187,8 @@ for (const metHaForm of [false, true]) {
       problemen.push(`kop kwam niet door (title=${uit.laatste && uit.laatste.title})`);
     if (!uit.laatste || String(uit.laatste.sections) !== 'result,gc')
       problemen.push(`sectiekeuze kwam niet door (sections=${uit.laatste && uit.laatste.sections})`);
-    if (!metHaForm && uit.sectiekeuzes !== 8)
-      problemen.push(`${uit.sectiekeuzes} sectievakjes, verwacht 8`);
+    if (!metHaForm && uit.sectiekeuzes !== SECTIES.length)
+      problemen.push(`${uit.sectiekeuzes} sectievakjes, verwacht ${SECTIES.length}`);
     if (!uit.laatste || String(uit.laatste.levels) !== '24')
       problemen.push(`niveaukeuze kwam niet door (levels=${uit.laatste && uit.laatste.levels})`);
     if (!metHaForm && uit.niveaukeuzes !== NIVEAUS.length)

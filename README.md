@@ -68,6 +68,7 @@ Achter **Configureren** bij de integratie stel je in:
 |---|---|
 | Aantal renners in de uitslag | 10 |
 | Aantal renners in het klassement | 10 |
+| Aantal renners in de startlijst | 10 |
 | Maximaal aantal komende etappes | 10 |
 | Komende etappes tonen tot (dagen vooruit) | 7 |
 | Verversen elke (minuten) | 30 |
@@ -163,11 +164,23 @@ blijven; kleuren die het thema volgen zouden die twee uit elkaar laten lopen.
 
 `sections` bepaalt wat er in het venster staat, in deze vaste volgorde:
 `profile` (hoogteprofiel), `tv` (tv-zenders), `upcoming` (komende dagen),
-`result` (uitslag), `gc` (algemeen klassement), `points` (punten), `kom`
-(berg), `youth` (jongeren).
+`start` (startlijst), `result` (uitslag), `gc` (algemeen klassement),
+`points` (punten), `kom` (berg), `youth` (jongeren).
 
 Niets aangevinkt betekent alles — wil je helemaal geen venster, zet dan
 `details` uit.
+
+### Startlijst
+
+Zolang een koers nog niet is begonnen valt er geen uitslag te tonen. In dat
+gat komt de startlijst: wie er meedoen, met de hoogst geklasseerde renners
+bovenaan. De volgorde is die van de **individuele ranglijst bij
+procyclingstats** — er wordt niets geschat, en een renner die daar niet op
+staat blijft uit het lijstje. Boven de lijst staat hoeveel renners en
+ploegen er aan de start staan.
+
+Zodra de eerste etappe gereden is verdwijnt de startlijst en staat de uitslag
+er; dat scheelt ook ruimte in de attributen.
 
 ### Niveaus per kaart
 

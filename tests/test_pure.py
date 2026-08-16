@@ -216,6 +216,54 @@ def test_repair_rows_laat_goede_rijen_met_rust(wt):
     assert rijen[0]["rider"] == "Ayuso Juan"
 
 
+# ── startlijst ──────────────────────────────────────────────────────
+
+STARTLIJST = [
+    {"rider": "Vollering Demi", "rider_url": "rider/demi-vollering",
+     "team": "FDJ - SUEZ", "team_url": "team/fdj-suez-2026"},
+    {"rider": "Wiebes Lorena", "rider_url": "rider/lorena-wiebes",
+     "team": "Team SD Worx", "team_url": "team/sd-worx-2026"},
+    {"rider": "Jansen Iris", "rider_url": "rider/iris-jansen",
+     "team": "Team SD Worx", "team_url": "team/sd-worx-2026"},
+]
+RANGLIJST = {
+    "rider/lorena-wiebes": (1, 3120),
+    "rider/demi-vollering": (3, 2480),
+}
+
+
+def test_roster_van_koppelt_renner_aan_ploeg(wt):
+    roster = wt._roster_van(STARTLIJST)
+    assert roster[wt._name_key("Vollering Demi")] == "FDJ - SUEZ"
+    assert roster[wt._name_key("Wiebes Lorena")] == "Team SD Worx"
+
+
+def test_start_top_volgt_de_ranglijst(wt):
+    """De volgorde komt van de ranglijst, niet van de startlijst."""
+    top = wt._start_top(STARTLIJST, RANGLIJST, 10)
+    assert [r["rider"] for r in top] == ["Wiebes Lorena", "Vollering Demi"]
+    # het cijfer is de plek op de ranglijst, geen 1-2-3 van onszelf
+    assert [r["rank"] for r in top] == [1, 3]
+    assert top[0]["points"] == 3120
+    assert top[0]["team"] == "Team SD Worx"
+
+
+def test_start_top_laat_ongerangschikte_renners_weg(wt):
+    """Wie niet op de ranglijst staat krijgt geen geschatte plek."""
+    top = wt._start_top(STARTLIJST, RANGLIJST, 10)
+    assert "Jansen Iris" not in [r["rider"] for r in top]
+
+
+def test_start_top_kapt_af_op_het_gevraagde_aantal(wt):
+    assert len(wt._start_top(STARTLIJST, RANGLIJST, 1)) == 1
+
+
+def test_start_top_zonder_ranglijst_is_leeg(wt):
+    """Geen bron voor de volgorde betekent geen lijst; niets verzinnen."""
+    assert wt._start_top(STARTLIJST, {}, 10) == []
+    assert wt._start_top([], RANGLIJST, 10) == []
+
+
 # ── dagwinst op positie ─────────────────────────────────────────────
 
 def test_gain_time_by_rank(wt):

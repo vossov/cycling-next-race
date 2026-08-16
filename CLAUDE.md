@@ -65,7 +65,9 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
   `async_add_executor_job`, want procyclingstats en urllib zijn blokkerend.
 - Caches op de coordinator (per dag of per koers geleegd bij een nieuwe dag):
   `_elev_cache`, `_names_cache`, `_tv_cache`, `_sprints_cache`,
-  `_prevrank_cache`, `_roster_cache` (dict per koers), `_other_cache` (dict
+  `_prevrank_cache`, `_startlist_cache` (de startlijst per koers),
+  `_ranking_cache` (de PCS-ranglijst per adres uit `RANGLIJST`),
+  `_other_cache` (dict
   per etappe van de andere koersen; alleen afgeronde etappes komen erin).
   `_tv_cache` bewaart de tv-gids als HTML — op die pagina staan álle koersen
   van de dag, dus één verzoek bedient de tegel en de pop-up samen.
@@ -164,6 +166,28 @@ Zo'n blok geeft hetzelfde beeld als de tegelkoers:
 - Het profiel komt uit `upcoming` (zie hieronder), inclusief `start_time`,
   `finish_est` en de tussensprint.
 
+### Startlijst als er nog geen uitslag is
+
+Een koers die nog moet beginnen heeft niets te tonen: geen uitslag, geen
+klassement. Daar komt de startlijst voor in de plaats — `startlist_top`,
+`startlist_riders` en `startlist_teams`, op de tegel én op elk koersblok, en
+alleen zolang `last_result` leeg is. Zodra er gereden is verdwijnt hij weer;
+dat scheelt ruimte in de attributen en de uitslag zegt meer.
+
+De startlijst zelf staat op volgorde van ploeg en zegt niets over wie de
+kopmannen zijn. **De volgorde komt daarom van de individuele PCS-ranglijst**
+(`RANGLIJST`, per geslacht één adres, één keer per dag opgehaald), gekoppeld
+op `rider_url` — een vaste sleutel, dus zonder namen te vergelijken. Wie niet
+op die ranglijst staat komt niet in het lijstje: een renner een geschatte
+plek geven zou precies het verzinnen zijn dat dit project niet doet. `rank`
+in de rijen is dan ook de plek op die ranglijst en geen 1-2-3 van onszelf;
+de kaart zet dat er met zoveel woorden bij.
+
+Levert de ranglijst niets op (of klopt het vrouwenadres niet), dan blijft
+`startlist_top` leeg en laat de kaart het lijstje weg; de telling van renners
+en ploegen blijft dan wel staan. `_fetch_ranking` logt een waarschuwing en
+`startlist_diag` laat zien hoeveel renners er gekoppeld konden worden.
+
 `_zenders_voor`, `_sprints_voor` en `_rank_maps` slikken hun eigen fouten en
 geven leeg terug. Dat moet: `_races_block` vangt een uitzondering per blok af
 door het hele blok te laten vallen, en een hikje bij wielerflits hoort geen
@@ -212,7 +236,12 @@ ze dubbel staan met het eigen blok van die koers.
 - Cols vooraf: `RaceClimbs(f"{stage_url}/route/climbs")` — voorspelbaar adres,
   werkt voor élke koers. Dit is de terugval voor colnamen.
 - Startlijst: `RaceStartlist(f"{race_url}/startlist")` — per ploegblok geparsed,
-  dus de koppeling renner→ploeg is hier betrouwbaar.
+  dus de koppeling renner→ploeg is hier betrouwbaar. `_fetch_startlist` levert
+  de rijen (renner, ploeg en hun adressen); `_roster_van` maakt daar de
+  renner→ploeg-tabel van die `_repair_rows` gebruikt.
+- Ranglijst: `Ranking("rankings/me/individual").individual_ranking(...)`, en
+  voor de vrouwen `rankings/we/individual`. Zie `RANGLIJST` in `sensor.py`;
+  het vrouwenadres is **niet geverifieerd**.
 
 ### cyclingstage.com
 
@@ -305,6 +334,10 @@ het een stuk meer. Wordt het te veel, dan is `max_other` verlagen de
 goedkoopste stap; dat is nu een instelling en hoeft niet meer in de code.
 **Niet gemeten in een draaiende Home Assistant, alleen geschat.**
 
+De startlijst komt er niet bovenop maar staat in de plaats van de uitslag:
+tien renners is zo'n 600 bytes per koers, en een koers zonder uitslag heeft
+juist geen `last_result`, `gc_top` en de rest. Per saldo scheelt het.
+
 `level` op elke etappe in `upcoming` en op elk blok in `races` kost een stuk
 of vijftien bytes per stuk — een paar honderd in totaal, en het alternatief
 (de kaart laten raden welk niveau een koers heeft) bestaat niet.
@@ -317,7 +350,8 @@ niveau per dag, en een etappelijst per koers die in het venster valt.
 ## Diagnose-attributen
 
 Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:
-`gpx_diag`, `times_diag`, `names_diag`, `levels_diag`, `gain_headers`, `gain_raw`,
+`gpx_diag`, `times_diag`, `names_diag`, `levels_diag`, `startlist_diag`,
+`gain_headers`, `gain_raw`,
 `names_fixed`, `gains_set`, `roster_size`, `elevation_source`.
 
 ## Dashboard
@@ -579,6 +613,15 @@ vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/c
 - `LEIDERSTRUI` dekt alleen de koersen waarvan de truikleur vaststaat. Voor
   de rest (Catalunya, Baskenland, Denemarken, Renewi, Groot-Brittannië …)
   is er bewust niets ingevuld. Aanvullen mag, maar alleen na controle.
+- **Het vrouwenadres van de ranglijst (`rankings/we/individual`) is niet
+  geverifieerd.** Net als bij de ProSeries-nummers kon dat van hieruit niet
+  worden nagekeken. Klopt het niet, dan blijft de startlijst van een
+  vrouwenkoers leeg; kijk in het debuglogboek op "Ranglijst" en op
+  `startlist_diag`. Aanpassen is één regel in `RANGLIJST` in `sensor.py`.
+- **`Ranking.individual_ranking()` is niet geverifieerd** met de velden
+  `rank`, `rider_url` en `points`; ze staan zo in de documentatie van het
+  pakket, maar de sandbox komt niet bij procyclingstats. Faalt het, dan is
+  de startlijst leeg — niet de hele sensor.
 - **`Team.abbreviation()` is niet geverifieerd.** Of het pakket die methode
   zo noemt in 0.2.8, en of `team_url` als veld in de uitslagtabellen wordt
   geaccepteerd, blijkt pas in een draaiende Home Assistant — de sandbox komt
