@@ -19,6 +19,10 @@ const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 // zichtbaar te worden en niet stilzwijgend mee te bewegen.
 const SECTIES = ['profile', 'tv', 'upcoming', 'result', 'gc', 'points', 'kom', 'youth'];
 
+// De niveaus die de kaart aanbiedt, gelijk aan NIVEAUS in const.py. Ook hier
+// met opzet uitgeschreven; tests/test_kaart.py bewaakt de Python-kant.
+const NIVEAUS = ['1', '24', '26', '27'];
+
 const browser = await chromium.launch({ executablePath: CHROME });
 let mislukt = 0;
 
@@ -62,13 +66,15 @@ for (const metHaForm of [false, true]) {
     const viaHaForm = !!r.querySelector('ha-form');
     let velden;
     let sectiekeuzes = null;
+    let niveaukeuzes = null;
     if (viaHaForm) {
       velden = (r.querySelector('ha-form')._schema || []).map((s) => s.name);
       // bootst na wat ha-form doet als de gebruiker iets aanpast
       r.querySelector('ha-form').dispatchEvent(new CustomEvent('value-changed', {
         detail: { value: { entity: 'sensor.cycling_next_race', view: 'countdown',
                            design: 'bubble', visible_days: 7, details: false,
-                           sections: ['result', 'gc'], title: 'Wielrennen' } },
+                           sections: ['result', 'gc'], levels: ['24'],
+                           title: 'Wielrennen' } },
       }));
     } else {
       // de sectievakjes delen één naam, zoals een checkboxgroep hoort;
@@ -76,12 +82,15 @@ for (const metHaForm of [false, true]) {
       velden = [...new Set([...r.querySelectorAll('[name]')]
         .map((el) => el.getAttribute('name')))];
       sectiekeuzes = r.querySelectorAll('[name="sections"]').length;
+      niveaukeuzes = r.querySelectorAll('[name="levels"]').length;
       r.querySelector('[name="design"]').value = 'bubble';
       r.querySelector('[name="title"]').value = 'Wielrennen';
       // alles op twee na uitvinken moet als keuze doorkomen, in de vaste
       // volgorde van de vakjes en niet in die van het aanvinken
       const vakjes = [...r.querySelectorAll('[name="sections"]')];
       vakjes.forEach((v) => { v.checked = v.value === 'result' || v.value === 'gc'; });
+      const niveaus = [...r.querySelectorAll('[name="levels"]')];
+      niveaus.forEach((v) => { v.checked = v.value === '24'; });
       const dagen = r.querySelector('[name="visible_days"]');
       dagen.value = '7';
       dagen.dispatchEvent(new Event('change', { bubbles: true }));
@@ -89,7 +98,7 @@ for (const metHaForm of [false, true]) {
 
     const voet = r.querySelector('.versie');
     return {
-      bestaat: true, viaHaForm, velden, sectiekeuzes,
+      bestaat: true, viaHaForm, velden, sectiekeuzes, niveaukeuzes,
       // de versie van de kaart hoort in het bewerkscherm te staan; anders
       // is alleen die van de Python-kant te zien
       voetregel: voet ? voet.textContent : '',
@@ -117,7 +126,7 @@ for (const metHaForm of [false, true]) {
       stubGevuld: (() => {
         const k = document.createElement('cycling-next-race-card');
         k.setConfig(Kaart.getStubConfig());
-        return { sections: k._config.sections };
+        return { sections: k._config.sections, levels: k._config.levels };
       })(),
       // alles aangevinkt en een lege kop horen niet in de opgeslagen
       // configuratie te belanden: dat is hetzelfde als ze weglaten. Maar de
@@ -135,6 +144,7 @@ for (const metHaForm of [false, true]) {
           entity: 'sensor.cycling_next_race', view: 'profile', design: 'default',
           visible_days: 2, details: true,
           sections: ['profile', 'tv', 'upcoming', 'result', 'gc', 'points', 'kom', 'youth'],
+          levels: ['1', '24', '26', '27'],
           title: '',
         });
         let opnieuw = 'ok';
@@ -148,8 +158,10 @@ for (const metHaForm of [false, true]) {
       // onzin in de configuratie mag niet blijven staan
       opgeschoond: (() => {
         const e2 = Kaart.getConfigElement();
-        e2.setConfig({ design: 'bestaat-niet', sections: ['gc', 'onzin'] });
-        return { design: e2._config.design, sections: e2._config.sections };
+        e2.setConfig({ design: 'bestaat-niet', sections: ['gc', 'onzin'],
+                       levels: ['24', '999'] });
+        return { design: e2._config.design, sections: e2._config.sections,
+                 levels: e2._config.levels };
       })(),
     };
   });
@@ -159,7 +171,7 @@ for (const metHaForm of [false, true]) {
   if (!uit.bestaat) problemen.push('getConfigElement levert geen editor');
   else {
     const verwacht = ['entity', 'view', 'design', 'visible_days', 'details',
-                      'sections', 'title'];
+                      'sections', 'levels', 'title'];
     if (JSON.stringify(uit.velden) !== JSON.stringify(verwacht))
       problemen.push(`velden ${JSON.stringify(uit.velden)} i.p.v. ${JSON.stringify(verwacht)}`);
     if (uit.viaHaForm !== metHaForm) problemen.push(`verkeerde weg gekozen (ha-form=${uit.viaHaForm})`);
@@ -176,17 +188,25 @@ for (const metHaForm of [false, true]) {
       problemen.push(`sectiekeuze kwam niet door (sections=${uit.laatste && uit.laatste.sections})`);
     if (!metHaForm && uit.sectiekeuzes !== 8)
       problemen.push(`${uit.sectiekeuzes} sectievakjes, verwacht 8`);
+    if (!uit.laatste || String(uit.laatste.levels) !== '24')
+      problemen.push(`niveaukeuze kwam niet door (levels=${uit.laatste && uit.laatste.levels})`);
+    if (!metHaForm && uit.niveaukeuzes !== NIVEAUS.length)
+      problemen.push(`${uit.niveaukeuzes} niveauvakjes, verwacht ${NIVEAUS.length}`);
     // sections en title horen niet in de stub: weglaten betekent "alles"
     // respectievelijk "geen kop", en dat moet zo blijven als er later een
     // onderdeel bijkomt
     const inStub = ['entity', 'view', 'design', 'visible_days', 'details'];
     for (const s of inStub) if (!(s in uit.stub)) problemen.push(`getStubConfig mist ${s}`);
-    for (const s of ['sections', 'title'])
+    for (const s of ['sections', 'levels', 'title'])
       if (s in uit.stub) problemen.push(`getStubConfig zet ${s} vast`);
     if (String(uit.stubGevuld.sections) !== SECTIES.join(','))
       problemen.push(`een kaart uit de stub toont niet alles: ${uit.stubGevuld.sections}`);
+    if (String(uit.stubGevuld.levels) !== NIVEAUS.join(','))
+      problemen.push(`een kaart uit de stub mist niveaus: ${uit.stubGevuld.levels}`);
     if (uit.allesAan.sections !== undefined)
       problemen.push('alles aangevinkt komt als lijst in de configuratie terecht');
+    if (uit.allesAan.levels !== undefined)
+      problemen.push('alle niveaus aangevinkt komt als lijst in de configuratie terecht');
     if (uit.allesAan.title !== undefined)
       problemen.push('een lege kop komt in de configuratie terecht');
     if (uit.allesAan._opnieuw !== 'ok')
@@ -203,6 +223,8 @@ for (const metHaForm of [false, true]) {
       problemen.push(`onbekende vormgeving blijft staan: ${uit.opgeschoond.design}`);
     if (String(uit.opgeschoond.sections) !== 'gc')
       problemen.push(`onbekende sectie blijft staan: ${uit.opgeschoond.sections}`);
+    if (String(uit.opgeschoond.levels) !== '24')
+      problemen.push(`onbekend niveau blijft staan: ${uit.opgeschoond.levels}`);
   }
   if (fouten.length) problemen.push('JS-fouten: ' + fouten.join(' | '));
 

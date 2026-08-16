@@ -526,3 +526,68 @@ def test_niet_alle_ploegcodes_in_een_keer(wt, coordinator, monkeypatch,
     asyncio.run(coordinator._ploegcodes(data))
     assert len(opgehaald) == len(ploegen)
     assert all("team_code" in r for r in data["results"])
+
+
+# ── niveau in de attributen ─────────────────────────────────────────
+#
+# De kaart laat zich per dashboardkaart op niveaus instellen en filtert
+# daarvoor op `level`. Ontbreekt dat veld, dan valt er niets te filteren en
+# staat elke koers op elke kaart.
+
+def test_koersblok_draagt_zijn_niveau_en_dagen(wt, coordinator, monkeypatch):
+    """Genoeg voor een kaart om deze koers zelf naar de tegel te halen."""
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag())
+    stages = _stages("race/tour-de-france-femmes/2026", "Tour de France Femmes",
+                     [VANDAAG - timedelta(days=1), VANDAAG + timedelta(days=2)],
+                     women=True)
+    ev = dict(FEMMES, level="24")
+
+    blok = asyncio.run(coordinator._race_entry(ev, stages, VANDAAG))
+    assert blok["level"] == "24"
+    assert blok["days_until"] == 2
+
+
+def test_koersblok_zonder_komende_etappe_heeft_geen_dagen(wt, coordinator,
+                                                          monkeypatch):
+    """None en niet 0: een afgelopen koers is niet 'vandaag'."""
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag())
+    stages = _stages("race/tour-de-france-femmes/2026", "Tour de France Femmes",
+                     [VANDAAG - timedelta(days=2)], women=True)
+
+    blok = asyncio.run(coordinator._race_entry(dict(FEMMES, level="24"),
+                                               stages, VANDAAG))
+    assert blok["days_until"] is None
+
+
+def test_koers_zonder_niveau_krijgt_een_leeg_veld(wt, coordinator, monkeypatch):
+    """Een kalender van vóór de niveaus mag geen KeyError opleveren."""
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag())
+    stages = _stages("race/tour-de-france-femmes/2026", "Tour de France Femmes",
+                     [VANDAAG + timedelta(days=1)], women=True)
+
+    blok = asyncio.run(coordinator._race_entry(FEMMES, stages, VANDAAG))
+    assert blok["level"] == ""
+
+
+def test_etappes_dragen_het_niveau_van_hun_koers(wt):
+    """`_event_stages` geeft het door; `_upcoming_entry` leest het daar."""
+    eendaags = wt._event_stages({
+        "name": "Milano-Sanremo", "url": "race/milano-sanremo/2026",
+        "start": VANDAAG, "end": VANDAAG, "women": False, "level": "1"})
+    assert [s["level"] for s in eendaags] == ["1"]
+
+
+def test_komende_etappe_draagt_het_niveau(coordinator):
+    """Zonder dit blijft een uitgezet niveau onder "Komende dagen" staan.
+
+    De cache vooraf vullen scheelt het ophalen van profiel en meta; alles
+    wat hier telt zet `_upcoming_entry` daarna alsnog.
+    """
+    stage = _stages("race/tour-de-france-femmes/2026", "Tour de France Femmes",
+                    [VANDAAG + timedelta(days=1)], women=True)[0]
+    stage["level"] = "24"
+    coordinator._upcoming_cache[stage["stage_url"]] = {"elevation": [], "climbs": []}
+
+    e = asyncio.run(coordinator._upcoming_entry(stage, VANDAAG))
+    assert e["level"] == "24"
+    assert e["race_key"] == "tour-de-france-femmes"

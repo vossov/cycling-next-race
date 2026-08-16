@@ -378,6 +378,9 @@ def _event_stages(event: dict) -> list[dict]:
             "profile_icon": "", "name": event["name"], "idx": None,
             "one_day": True, "race_url": race_url, "race_name": event["name"],
             "women": bool(event.get("women")),
+            # het niveau reist mee tot in de attributen; de kaart filtert
+            # er per dashboardkaart op
+            "level": str(event.get("level", "")),
         }]
 
     from procyclingstats import Race
@@ -403,6 +406,7 @@ def _event_stages(event: dict) -> list[dict]:
             "name": st.get("stage_name", ""), "idx": i, "one_day": False,
             "race_url": race_url, "race_name": event["name"],
             "women": bool(event.get("women")),
+            "level": str(event.get("level", "")),
         })
     return out
 
@@ -1898,11 +1902,20 @@ class CyclingCoordinator(DataUpdateCoordinator):
             "label": _short_race(naam, 24) + (" \u00b7 Dames" if dames else ""),
             "race_name": naam,
             "women": bool(ev.get("women")),
+            # het niveau (het circuitnummer van procyclingstats). De kaart
+            # laat zich per dashboardkaart op niveaus instellen en heeft
+            # hiermee genoeg om zelf te kiezen wat hij toont.
+            "level": str(ev.get("level", "")),
             # kleur van de leiderstrui voor de knop in de pop-up; leeg als
             # die niet vaststaat, dan houdt de knop de accentkleur
             "jersey": _leiderstrui(ev["url"]),
             "eyebrow": "",
             "show_state": "",
+            # dagen tot de eerstvolgende etappe van déze koers. Staat er
+            # alleen op zodat een kaart die deze koers naar de tegel haalt
+            # zijn eigen `visible_days` kan toepassen; None betekent dat er
+            # geen etappe meer komt.
+            "days_until": None,
             "last_stage_label": "",
             "last_result": [],
             "gc_top": [],
@@ -1932,6 +1945,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
 
         if toon is not None:
             entry["show_state"] = _show_state_for(toon["date"], today)
+            entry["days_until"] = max(0, (toon["date"] - today).days)
             entry["eyebrow"] = (_short_race(toon["race_name"], 26) if toon.get("one_day")
                                 else f"Etappe {toon['idx']} \u00b7 {_short_race(toon['race_name'])}")
             if dames:
@@ -2084,6 +2098,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # waar dit etappeprofiel bij hoort; de kaart zoekt er per koersblok
         # in de pop-up de eigen etappes mee op
         e["race_key"] = _race_slug(s["race_url"])
+        # het niveau van de koers waar deze etappe bij hoort. De kaart laat
+        # zich per dashboardkaart op niveaus instellen en heeft dat ook hier
+        # nodig: staat een niveau uit, dan hoort zijn etappe ook niet onder
+        # "Komende dagen" te blijven staan.
+        e["level"] = str(s.get("level", ""))
         if s.get("one_day"):
             e["eyebrow"] = _short_race(s["race_name"], 26)
         else:
@@ -2372,6 +2391,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
              "label": _short_race(shown["race_name"], 24) + (" · Dames" if _dames else ""),
              "race_name": shown["race_name"],
              "women": bool(shown.get("women")),
+             "level": str(shown.get("level", "")),
              "jersey": _leiderstrui(shown["race_url"])},
             andere_koersen, today)
 

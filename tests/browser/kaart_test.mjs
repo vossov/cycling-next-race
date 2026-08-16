@@ -31,15 +31,15 @@ const attrs = {
   // + etappegegevens
   upcoming: [
     { date: '2026-07-18', eyebrow: 'Etappe 15 · Tour de France', show_state: 'Morgen',
-      race_key: 'tour-de-france',
+      race_key: 'tour-de-france', level: '1',
       departure: 'Loudenvielle', arrival: 'Plateau de Beille', distance_km: 197,
       vertical_m: 2400, profile_score: 402, watchability: 8 },
     { date: '2026-07-19', eyebrow: 'Etappe 4 · Tour de France Femmes · Dames', show_state: 'Overmorgen',
-      race_key: 'tour-de-france-femmes',
+      race_key: 'tour-de-france-femmes', level: '24',
       departure: 'Saumur', arrival: 'Poitiers', distance_km: 130, vertical_m: 1500,
       profile_score: 120, watchability: 5 },
     { date: '2026-07-20', eyebrow: 'Etappe 5 · Tour de France Femmes · Dames', show_state: 'Za 20 jul',
-      race_key: 'tour-de-france-femmes',
+      race_key: 'tour-de-france-femmes', level: '24',
       departure: 'Poitiers', arrival: 'Limoges', distance_km: 152, vertical_m: 1900,
       profile_score: 180, watchability: 6 },
   ],
@@ -47,10 +47,11 @@ const attrs = {
   // koersen die tegelijk lopen met hun eigen uitslag en standen
   races: [
     { primary: true, key: 'tour-de-france', label: 'Tour de France',
-      race_name: 'Tour de France', women: false, jersey: '#F3C700' },
+      race_name: 'Tour de France', women: false, level: '1', jersey: '#F3C700' },
     { key: 'tour-de-france-femmes', label: 'Tour de France Femmes · Dames',
-      race_name: 'Tour de France Femmes', women: true, jersey: '#F3C700',
+      race_name: 'Tour de France Femmes', women: true, level: '24', jersey: '#F3C700',
       eyebrow: 'Etappe 4 · Tour de France Femmes · Dames', show_state: 'Overmorgen',
+      days_until: 2,
       last_stage_label: 'Etappe 3 · Tour de France Femmes',
       // met team_code: die gaat voor op de volledige naam
       last_result: [
@@ -339,6 +340,76 @@ for (const [design, marge] of [['default', '10px'], ['ha', '8px 16px 16px'],
     p.push('zonder profiel valt de eerste etappe van een pop-upkoers weg');
   if (p.length) { console.log(`FOUT  onderdelen: ${p.join(', ')}`); mislukt++; }
   else console.log(`ok    onderdelen — alles ${uit.alles.secties} secties, keuze ${uit.twee.secties}`);
+}
+
+// ── niveaus per kaart ────────────────────────────────────────────
+/* Twee kaarten op hetzelfde dashboard met een andere niveaukeuze. De
+ * tegelkoers van de sensor is de mannen-WorldTour; een kaart die alleen de
+ * vrouwen wil hoort de vrouwenkoers naar de tegel te halen in plaats van
+ * leeg te blijven. */
+{
+  const uit = await page.evaluate(([alle]) => {
+    const bouw = (levels, preview) => {
+      document.getElementById('doel').innerHTML = '';
+      const kaart = document.createElement('cycling-next-race-card');
+      const config = { entity: 'sensor.cycling_next_race', visible_days: 0 };
+      if (levels) config.levels = levels;
+      kaart.setConfig(config);
+      if (preview) kaart.preview = true;
+      document.getElementById('doel').appendChild(kaart);
+      kaart.hass = { states: { 'sensor.cycling_next_race': {
+        state: 'x', last_updated: String(levels) + preview, attributes: alle } } };
+      const r = kaart.shadowRoot;
+      const dlg = r.querySelector('dialog');
+      const html = r.innerHTML;
+      return {
+        verborgen: getComputedStyle(kaart).display === 'none',
+        tegel: (r.querySelector('ha-card') || {}).textContent || '',
+        knoppen: r.querySelectorAll('.koers').length,
+        titel: dlg ? dlg.querySelector('.titel').textContent : '',
+        venster: dlg ? dlg.textContent : '',
+        nan: /NaN|undefined/.test(html),
+      };
+    };
+    return {
+      alles: bouw(null, false),
+      mannen: bouw(['1'], false),
+      vrouwen: bouw(['24'], false),
+      niets: bouw(['26'], false),
+      nietsPreview: bouw(['26'], true),
+    };
+  }, [attrs]);
+
+  const p = [];
+  if (uit.alles.knoppen !== 2) p.push(`zonder keuze ${uit.alles.knoppen} knoppen i.p.v. 2`);
+  // alleen de mannen: geen tweede koers meer, en ook geen vrouwenetappe
+  // onder "Komende dagen"
+  if (uit.mannen.knoppen !== 0)
+    p.push(`bij één niveau blijven er ${uit.mannen.knoppen} koersknoppen staan`);
+  if (uit.mannen.titel !== 'Tour de France')
+    p.push(`verkeerde koers bij alleen de mannen: ${uit.mannen.titel}`);
+  if (uit.mannen.venster.indexOf('Femmes') >= 0)
+    p.push('een vrouwenetappe blijft in het venster staan');
+  if (uit.mannen.venster.indexOf('Etappe 15 · Tour de France') < 0)
+    p.push('de eigen komende etappe is verdwenen');
+  // alleen de vrouwen: de vrouwenkoers komt op de tegel
+  if (uit.vrouwen.titel !== 'Tour de France Femmes')
+    p.push(`de vrouwenkoers komt niet op de tegel: ${uit.vrouwen.titel}`);
+  if (uit.vrouwen.tegel.indexOf('Etappe 4 · Tour de France Femmes') < 0)
+    p.push(`verkeerde etappe op de tegel: ${uit.vrouwen.tegel}`);
+  if (uit.vrouwen.venster.indexOf('Pogacar') >= 0)
+    p.push('de mannenuitslag staat nog in het venster');
+  if (uit.vrouwen.venster.indexOf('Vollering') < 0)
+    p.push('de vrouwenuitslag ontbreekt');
+  if (uit.vrouwen.nan) p.push('NaN of undefined bij de gepromoveerde koers');
+  // een niveau zonder koers: verbergen, behalve in het bewerkscherm
+  if (!uit.niets.verborgen) p.push('een niveau zonder koers verbergt de kaart niet');
+  if (uit.nietsPreview.verborgen) p.push('in het bewerkscherm hoort de kaart te blijven staan');
+  if (uit.nietsPreview.tegel.indexOf('Geen koers') < 0)
+    p.push(`geen melding in het bewerkscherm: ${uit.nietsPreview.tegel}`);
+
+  if (p.length) { console.log(`FOUT  niveaus: ${p.join(', ')}`); mislukt++; }
+  else console.log('ok    niveaus — mannen, vrouwen en een leeg niveau elk goed');
 }
 
 // ── preview-modus: nooit verbergen ───────────────────────────────

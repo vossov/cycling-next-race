@@ -19,10 +19,18 @@
  *   details       true (standaard) opent bij een tik het volledige overzicht
  *   sections      welke onderdelen in dat overzicht staan; niets gekozen
  *                 betekent alles (zie SECTIES)
+ *   levels        welke niveaus deze kaart laat zien; niets gekozen betekent
+ *                 alles wat de sensor levert (zie NIVEAUS)
  *   title         eigen kop boven de kaart; leeg is geen kop
  *
  * Lopen er meerdere koersen tegelijk, dan staan ze in dat overzicht als
  * knoppen naast elkaar; de koers van de tegel staat open.
+ *
+ * `levels` is een keuze ván wat de sensor levert, geen tweede knop om koersen
+ * op te halen. Wat er niet in de integratie aanstaat, kan hier niet
+ * verschijnen; wat er wel in staat, kan per kaart anders zijn. Zo staat er
+ * bovenaan een dashboard een kaart met alleen de mannen-WorldTour en verderop
+ * een met alleen de vrouwen.
  *
  * always_show uit oudere configuraties blijft werken en betekent
  * visible_days: 0.
@@ -39,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.10.2';
+const VERSIE = '0.11.0';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -58,6 +66,24 @@ const SECTIES = [
 ];
 
 const SECTIE_SLEUTELS = SECTIES.map(function (s) { return s.key; });
+
+/* De niveaus die de integratie kan volgen, met het circuitnummer van
+ * procyclingstats als sleutel. Gelijk aan NIVEAUS in const.py; deze kaart is
+ * statisch en kan die tabel niet opvragen, dus staat hij hier nog een keer.
+ * tests/test_kaart.py vergelijkt de twee.
+ *
+ * Wat je hier kiest is een keuze uit wat de sensor levert. Een niveau dat in
+ * de integratie uitstaat komt niet in de attributen voor en kan dus ook niet
+ * op een kaart verschijnen — deze lijst maakt geen koersen zichtbaar, hij
+ * laat er alleen weg. */
+const NIVEAUS = [
+  { value: '1', label: 'WorldTour mannen' },
+  { value: '24', label: 'WorldTour vrouwen' },
+  { value: '26', label: 'ProSeries mannen' },
+  { value: '27', label: 'ProSeries vrouwen' },
+];
+
+const NIVEAU_SLEUTELS = NIVEAUS.map(function (n) { return n.value; });
 
 /* De vormgevingen. 'default' is de opmaak die de kaart altijd had; 'ha'
  * volgt de variabelen van het actieve Home Assistant-thema; 'bubble' is een
@@ -83,6 +109,31 @@ function secties(waarde) {
     return SECTIE_SLEUTELS.indexOf(String(s)) >= 0;
   }).map(String);
   return gekozen.length ? gekozen : SECTIE_SLEUTELS.slice();
+}
+
+/** De gekozen niveaus; leeg of onzin betekent alle bekende niveaus.
+ *
+ * Net als bij `secties`: een kaart zonder deze optie laat alles zien, ook een
+ * niveau dat er later bij komt. Daarom wordt de volledige lijst niet
+ * opgeslagen (zie `_wijzig`) maar hier ingevuld.
+ */
+function niveaus(waarde) {
+  if (!Array.isArray(waarde)) return NIVEAU_SLEUTELS.slice();
+  const gekozen = waarde.filter(function (n) {
+    return NIVEAU_SLEUTELS.indexOf(String(n)) >= 0;
+  }).map(String);
+  return gekozen.length ? gekozen : NIVEAU_SLEUTELS.slice();
+}
+
+/** Mag een koers of etappe van dit niveau op deze kaart?
+ *
+ * Zonder niveau valt niets te filteren — dat is een sensor van vóór deze
+ * versie — en dan blijft de koers staan; verbergen zou de kaart bij een
+ * halve update leeg laten.
+ */
+function magNiveau(gekozen, niveau) {
+  const n = String(niveau == null ? '' : niveau);
+  return !n || gekozen.indexOf(n) >= 0;
 }
 
 /* ── hulpjes ─────────────────────────────────────────────────────── */
@@ -218,6 +269,20 @@ function koersen(a) {
   return [{ primary: true, race_name: a.race_name || '', label: a.race_name || 'Wielrennen' }];
 }
 
+/** De koersen die op déze kaart mogen, in de volgorde van de sensor.
+ *
+ * De eerste is wat de kaart op de tegel zet. Dat hoeft niet de koers te zijn
+ * die de sensor koos: die keuze geldt voor de integratie als geheel, en juist
+ * daarom kan hier op één dashboard bovenaan iets anders staan dan verderop.
+ * Blijft er niets over, dan is de lijst leeg en verbergt de kaart zich — net
+ * als bij `visible_days`.
+ */
+function zichtbareKoersen(a, gekozenNiveaus) {
+  return koersen(a).filter(function (r) {
+    return magNiveau(gekozenNiveaus, r.level);
+  });
+}
+
 /* De sensor geeft per koers de kleur van de leiderstrui mee (`jersey`),
  * maar alleen waar die vaststaat. Ontbreekt hij, dan houdt de knop de
  * gewone accentkleur — een verzonnen kleur is erger dan geen kleur. */
@@ -257,14 +322,51 @@ function knopStijl(race, design) {
   return `background:${ACCENT};border-color:${ACCENT};color:${tekstOp(ACCENT)}`;
 }
 
-/** De komende etappes die bij deze koers horen. */
-function komendVoor(a, race, meerdere) {
-  const alles = a.upcoming || [];
+/** De komende etappes die bij deze koers horen.
+ *
+ * `gekozenNiveaus` weglaten (null) betekent: niet op niveau filteren. Dat is
+ * wat `tegelAttributen` wil, want daar is de koers zelf al gekozen.
+ */
+function komendVoor(a, race, meerdere, gekozenNiveaus) {
+  let alles = a.upcoming || [];
+  // een niveau dat op deze kaart uitstaat hoort ook niet onder "Komende
+  // dagen"; anders lekt het daar alsnog binnen zodra er maar één koersblok
+  // overblijft en er dus niet op koers gefilterd wordt
+  if (gekozenNiveaus) {
+    alles = alles.filter(function (u) { return magNiveau(gekozenNiveaus, u.level); });
+  }
   if (!meerdere || !race.key) return alles;
   // een sensor van vóór race_key: dan is er niets te filteren en blijft
   // de volledige lijst staan, zoals altijd
   if (!alles.some((u) => u.race_key)) return alles;
   return alles.filter((u) => u.race_key === race.key);
+}
+
+/** De attributen waarmee de tegel deze koers tekent.
+ *
+ * Voor de koers die de sensor koos zijn dat gewoon de attributen zelf. Kiest
+ * de kaart een andere — omdat de eerste van een niveau is dat hier uitstaat —
+ * dan komt het etappeprofiel uit `upcoming`, precies zoals de pop-up dat al
+ * deed, en de koersgegevens uit het blok in `races`. Er wordt niets bijverzonnen:
+ * wat de sensor alleen voor de gekozen koers levert (de live-positie, het
+ * aftellen) ontbreekt dan gewoon.
+ */
+function tegelAttributen(a, race) {
+  if (!race || race.primary) return a;
+  const eigen = komendVoor(a, race, true, null);
+  const uit = { ...(eigen.length ? eigen[0] : {}) };
+  uit.race_name = race.race_name || race.label || '';
+  // het koersblok is de bron voor deze twee: het weet ook van een etappe van
+  // vandaag die al gereden is
+  if (race.eyebrow) uit.eyebrow = race.eyebrow;
+  if (race.show_state) uit.show_state = race.show_state;
+  if (race.days_until === null || race.days_until === undefined) {
+    // onbekend is niet hetzelfde als vandaag; laat `visible_days` erbuiten
+    delete uit.days_until;
+  } else {
+    uit.days_until = race.days_until;
+  }
+  return uit;
 }
 
 /** Alles van één koers: profiel, komende dagen, uitslag en klassementen.
@@ -274,9 +376,9 @@ function komendVoor(a, race, meerdere) {
  * een lijst die ook de volgorde bepaalt levert bij een half ingevulde
  * keuze een onvoorspelbaar venster op.
  */
-function koersblok(a, race, meerdere, gekozen) {
+function koersblok(a, race, meerdere, gekozen, gekozenNiveaus) {
   const aan = (sleutel) => gekozen.indexOf(sleutel) >= 0;
-  const eigen = komendVoor(a, race, meerdere);
+  const eigen = komendVoor(a, race, meerdere, gekozenNiveaus);
   // de getoonde etappe van de tegelkoers staat niet in upcoming; die van een
   // andere koers is er juist de eerste van, en hoort dus niet nog eens
   // onder "Komende dagen"
@@ -304,8 +406,14 @@ function koersblok(a, race, meerdere, gekozen) {
       : '',
   ];
   // alleen bij de tegelkoers: de losse uitslag van een oudere sensor, die
-  // anders dubbel zou staan met het eigen blok van die koers
-  if (race.primary && !meerdere && aan('result')) {
+  // anders dubbel zou staan met het eigen blok van die koers.
+  //
+  // Hier telt hoeveel koersen de sénsor levert, niet hoeveel er na `levels`
+  // overblijven: `other_label` en `other_result` horen bij een koers die de
+  // sensor zelf uitkoos, en die kan van een niveau zijn dat op deze kaart
+  // uitstaat. Op `meerdere` afgaan liet zo'n koers alsnog binnen zodra het
+  // filter er één overhield.
+  if (race.primary && koersen(a).length < 2 && aan('result')) {
     delen.push(tijdlijst(a.other_label || '', a.other_result));
   }
 
@@ -596,10 +704,11 @@ class CyclingNextRaceCard extends HTMLElement {
 
   /* De configuratie waarmee een nieuwe kaart begint.
    *
-   * `sections` en `title` staan er bewust niet in. Een kaart zonder
+   * `sections`, `levels` en `title` staan er bewust niet in. Een kaart zonder
    * `sections` toont alles, ook onderdelen die er later bij komen; zou de
    * volledige lijst hier staan, dan zou elke kaart die vandaag wordt
-   * aangemaakt een toekomstig onderdeel stilzwijgend missen. En een lege
+   * aangemaakt een toekomstig onderdeel stilzwijgend missen. Voor `levels`
+   * geldt hetzelfde met een niveau dat er later bij komt. En een lege
    * `title` is hetzelfde als geen title, dus die hoeft niet in de YAML.
    */
   static getStubConfig() {
@@ -624,6 +733,7 @@ class CyclingNextRaceCard extends HTMLElement {
       visible_days: view === 'countdown' ? 0 : 2,
       details: true,
       sections: SECTIE_SLEUTELS.slice(),
+      levels: NIVEAU_SLEUTELS.slice(),
       title: '',
       ...gegeven,
     };
@@ -637,6 +747,7 @@ class CyclingNextRaceCard extends HTMLElement {
     // hier een foutkaart, en die is voor de gebruiker niet te repareren
     this._config.design = vormgeving(this._config.design);
     this._config.sections = secties(this._config.sections);
+    this._config.levels = niveaus(this._config.levels);
     this._config.entity = String(this._config.entity || 'sensor.cycling_next_race');
     this._vorigeStatus = null;
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
@@ -678,6 +789,11 @@ class CyclingNextRaceCard extends HTMLElement {
     return 3;
   }
 
+  /** De koersen die op deze kaart mogen; de eerste komt op de tegel. */
+  _koersen(a) {
+    return zichtbareKoersen(a, this._config.levels);
+  }
+
   _teken(st) {
     const root = this.shadowRoot;
     if (!root) return;
@@ -691,7 +807,11 @@ class CyclingNextRaceCard extends HTMLElement {
     }
 
     const a = st.attributes || {};
-    const dagen = Number(a.days_until);
+    // welke koers deze kaart op de tegel zet; dat hoeft niet de koers te zijn
+    // die de sensor koos, want `levels` kan hier iets anders aan staan hebben
+    const races = this._koersen(a);
+    const tegelA = tegelAttributen(a, races[0]);
+    const dagen = Number(tegelA.days_until);
     const grens = Number(this._config.visible_days);
     // grens 0 (of onzin) betekent: geen grens, altijd tonen
     const verbergen =
@@ -699,16 +819,25 @@ class CyclingNextRaceCard extends HTMLElement {
 
     // in de kaartkiezer en het bewerkscherm nooit verbergen: een kaart die
     // zichzelf onzichtbaar maakt is daar niet meer aan te klikken
-    if ((verbergen || a.show_state === 'Klaar') && !this.preview) {
+    if ((verbergen || !races.length || a.show_state === 'Klaar') && !this.preview) {
       root.innerHTML = '';
       this.style.display = 'none';
       return;
     }
     this.style.display = 'block';
 
+    // in het bewerkscherm wél iets laten zien, anders lijkt een te strakke
+    // niveaukeuze op een kapotte kaart
+    if (!races.length) {
+      root.innerHTML = `<style>${STIJL}</style><ha-card class="${thema}"><div class="leeg">Geen koers van de gekozen niveaus.</div></ha-card>`;
+      return;
+    }
+
     const klikbaar = this._config.details;
     const inhoud =
-      this._config.view === 'countdown' ? aftelling(a) : svgTegel({ attributes: a });
+      this._config.view === 'countdown'
+        ? aftelling(tegelA)
+        : svgTegel({ attributes: tegelA });
     const kop = this._config.title
       ? `<div class="kaartkop">${esc(this._config.title)}</div>`
       : '';
@@ -730,7 +859,7 @@ class CyclingNextRaceCard extends HTMLElement {
   }
 
   _dialoog(a) {
-    const races = koersen(a);
+    const races = this._koersen(a);
     const meerdere = races.length > 1;
     const design = this._config.design;
 
@@ -754,10 +883,11 @@ class CyclingNextRaceCard extends HTMLElement {
       : '';
 
     const gekozen = this._config.sections;
+    const niveausAan = this._config.levels;
     const blokken = races
       .map(
         (r, i) =>
-          `<div class="blok${i === 0 ? '' : ' uit'}">${koersblok(a, r, meerdere, gekozen)}</div>`
+          `<div class="blok${i === 0 ? '' : ' uit'}">${koersblok(a, r, meerdere, gekozen, niveausAan)}</div>`
       )
       .join('');
 
@@ -780,7 +910,7 @@ class CyclingNextRaceCard extends HTMLElement {
     if (!knoppen.length) return;
     const blokken = dlg.querySelectorAll('.blok');
     const titel = dlg.querySelector('.titel');
-    const races = koersen(a);
+    const races = this._koersen(a);
     const design = this._config.design;
     for (let i = 0; i < knoppen.length; i++) {
       knoppen[i].onclick = () => {
@@ -870,6 +1000,21 @@ const VELDEN = [
     },
   },
   {
+    name: 'levels',
+    label: 'Niveaus op deze kaart',
+    uitleg:
+      'Een keuze uit wat de integratie ophaalt; niets aangevinkt betekent ' +
+      'alles. Zo staat er bovenaan een dashboard een andere kaart dan ' +
+      'verderop. Wat in de integratie uitstaat, verschijnt hier ook niet.',
+    selector: {
+      select: {
+        multiple: true,
+        mode: 'list',
+        options: NIVEAUS,
+      },
+    },
+  },
+  {
     name: 'title',
     label: 'Kop boven de kaart',
     uitleg: 'Leeg laten als je er geen wilt.',
@@ -907,6 +1052,7 @@ class CyclingNextRaceCardEditor extends HTMLElement {
       visible_days: view === 'countdown' ? 0 : 2,
       details: true,
       sections: SECTIE_SLEUTELS.slice(),
+      levels: NIVEAU_SLEUTELS.slice(),
       title: '',
       ...g,
     };
@@ -914,6 +1060,7 @@ class CyclingNextRaceCardEditor extends HTMLElement {
     delete this._config.always_show;
     this._config.design = vormgeving(this._config.design);
     this._config.sections = secties(this._config.sections);
+    this._config.levels = niveaus(this._config.levels);
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     this._teken();
   }
@@ -926,10 +1073,11 @@ class CyclingNextRaceCardEditor extends HTMLElement {
 
   /* Geef de nieuwe configuratie door aan Home Assistant.
    *
-   * Twee sleutels gaan er eerst uit als ze niets toevoegen: alles
+   * Drie sleutels gaan er eerst uit als ze niets toevoegen: alles
    * aangevinkt is hetzelfde als niets kiezen, en een lege kop is hetzelfde
    * als geen kop. Dat houdt de opgeslagen YAML kort, en belangrijker: een
-   * kaart zonder `sections` toont ook onderdelen die er later bij komen.
+   * kaart zonder `sections` toont ook onderdelen die er later bij komen, en
+   * een kaart zonder `levels` ook een niveau dat er later bij komt.
    */
   _wijzig(config) {
     const schoon = { ...config };
@@ -938,6 +1086,12 @@ class CyclingNextRaceCardEditor extends HTMLElement {
       schoon.sections.length === SECTIE_SLEUTELS.length
     ) {
       delete schoon.sections;
+    }
+    if (
+      Array.isArray(schoon.levels) &&
+      schoon.levels.length === NIVEAU_SLEUTELS.length
+    ) {
+      delete schoon.levels;
     }
     if (!schoon.title) delete schoon.title;
     // Wat naar Home Assistant gaat mag kort zijn, maar wat het formulier
@@ -948,6 +1102,7 @@ class CyclingNextRaceCardEditor extends HTMLElement {
       ...schoon,
       design: vormgeving(config.design),
       sections: secties(config.sections),
+      levels: niveaus(config.levels),
       title: config.title || '',
     };
     this.dispatchEvent(
@@ -1044,16 +1199,28 @@ class CyclingNextRaceCardEditor extends HTMLElement {
             `${c.sections.indexOf(s.key) >= 0 ? ' checked' : ''}>${esc(s.label)}</label>`
         ).join('')}
       </div>
+      <div class="secties">Niveaus op deze kaart
+        <span class="uitleg">Een keuze uit wat de integratie ophaalt; niets aangevinkt betekent alles.</span>
+        ${NIVEAUS.map(
+          (n) =>
+            `<label><input type="checkbox" name="levels" value="${esc(n.value)}"` +
+            `${c.levels.indexOf(n.value) >= 0 ? ' checked' : ''}>${esc(n.label)}</label>`
+        ).join('')}
+      </div>
       <label>Kop boven de kaart<span class="uitleg">Leeg laten als je er geen wilt.</span>
         <input type="text" name="title" value="${esc(c.title)}"></label>
     `;
     doos.addEventListener('change', () => {
       const lees = (n) => doos.querySelector(`[name="${n}"]`);
-      const aangevinkt = [];
-      const vakjes = doos.querySelectorAll('[name="sections"]');
-      for (let i = 0; i < vakjes.length; i++) {
-        if (vakjes[i].checked) aangevinkt.push(vakjes[i].value);
-      }
+      const aangevinkteVan = (naam) => {
+        const uit = [];
+        const vakjes = doos.querySelectorAll(`[name="${naam}"]`);
+        for (let i = 0; i < vakjes.length; i++) {
+          if (vakjes[i].checked) uit.push(vakjes[i].value);
+        }
+        return uit;
+      };
+      const aangevinkt = aangevinkteVan('sections');
       this._wijzig({
         type: 'custom:cycling-next-race-card',
         entity: lees('entity').value.trim() || 'sensor.cycling_next_race',
@@ -1062,6 +1229,7 @@ class CyclingNextRaceCardEditor extends HTMLElement {
         visible_days: Math.max(0, parseInt(lees('visible_days').value, 10) || 0),
         details: lees('details').checked,
         sections: secties(aangevinkt),
+        levels: niveaus(aangevinkteVan('levels')),
         title: lees('title').value.trim(),
       });
     });

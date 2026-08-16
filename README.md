@@ -136,6 +136,7 @@ De sensor wordt vanzelf gevonden.
 | `visible_days` | `2` (`0` bij `countdown`) | vanaf hoeveel dagen voor de koers de kaart verschijnt; `0` is altijd |
 | `details` | `true` | een tik opent het detailvenster |
 | `sections` | alles | welke onderdelen in dat venster staan; niets gekozen betekent alles |
+| `levels` | alles | welke niveaus deze kaart laat zien; niets gekozen betekent alles — zie hieronder |
 | `title` | leeg | eigen kop boven de kaart |
 
 Lopen er meerdere koersen tegelijk, dan staan ze in dat detailvenster als
@@ -168,6 +169,43 @@ blijven; kleuren die het thema volgen zouden die twee uit elkaar laten lopen.
 Niets aangevinkt betekent alles — wil je helemaal geen venster, zet dan
 `details` uit.
 
+### Niveaus per kaart
+
+`levels` bepaalt welke niveaus op *deze* kaart mogen. Dezelfde vier als in het
+optiescherm van de integratie, met het circuitnummer van procyclingstats als
+waarde:
+
+| waarde | niveau |
+|---|---|
+| `1` | WorldTour mannen |
+| `24` | WorldTour vrouwen |
+| `26` | ProSeries mannen |
+| `27` | ProSeries vrouwen |
+
+Zo staat bovenaan je dashboard een andere kaart dan verderop:
+
+```yaml
+- type: custom:cycling-next-race-card
+  levels: ['1']            # bovenaan alleen de mannen-WorldTour
+- type: custom:cycling-next-race-card
+  levels: ['24']           # verderop alleen de vrouwen
+```
+
+Twee dingen om te weten:
+
+- Dit is een **keuze uit wat de sensor levert**, geen tweede knop om koersen
+  op te halen. Wat in de integratie uitstaat, kan hier niet verschijnen; zet
+  daar aan wat je ergens op je dashboard wilt zien (en gebruik zo nodig
+  "Alleen in de pop-up" en `max_other`), en kies per kaart wat ervan getoond
+  wordt.
+- Blijft er na het filteren geen koers over, dan **verbergt de kaart zich**,
+  net als bij `visible_days`. In het bewerkscherm blijft hij staan met de
+  melding dat er geen koers van de gekozen niveaus is, zodat je hem terug
+  kunt vinden.
+
+Niets aangevinkt betekent alles, en dat wordt dan ook niet opgeslagen: een
+kaart zonder `levels` toont ook een niveau dat er later bij komt.
+
 ### Voorbeelden
 
 Alles wat je kunt instellen, met de standaardwaarden erbij:
@@ -189,6 +227,11 @@ sections:                          # alles; laat weg voor hetzelfde effect
   - points
   - kom
   - youth
+levels:                            # alles; laat weg voor hetzelfde effect
+  - '1'
+  - '24'
+  - '26'
+  - '27'
 ```
 
 **In de stijl van je thema**, zodat de kaart niet uit de toon valt:
