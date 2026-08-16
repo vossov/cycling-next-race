@@ -91,11 +91,28 @@ const attrs = {
 
 const { races: _races, ...zonderKoerslijst } = attrs;
 
+// een koers die nog moet beginnen: geen uitslag, wel een startlijst. Zo
+// levert de sensor het aan (zie `_startlijst_blok`).
+const voorDeStart = {
+  ...attrs,
+  last_stage_label: '', last_result: [], gc_top: [], points_top: [],
+  kom_top: [], youth_top: [], other_label: '', other_result: [],
+  races: [{ primary: true, key: 'tour-de-france', label: 'Tour de France',
+            race_name: 'Tour de France', women: false, level: '1', jersey: '#F3C700' }],
+  startlist_riders: 176, startlist_teams: 22,
+  startlist_top: [
+    { rank: 1, rider: 'Pogacar Tadej', team: 'UAE Team Emirates', team_code: 'UAD', points: 4521 },
+    { rank: 2, rider: 'Evenepoel Remco', team: 'Soudal Quick-Step', points: 3310 },
+    { rank: 6, rider: 'Vingegaard Jonas', team: 'Team Visma', team_code: 'TVL', points: 2104 },
+  ],
+};
+
 const gevallen = {
   volledig: attrs,
   'geen profiel': { ...attrs, elevation: [], climbs: [], sprints: [] },
   // een sensor van vóór `races`: de pop-up hoort er hetzelfde uit te zien
   'oude sensor': zonderKoerslijst,
+  'voor de start': voorDeStart,
   'alleen tegel': { show_state: 'Morgen', days_until: 1, eyebrow: 'Ronde van Polen', distance_km: 180 },
   leeg: { show_state: 'Klaar' },
 };
@@ -145,6 +162,7 @@ for (const [naam, a] of Object.entries(gevallen)) {
     if (dlg) dlg.showModal();
     return {
       html_lengte: html.length,
+      tekst: r ? r.textContent : '',
       svgs: r ? r.querySelectorAll('svg').length : 0,
       secties: r ? r.querySelectorAll('section').length : 0,
       verborgen: getComputedStyle(kaart).display === 'none',
@@ -158,11 +176,22 @@ for (const [naam, a] of Object.entries(gevallen)) {
   if (naam === 'leeg' && !uitkomst.verborgen) problemen.push('had zich moeten verbergen');
   if (naam !== 'leeg' && uitkomst.svgs === 0) problemen.push('geen enkele svg getekend');
   if (naam === 'volledig' && uitkomst.secties < 6) problemen.push(`te weinig secties: ${uitkomst.secties}`);
+  if (naam === 'voor de start') {
+    // de startlijst vult het gat vóór de eerste uitslag
+    if (uitkomst.tekst.indexOf('Aan de start') < 0) problemen.push('geen startlijst getekend');
+    if (uitkomst.tekst.indexOf('176 renners') < 0) problemen.push('de telling ontbreekt');
+    if (uitkomst.tekst.indexOf('(UAD)') < 0) problemen.push('de ploegcode staat niet achter de renner');
+    // het cijfer is de plek op de PCS-ranglijst, geen 1-2-3 van onszelf
+    if (uitkomst.tekst.indexOf('6Vingegaard') < 0) problemen.push('de ranglijstpositie is hernummerd');
+  }
+  if (naam === 'volledig' && uitkomst.tekst.indexOf('Aan de start') >= 0)
+    problemen.push('startlijst getekend terwijl er een uitslag is');
 
   if (problemen.length) { console.log(`FOUT  ${naam}: ${problemen.join(', ')}`); mislukt++; }
   else console.log(`ok    ${naam} — ${uitkomst.svgs} svg, ${uitkomst.secties} secties, ${uitkomst.html_lengte} tekens`);
 
   if (naam === 'volledig') await page.screenshot({ path: 'kaart-volledig.png', fullPage: true });
+  if (naam === 'voor de start') await page.screenshot({ path: 'kaart-startlijst.png', fullPage: true });
 }
 
 // ── koersen aanklikken in de pop-up ──────────────────────────────

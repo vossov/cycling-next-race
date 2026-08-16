@@ -42,9 +42,10 @@ def coordinator(wt, monkeypatch):
         return fn(*args)
 
     co._job = _job
-    monkeypatch.setattr(wt, "_fetch_roster", lambda *a: {})
-    # een koersblok haalt ook de tv-gids en de vorige stand op; die gaan
-    # hier niet het net op
+    # een koersblok haalt ook de startlijst, de ranglijst, de tv-gids en de
+    # vorige stand op; die gaan hier niet het net op
+    monkeypatch.setattr(wt, "_fetch_startlist", lambda *a: [])
+    monkeypatch.setattr(wt, "_fetch_ranking", lambda *a: {})
     monkeypatch.setattr(wt, "_fetch_tv_html", lambda *a: "")
     monkeypatch.setattr(wt, "_fetch_rank_maps", lambda *a: {})
     return co
@@ -131,6 +132,59 @@ def test_zonder_uitslag_blijft_het_blok_leeg_maar_bestaat_het(
     assert blok["last_result"] == [] and blok["gc_top"] == []
     assert blok["eyebrow"] == "Etappe 1 · Tour de France Femm…"
     assert uit["other_label"] == ""
+
+
+def test_koers_zonder_uitslag_toont_de_startlijst(wt, coordinator, monkeypatch):
+    """Nog niets gereden: dan is wie er meedoet het enige dat er te melden valt."""
+    stages = _stages(FEMMES["url"], FEMMES["name"], [date(2026, 7, 20)], women=True)
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag(finished=False))
+    monkeypatch.setattr(wt, "_fetch_startlist", lambda *a: [
+        {"rider": "Vollering Demi", "rider_url": "rider/demi-vollering",
+         "team": "FDJ - SUEZ", "team_url": "team/fdj-suez-2026"},
+        {"rider": "Wiebes Lorena", "rider_url": "rider/lorena-wiebes",
+         "team": "Team SD Worx", "team_url": "team/sd-worx-2026"},
+    ])
+    monkeypatch.setattr(wt, "_fetch_ranking", lambda *a: {
+        "rider/lorena-wiebes": (1, 3120), "rider/demi-vollering": (3, 2480)})
+    # de ploegcodes komen van een eigen pagina; die gaat hier niet het net op
+    monkeypatch.setattr(wt, "_fetch_team_abbr", lambda *a: "")
+
+    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
+
+    assert [r["rider"] for r in blok["startlist_top"]] == [
+        "Wiebes Lorena", "Vollering Demi"]
+    assert blok["startlist_riders"] == 2 and blok["startlist_teams"] == 2
+
+
+def test_koers_met_uitslag_laat_de_startlijst_weg(wt, coordinator, monkeypatch):
+    """Met een uitslag zegt de startlijst niets meer en kost hij alleen ruimte."""
+    stages = _stages(FEMMES["url"], FEMMES["name"],
+                     [date(2026, 7, 17), VANDAAG], women=True)
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag())
+    monkeypatch.setattr(wt, "_fetch_startlist", lambda *a: [
+        {"rider": "Wiebes Lorena", "rider_url": "rider/lorena-wiebes",
+         "team": "Team SD Worx", "team_url": "team/sd-worx-2026"}])
+    monkeypatch.setattr(wt, "_fetch_ranking", lambda *a: {
+        "rider/lorena-wiebes": (1, 3120)})
+
+    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
+
+    assert blok["last_result"] and blok["startlist_top"] == []
+
+
+def test_startlijst_zonder_ranglijst_blijft_leeg(wt, coordinator, monkeypatch):
+    """Zonder bron voor de volgorde geen lijstje — maar wel de telling."""
+    stages = _stages(FEMMES["url"], FEMMES["name"], [date(2026, 7, 20)], women=True)
+    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag(finished=False))
+    monkeypatch.setattr(wt, "_fetch_startlist", lambda *a: [
+        {"rider": "Wiebes Lorena", "rider_url": "rider/lorena-wiebes",
+         "team": "Team SD Worx", "team_url": "team/sd-worx-2026"}])
+    monkeypatch.setattr(wt, "_fetch_ranking", lambda *a: {})
+
+    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
+
+    assert blok["startlist_top"] == []
+    assert blok["startlist_riders"] == 1 and blok["startlist_teams"] == 1
 
 
 def test_oude_attributen_herhalen_de_eerste_koers_met_uitslag(

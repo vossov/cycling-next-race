@@ -251,7 +251,7 @@ def test_aantal_koersen_in_de_popup_is_instelbaar(wt, const, coordinator,
     monkeypatch.setattr(wt, "_fetch_stage", lambda *a: {
         "ok": True, "finished": False, "results": [], "gc": [],
         "points_top": [], "kom_top": [], "youth_top": []})
-    monkeypatch.setattr(wt, "_fetch_roster", lambda *a: {})
+    monkeypatch.setattr(wt, "_fetch_startlist", lambda *a: [])
 
     andere = []
     for n in range(4):
@@ -293,7 +293,7 @@ def test_koersblok_draagt_de_truikleur_mee(wt, coordinator, monkeypatch):
     monkeypatch.setattr(wt, "_fetch_stage", lambda *a: {
         "ok": True, "finished": False, "results": [], "gc": [],
         "points_top": [], "kom_top": [], "youth_top": []})
-    monkeypatch.setattr(wt, "_fetch_roster", lambda *a: {})
+    monkeypatch.setattr(wt, "_fetch_startlist", lambda *a: [])
     co = coordinator()
     tour = _ev("tour-de-france", "Tour de France", VANDAAG)
     stages = [{"date": VANDAAG, "stage_url": f"{tour['url']}/stage-1", "idx": 1,

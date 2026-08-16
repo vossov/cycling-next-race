@@ -39,6 +39,7 @@ from .const import (
     CONF_MAX_OTHER,
     CONF_RESULT_N,
     CONF_SCAN_MINUTES,
+    CONF_START_N,
     CONF_UPCOMING_DAYS,
     CONF_UPCOMING_N,
     DEFAULT_GC_N,
@@ -46,6 +47,7 @@ from .const import (
     DEFAULT_MAX_OTHER,
     DEFAULT_RESULT_N,
     DEFAULT_SCAN_MINUTES,
+    DEFAULT_START_N,
     DEFAULT_UPCOMING_DAYS,
     DEFAULT_UPCOMING_N,
     DOMAIN,
@@ -63,6 +65,7 @@ LIVE_SCAN_INTERVAL = timedelta(minutes=DEFAULT_LIVE_SCAN_MINUTES)
 
 RESULT_N = DEFAULT_RESULT_N  # aantal renners in de uitslag (pop-up)
 GC_N = DEFAULT_GC_N          # aantal renners in het klassement (pop-up)
+START_N = DEFAULT_START_N    # aantal renners in de startlijst (pop-up)
 UPCOMING_N = DEFAULT_UPCOMING_N  # veiligheidscap op aantal komende etappes
 UPCOMING_DAYS = DEFAULT_UPCOMING_DAYS  # venster voor "Komende dagen"
 
@@ -106,6 +109,26 @@ LEIDERSTRUI = {
     "tour-down-under": "#C8862B",         # oker
     "uae-tour": "#D0021B",                # rood
 }
+
+# De ranglijst waarop de startlijst wordt gesorteerd, per geslacht.
+#
+# Zolang een koers nog geen uitslag heeft valt er niets te tonen behalve wie
+# er meedoen. De startlijst zelf staat op volgorde van ploeg en zegt niets
+# over wie de kopmannen zijn; die volgorde komt daarom van de individuele
+# ranglijst bij procyclingstats — een bron, geen inschatting. Wie daar niet
+# op staat komt niet in het lijstje.
+#
+# Het mannenadres staat zo in de documentatie van het pakket. Het
+# vrouwenadres is de analogie daarvan en kon van hieruit niet worden
+# nagekeken (de sandbox komt niet bij procyclingstats), net als bij de
+# ProSeries-circuitnummers. Klopt het niet, dan blijft de startlijst leeg;
+# `_fetch_ranking` logt daar een waarschuwing bij en `startlist_diag` op de
+# sensor laat zien hoeveel renners er gekoppeld konden worden.
+RANGLIJST = {
+    False: "rankings/me/individual",
+    True: "rankings/we/individual",
+}
+RANGLIJST_ZEKER = {"rankings/me/individual"}
 
 MONUMENTS = {
     "milano-sanremo",
@@ -612,27 +635,98 @@ def _gain_pts_by_rank(rows, prev_map):
     return n
 
 
-def _fetch_roster(race_url):
-    """Renner -> ploeg uit de startlijst.
+def _fetch_startlist(race_url):
+    """De startlijst van een koers: renner, ploeg en hun adressen.
 
     De startlijst is per ploegblok opgebouwd (de ploegnaam komt uit de kop van
-    het blok), dus deze koppeling kan niet verschuiven zoals in de
-    klassementstabellen.
+    het blok), dus de koppeling renner→ploeg kan hier niet verschuiven zoals in
+    de klassementstabellen.
+
+    Levert de rijen zoals de pagina ze geeft; wie alleen renner→ploeg nodig
+    heeft gebruikt `_roster_van`.
     """
     from procyclingstats import RaceStartlist
     try:
         rows = RaceStartlist(f"{race_url}/startlist").startlist(
-            "rider_name", "team_name")
+            "rider_name", "rider_url", "team_name", "team_url")
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("Startlijst ophalen mislukt: %s", err)
+        return []
+    out = []
+    for r in rows or []:
+        naam = (r.get("rider_name") or "").strip()
+        if not naam:
+            continue
+        out.append({
+            "rider": naam,
+            "rider_url": (r.get("rider_url") or "").strip(),
+            "team": (r.get("team_name") or "").strip(),
+            "team_url": (r.get("team_url") or "").strip(),
+        })
+    _LOGGER.debug("Startlijst %s: %s renners", race_url, len(out))
+    return out
+
+
+def _roster_van(rows):
+    """Renner -> ploeg uit de startlijstrijen, met een naamsleutel."""
+    out = {}
+    for r in rows or []:
+        nm, tm = _name_key(r.get("rider")), (r.get("team") or "").strip()
+        if nm and tm:
+            out[nm] = tm
+    return out
+
+
+def _fetch_ranking(url):
+    """De PCS-ranglijst als {renneradres: (positie, punten)}.
+
+    Het adres van een renner is een vaste sleutel; daarmee is de startlijst
+    aan de ranglijst te koppelen zonder namen te vergelijken — precies de
+    valkuil die elders in dit bestand al zoveel tijd heeft gekost.
+    """
+    from procyclingstats import Ranking
+    try:
+        rows = Ranking(url).individual_ranking(
+            "rank", "rider_url", "points")
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Ranglijst %s ophalen mislukt: %s", url, err)
         return {}
     out = {}
     for r in rows or []:
-        nm, tm = _name_key(r.get("rider_name")), (r.get("team_name") or "").strip()
-        if nm and tm:
-            out[nm] = tm
-    _LOGGER.debug("Startlijst: %s renners", len(out))
+        adres = (r.get("rider_url") or "").strip()
+        positie = _int(r.get("rank"))
+        if adres and positie:
+            # de punten staan bij PCS als heel getal; afronden houdt ze uit
+            # de attributen als "2981.0"
+            out[adres] = (positie, _int(r.get("points")))
+    if not out:
+        _LOGGER.warning(
+            "Ranglijst %s levert geen renners op%s", url,
+            "" if url in RANGLIJST_ZEKER else " (adres niet geverifieerd)")
+    else:
+        _LOGGER.debug("Ranglijst %s: %s renners", url, len(out))
     return out
+
+
+def _start_top(rows, ranking, n):
+    """De hoogst geklasseerde renners van een startlijst.
+
+    De volgorde komt van de PCS-ranglijst en nergens anders vandaan: een
+    renner die daar niet op staat krijgt geen plek naar schatting, hij valt
+    weg. Staat er niemand van de startlijst op de ranglijst, dan is de lijst
+    leeg en laat de kaart hem weg.
+    """
+    if not rows or not ranking:
+        return []
+    gevonden = []
+    for r in rows:
+        plek = ranking.get(r.get("rider_url"))
+        if plek:
+            gevonden.append((plek[0], plek[1], r))
+    gevonden.sort(key=lambda g: g[0])
+    return [{"rank": positie, "rider": r["rider"], "team": r["team"],
+             "points": punten}
+            for positie, punten, r in gevonden[:max(0, n)]]
 
 
 def _fetch_team_abbr(team_url):
@@ -1693,7 +1787,16 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # tussensprints en klassementsstanden per etappe. Allebei een dict en
         # niet één plek, want de koersen in de pop-up vragen ze ook op.
         self._sprints_cache: dict[str, list] = {}
-        self._roster_cache: dict = {}
+        # de startlijst per koers, zoals procyclingstats hem geeft. Dient twee
+        # doelen: renner→ploeg om scheve namen te herstellen (`_roster_van`),
+        # en de renners aan de start zolang er nog geen uitslag is.
+        self._startlist_cache: dict[str, list] = {}
+        # de individuele ranglijst per adres uit RANGLIJST; die verandert
+        # hoogstens één keer per dag en bedient alle koersen samen
+        self._ranking_cache: dict[str, dict] = {}
+        # wat er van de laatste startlijst terechtkwam; gaat als
+        # `startlist_diag` naar de attributen
+        self._startlist_diag: dict = {}
         # uitslag per etappe van de andere koersen, op stage_url; per dag geleegd
         self._other_cache: dict[str, dict] = {}
         self._prevrank_cache: dict[str, dict] = {}
@@ -1800,7 +1903,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._sprints_cache[url] = sprints
         return sprints
 
-    async def _ploegcodes(self, data: dict) -> None:
+    async def _ploegcodes(self, data: dict, sleutels=(
+            "results", "gc", "points_top", "kom_top", "youth_top")) -> None:
         """Zet de officiële ploegcode op elke rij, waar PCS hem geeft.
 
         De code komt van de ploegpagina bij procyclingstats; er wordt niets
@@ -1808,10 +1912,13 @@ class CyclingCoordinator(DataUpdateCoordinator):
         `MAX_PLOEGCODES_PER_RONDE` nieuwe opgehaald — een koers telt zo'n
         twintig ploegen en elke code is een eigen pagina. Wat nog niet
         bekend is houdt de volledige ploegnaam en volgt de volgende ronde.
+
+        `sleutels` zegt welke lijsten in `data` rijen bevatten; de startlijst
+        gebruikt dezelfde weg met een eigen sleutel.
         """
         adressen = data.get("team_urls") or {}
         nieuw = 0
-        for sleutel in ("results", "gc", "points_top", "kom_top", "youth_top"):
+        for sleutel in sleutels:
             for row in data.get(sleutel) or []:
                 naam = (row.get("team") or "").strip()
                 if not naam:
@@ -1828,6 +1935,77 @@ class CyclingCoordinator(DataUpdateCoordinator):
         if nieuw:
             _LOGGER.debug("%s ploegcodes opgehaald (%s bekend)",
                           nieuw, len(self._abbr_cache))
+
+    async def _startlijst(self, race_url: str) -> list:
+        """De startlijst van een koers, per koers bewaard.
+
+        Slikt zijn eigen fouten: hij wordt ook voor de koersen in de pop-up
+        opgevraagd, en daar zou een mislukte scrape anders het hele blok
+        kosten.
+        """
+        if race_url in self._startlist_cache:
+            return self._startlist_cache[race_url]
+        try:
+            rows = await self._job(_fetch_startlist, race_url)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Startlijst mislukt voor %s: %s", race_url, err)
+            return []
+        if rows:
+            self._startlist_cache[race_url] = rows
+        return rows
+
+    async def _ranglijst(self, women: bool) -> dict:
+        """De individuele PCS-ranglijst, één keer per dag per geslacht.
+
+        Ook een mislukte poging blijft in de cache staan, net als bij de
+        ploegcodes: klopt het adres niet, dan zou hij anders elke ronde
+        opnieuw worden opgehaald en elke ronde dezelfde waarschuwing loggen.
+        Morgen wordt het weer geprobeerd; de startlijst is intussen het enige
+        dat mist.
+        """
+        url = RANGLIJST[bool(women)]
+        if url in self._ranking_cache:
+            return self._ranking_cache[url]
+        try:
+            ranking = await self._job(_fetch_ranking, url)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Ranglijst %s mislukt: %s", url, err)
+            ranking = {}
+        self._ranking_cache[url] = ranking
+        return ranking
+
+    async def _startlijst_blok(self, race_url: str, women: bool) -> dict:
+        """Wie er aan de start staan, voor een koers zonder uitslag.
+
+        `startlist_top` is de kop van de startlijst volgens de PCS-ranglijst;
+        `startlist_riders` en `startlist_teams` zijn wat er geteld is. Levert
+        de startlijst niets op, dan blijft alles leeg en laat de kaart het
+        onderdeel weg.
+        """
+        leeg = {"startlist_top": [], "startlist_riders": 0, "startlist_teams": 0}
+        rows = await self._startlijst(race_url)
+        if not rows:
+            return leeg
+        ranking = await self._ranglijst(women)
+        top = _start_top(rows, ranking, self._opt(CONF_START_N))
+        if top:
+            # dezelfde ploegcodes als in de uitslag; de adressen staan op de
+            # startlijst zelf
+            adressen = {r["team"]: r["team_url"] for r in rows
+                        if r.get("team") and r.get("team_url")}
+            await self._ploegcodes({"team_urls": adressen,
+                                    "startlist_top": top}, ("startlist_top",))
+        self._startlist_diag = {
+            "koers": _race_slug(race_url),
+            "ranglijst": RANGLIJST[bool(women)],
+            "renners": len(rows),
+            "gerangschikt": len(top),
+        }
+        return {
+            "startlist_top": top,
+            "startlist_riders": len(rows),
+            "startlist_teams": len({r["team"] for r in rows if r.get("team")}),
+        }
 
     async def _rank_maps(self, stage: dict) -> dict:
         """Klassementen van een etappe als {positie: waarde}, per etappe bewaard.
@@ -1872,11 +2050,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
             await self._ploegcodes(d)
             return d
         rkey = s["race_url"]
-        if rkey not in self._roster_cache and not s.get("one_day"):
-            r = await self._job(_fetch_roster, rkey)
-            if r:
-                self._roster_cache[rkey] = r
-        roster = self._roster_cache.get(rkey) or {}
+        roster = ({} if s.get("one_day")
+                  else _roster_van(await self._startlijst(rkey)))
         if roster:
             for _k in ("results", "gc", "points_top", "kom_top", "youth_top"):
                 _repair_rows(d.get(_k), roster)
@@ -1924,6 +2099,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
             "youth_top": [],
             "channels": [],
             "channels_detail": [],
+            # wie er aan de start staan; alleen gevuld zolang deze koers nog
+            # geen uitslag heeft (zie onderaan)
+            "startlist_top": [],
+            "startlist_riders": 0,
+            "startlist_teams": 0,
         }
 
         vandaag = next((s for s in stages if s["date"] == today), None)
@@ -1974,6 +2154,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
                     _gain_time_by_rank(entry["youth_top"], pmaps.get("youth"))
                     _gain_pts_by_rank(entry["points_top"], pmaps.get("points"))
                     _gain_pts_by_rank(entry["kom_top"], pmaps.get("kom"))
+        # nog geen uitslag: dan is wie er meedoet het enige dat er te melden
+        # valt. Zodra er wel een uitslag is blijft de startlijst weg — die
+        # kost ruimte in de attributen en de uitslag zegt meer.
+        if not entry["last_result"] and toon is not None:
+            entry.update(await self._startlijst_blok(ev["url"], ev.get("women")))
         return entry
 
     async def _races_block(self, primair, andere, today):
@@ -2195,6 +2380,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict:
         today = dt_util.now().date()
+        # diagnose van déze ronde; anders blijft die van een vorige koers
+        # staan zodra er nergens meer een startlijst wordt opgevraagd
+        self._startlist_diag = {}
 
         # Kalender: cache 24h, altijd verversen bij jaarwissel
         if (self._calendar is None or self._calendar_fetched is None
@@ -2211,6 +2399,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._sprints_cache.clear()
                 self._other_cache.clear()
                 self._prevrank_cache.clear()
+                # renners vallen af en de ranglijst schuift; allebei een dag
+                # oud is precies zo vers als de rest
+                self._startlist_cache.clear()
+                self._ranking_cache.clear()
                 self._names_cache.clear()
                 self._prose_cache.clear()
                 self._abbr_cache.clear()
@@ -2320,13 +2512,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # met de startlijst (renner -> ploeg) als betrouwbare referentie
         roster, names_fixed = {}, 0
         if last_fin is not None and not last_fin.get("one_day"):
-            rkey = last_fin["race_url"]
-            if rkey in self._roster_cache:
-                roster = self._roster_cache[rkey]
-            else:
-                roster = await self._job(_fetch_roster, rkey)
-                if roster:
-                    self._roster_cache[rkey] = roster
+            roster = _roster_van(await self._startlijst(last_fin["race_url"]))
         if roster and last_fin_data:
             for _k in ("results", "gc", "points_top", "kom_top", "youth_top"):
                 names_fixed += _repair_rows(last_fin_data.get(_k), roster)
@@ -2436,6 +2622,14 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # ── Spoiler-blok (alleen pop-up) ──────────────────────
         last_result = last_fin_data.get("results", []) if last_fin_data else []
         gc_top = last_fin_data.get("gc", []) if last_fin_data else []
+        # Nog niets gereden in deze koers: dan is de startlijst wat er te
+        # melden valt. Met een uitslag erbij blijft hij weg — die zegt meer en
+        # de attributen zijn al krap.
+        startlijst = {"startlist_top": [], "startlist_riders": 0,
+                      "startlist_teams": 0}
+        if not last_result:
+            startlijst = await self._startlijst_blok(shown["race_url"],
+                                                     shown.get("women"))
         if last_fin is None:
             last_stage_label = ""
         elif last_fin.get("one_day"):
@@ -2536,6 +2730,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 "youth_leader": last_fin_data.get("youth_leader") if last_fin_data else "",
                 "youth_top": last_fin_data.get("youth_top", []) if last_fin_data else [],
                 "last_stage_label": last_stage_label,
+                # ── startlijst (zolang er geen uitslag is) ──
+                **startlijst,
+                "startlist_diag": self._startlist_diag,
                 # ── backward-compat ──
                 "race_name": cur["name"],
                 "type": ("Monument" if is_monument else "Eendaagse koers"

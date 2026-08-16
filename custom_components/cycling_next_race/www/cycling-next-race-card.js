@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.11.0';
+const VERSIE = '0.12.0';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -58,6 +58,7 @@ const SECTIES = [
   { key: 'profile', label: 'Hoogteprofiel' },
   { key: 'tv', label: 'Tv-zenders' },
   { key: 'upcoming', label: 'Komende dagen' },
+  { key: 'start', label: 'Startlijst' },
   { key: 'result', label: 'Uitslag' },
   { key: 'gc', label: 'Algemeen klassement' },
   { key: 'points', label: 'Puntenklassement' },
@@ -224,6 +225,29 @@ function puntenlijst(titel, rijen) {
     })
     .join('');
   return `<section><h3>${esc(titel)}</h3><ol>${regels}</ol></section>`;
+}
+
+/** Wie er aan de start staan; alleen zolang er nog geen uitslag is.
+ *
+ * De volgorde komt van de PCS-ranglijst en het cijfer vóór de renner is zijn
+ * plek daarop — niet 1 tot en met 10. Dat staat er ook bij: zonder die
+ * vermelding leest het lijstje als een voorspelling, en dat is het niet.
+ * Renners die niet op die ranglijst staan komen er niet in voor.
+ */
+function startlijst(rijen, renners, ploegen) {
+  if (!rijen || !rijen.length) return '';
+  const regels = rijen
+    .map((x) => {
+      const punten = x.points == null ? '' : `${esc(x.points)} ptn`;
+      return `<li><span class="pos">${esc(x.rank)}</span>${rennerMetPloeg(x)}<span class="wrd">${punten}</span></li>`;
+    })
+    .join('');
+  const tel = [
+    renners ? `${renners} renners` : '',
+    ploegen ? `${ploegen} ploegen` : '',
+    'op volgorde van de PCS-ranglijst',
+  ].filter(Boolean).join(' · ');
+  return `<section><h3>Aan de start</h3><div class="bijschrift">${esc(tel)}</div><ol>${regels}</ol></section>`;
 }
 
 /** Compacte regel met de koers en hoe lang het nog duurt.
@@ -396,6 +420,12 @@ function koersblok(a, race, meerdere, gekozen, gekozenNiveaus) {
     aan('tv') ? zenders(race.primary ? a.channels_detail : u.channels_detail) : '',
     aan('upcoming') && komend.length
       ? `<section><h3>Komende dagen</h3>${svgKomend({ attributes: { upcoming: komend } })}</section>`
+      : '',
+    // de startlijst vult het gat vóór de eerste uitslag; de sensor laat hem
+    // weg zodra er wél gereden is, dus hier hoeft niets extra's te worden
+    // uitgezocht
+    aan('start')
+      ? startlijst(u.startlist_top, u.startlist_riders, u.startlist_teams)
       : '',
     aan('result') ? tijdlijst(u.last_stage_label || 'Uitslag', u.last_result) : '',
     aan('gc') ? tijdlijst('Algemeen klassement', u.gc_top, { verschillen: true }) : '',
@@ -633,6 +663,9 @@ const STIJL = `
      de ploeg als eerste weg en blijft de naam leesbaar */
   .ploeg { opacity: .5; font-size: 12px; margin-left: 5px; }
   .wrd { font-variant-numeric: tabular-nums; opacity: .85; white-space: nowrap; }
+  /* onder de kop van de startlijst: wat er geteld is en waar de volgorde
+     vandaan komt */
+  .bijschrift { font-size: 12px; opacity: .55; margin: -2px 0 6px; }
   .mv { margin-left: 6px; font-size: 12px; }
 
   .zenders { text-align: right; font-size: 13px; padding: 6px 0 2px; opacity: .9; }
