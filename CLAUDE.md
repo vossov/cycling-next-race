@@ -66,6 +66,8 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
 - Caches op de coordinator (per dag of per koers geleegd bij een nieuwe dag):
   `_elev_cache`, `_names_cache`, `_tv_cache`, `_sprints_cache`,
   `_prevrank_cache`, `_startlist_cache` (de startlijst per koers),
+  `_gpxindex_cache` (de GPX-adressen die cyclingstage zelf op een rij zet,
+  per koers; alleen gevuld als de vaste adressen falen),
   `_ranking_cache` (de PCS-ranglijst per adres uit `RANGLIJST`),
   `_other_cache` (dict
   per etappe van de andere koersen; alleen afgeronde etappes komen erin).
@@ -250,8 +252,24 @@ ze dubbel staan met het eigen blok van die koers.
 | GPX grote rondes | `cdn.../images/{slug}/{y}/stage-{n}-parcours.gpx` |
 | GPX overige + vrouwen | `cdn.../images/{slug}/{y}/stage-{n}-route.gpx` |
 | GPX eendaags | `cdn.../images/{slug}/{y}/route.gpx` |
+| GPX-overzicht per koers | `www.../{slug}-{y}-gpx/` |
 | Tijdschema (tussensprint) | `www.../images/{slug}/{y}/stage-{n}-times.htm` |
 | Etappetekst (colnamen, finishtijd) | per koers een sjabloon, zie `CYCLINGSTAGE_ROUTE` |
+
+**Die GPX-adressen zijn een aanname over de bestandsnaam, geen bron.** Wijkt
+cyclingstage er voor één koers van af, dan blijft het profiel leeg zonder dat
+er iets kapot lijkt — de melding "de GPX van de Vuelta doet het niet" was van
+hieruit niet na te trekken, juist omdat er geen fout uit komt. Levert geen
+enkel vast adres iets op, dan haalt `_fetch_gpx_index` de GPX-overzichtspagina van
+die koers op (`vuelta-2026-gpx`, `giro-2026-gpx`, `tour-de-france-2026-gpx` —
+de cyclingstage-slug plus het jaar) en leest daar het échte adres uit. Het
+etappenummer komt uit de **bestandsnaam** en niet uit de linktekst: die is
+opgemaakt en verschilt per koers, het pad niet. Adressen van een ander jaar
+vallen af, want de pagina linkt ook naar eerdere jaargangen.
+
+Die terugval kost hoogstens één verzoek per koers per dag
+(`_gpxindex_cache`), en `gpx_used` in de attributen zegt welk adres het
+uiteindelijk werd — leeg betekent dat ook de overzichtspagina niets opleverde.
 
 De etappetekst-adressen volgen **geen** vast patroon. Voorbeelden:
 `tour-de-france-2026-route/stage-18-tdf-2026/` tegenover
@@ -350,7 +368,7 @@ niveau per dag, en een etappelijst per koers die in het venster valt.
 ## Diagnose-attributen
 
 Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:
-`gpx_diag`, `times_diag`, `names_diag`, `levels_diag`, `startlist_diag`,
+`gpx_diag`, `gpx_used`, `times_diag`, `names_diag`, `levels_diag`, `startlist_diag`,
 `gain_headers`, `gain_raw`,
 `names_fixed`, `gains_set`, `roster_size`, `elevation_source`.
 
@@ -622,6 +640,20 @@ vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/c
   `rank`, `rider_url` en `points`; ze staan zo in de documentatie van het
   pakket, maar de sandbox komt niet bij procyclingstats. Faalt het, dan is
   de startlijst leeg — niet de hele sensor.
+- **De GPX-overzichtspagina is niet in het echt gelezen.** Dat de pagina
+  bestaat en `{slug}-{jaar}-gpx` heet, is nagekeken via zoekresultaten met
+  echte adressen (`vuelta-2026-gpx`, `giro-2026-gpx`,
+  `tour-de-france-2026-gpx`); hoe de links erop staan is dat **niet** — de
+  proxy laat cyclingstage niet door. `_parse_gpx_index` is daarom zo ruim
+  mogelijk gehouden (elke `href` die op `.gpx` eindigt, nummer uit het
+  bestandspad) en de test ernaast draait op synthetische HTML. Werkt de
+  terugval niet, kijk dan in het debuglogboek op "GPX-overzicht": daar staat
+  of de pagina binnenkwam en hoeveel links eruit kwamen.
+- **De cyclingstage-adressen van de etappeteksten zijn per koers gecheckt via
+  zoekresultaten, niet door de pagina te openen.** Voor Giro en Vuelta stond
+  er de koersnaam waar het land hoort (`stage-5-giro-2026` in plaats van
+  `stage-5-italy-2026`); de Tour klopte wel. De overige koersen in
+  `CYCLINGSTAGE_ROUTE` zijn niet opnieuw nagelopen.
 - **`Team.abbreviation()` is niet geverifieerd.** Of het pakket die methode
   zo noemt in 0.2.8, en of `team_url` als veld in de uitslagtabellen wordt
   geaccepteerd, blijkt pas in een draaiende Home Assistant — de sandbox komt
