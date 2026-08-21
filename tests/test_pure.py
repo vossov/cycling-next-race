@@ -68,6 +68,51 @@ def test_stage_article_url(wt):
     assert wt._stage_article_url("race/tour-de-france-femmes/2026", 2, False) == (
         "https://www.cyclingstage.com/tour-de-france-femmes-2026/"
         "stage-2-tdf-2026-women/")
+    # Giro en Vuelta noemen het land en niet de koers; dat stond fout en
+    # daardoor leverde de etappetekst (colnamen, finishtijd) niets op
+    assert wt._stage_article_url("race/giro-d-italia/2026", 5, False) == (
+        "https://www.cyclingstage.com/giro-2026-route/stage-5-italy-2026/")
+    assert wt._stage_article_url("race/vuelta-a-espana/2026", 3, False) == (
+        "https://www.cyclingstage.com/vuelta-2026-route/stage-3-spain-2026/")
+
+
+def test_gpx_index_urls(wt):
+    assert wt._gpx_index_urls("race/vuelta-a-espana/2026") == [
+        "https://www.cyclingstage.com/vuelta-2026-gpx/"]
+    assert wt._gpx_index_urls("race/tour-de-france/2026") == [
+        "https://www.cyclingstage.com/tour-de-france-2026-gpx/"]
+    # eendaagse koers: elke kandidaatnaam krijgt zijn eigen overzichtspagina
+    assert wt._gpx_index_urls("race/il-lombardia/2026") == [
+        "https://www.cyclingstage.com/tour-of-lombardy-2026-gpx/",
+        "https://www.cyclingstage.com/il-lombardia-2026-gpx/"]
+    assert wt._gpx_index_urls("race/onbekend/2026") == []
+
+
+def test_parse_gpx_index(wt):
+    """LET OP: synthetische HTML - de echte overzichtspagina is van hieruit
+    niet te bereiken (de proxy laat cyclingstage niet door). Dit legt vast
+    hoe de parser hoort te kiezen, niet dat de pagina er zo uitziet."""
+    html = """
+      <a href="https://cdn.cyclingstage.com/images/vuelta/2026/stage-1-parcours.gpx">1</a>
+      <a href="/images/vuelta/2026/stage-11-parcours.gpx">11</a>
+      <a href="https://cdn.cyclingstage.com/images/vuelta/2025/stage-3-parcours.gpx">oud</a>
+    """
+    index = wt._parse_gpx_index(html, "https://www.cyclingstage.com/vuelta-2026-gpx/",
+                                "2026")
+    assert index[1].endswith("/vuelta/2026/stage-1-parcours.gpx")
+    # relatief adres wordt absoluut gemaakt
+    assert index[11] == ("https://www.cyclingstage.com/images/vuelta/2026/"
+                         "stage-11-parcours.gpx")
+    # etappe 1 raakt niet verward met etappe 11, en vorig jaar telt niet mee
+    assert 3 not in index
+
+    # eendaagse koers: geen nummer in de bestandsnaam -> 0
+    eendaags = wt._parse_gpx_index(
+        '<a href="https://cdn.cyclingstage.com/images/paris-roubaix/2026/route.gpx">x</a>',
+        "https://www.cyclingstage.com/paris-roubaix-2026-gpx/", "2026")
+    assert list(eendaags) == [0]
+
+    assert wt._parse_gpx_index("", "https://x/", "2026") == {}
 
 
 # ── hoogtelijn ──────────────────────────────────────────────────────

@@ -64,10 +64,12 @@ def test_cache_verwart_grote_en_kleine_profielen_niet(wt):
         return [[i * 1.0, 100 + i] for i in range(args[1])], []
 
     c._job = nep_job
+    etappe = {"stage_url": "race/tour-de-france/2026/stage-3",
+              "race_url": "race/tour-de-france/2026", "idx": 3}
 
-    klein = asyncio.run(c._gpx_for("race/x/2026/stage-3", "https://x.gpx", 60))
-    groot = asyncio.run(c._gpx_for("race/x/2026/stage-3", "https://x.gpx", 200))
-    nogmaals = asyncio.run(c._gpx_for("race/x/2026/stage-3", "https://x.gpx", 60))
+    klein = asyncio.run(c._gpx_for(etappe, 60))
+    groot = asyncio.run(c._gpx_for(etappe, 200))
+    nogmaals = asyncio.run(c._gpx_for(etappe, 60))
 
     assert len(klein[0]) == 60
     assert len(groot[0]) == 200, "het grote profiel kreeg de kleine versie uit de cache"
@@ -82,17 +84,71 @@ def test_beschikbaarheid_blijft_bekend_voor_de_koerskeuze(wt):
     c = wt.CyclingCoordinator(None)
 
     async def zonder_profiel(fn, *args):
-        return [], []
+        # de terugval vraagt ook de overzichtspagina op; die geeft een dict
+        return {} if fn is wt._fetch_gpx_index else ([], [])
 
     c._job = zonder_profiel
-    asyncio.run(c._gpx_for("race/geen/2026/stage-1", "https://x.gpx", 60))
-    assert c._gpx_rang({"stage_url": "race/geen/2026/stage-1",
-                        "race_url": "race/geen/2026"}) == 1
+    geen = {"stage_url": "race/tour-de-france/2026/stage-1",
+            "race_url": "race/tour-de-france/2026", "idx": 1}
+    asyncio.run(c._gpx_for(geen, 60))
+    assert c._gpx_rang(geen) == 1
 
     async def met_profiel(fn, *args):
         return [[0.0, 10], [1.0, 20]], []
 
     c._job = met_profiel
-    asyncio.run(c._gpx_for("race/wel/2026/stage-1", "https://x.gpx", 60))
-    assert c._gpx_rang({"stage_url": "race/wel/2026/stage-1",
-                        "race_url": "race/wel/2026"}) == 0
+    wel = {"stage_url": "race/giro-d-italia/2026/stage-1",
+           "race_url": "race/giro-d-italia/2026", "idx": 1}
+    asyncio.run(c._gpx_for(wel, 60))
+    assert c._gpx_rang(wel) == 0
+
+
+def test_gpx_valt_terug_op_de_overzichtspagina(wt):
+    """Geven de vaste adressen niets, dan telt wat cyclingstage zelf noemt.
+
+    De vaste adressen zijn een aanname over de bestandsnaam; wijkt een koers
+    daarvan af, dan bleef het profiel leeg zonder dat iets kapotging.
+    """
+    import asyncio
+
+    c = wt.CyclingCoordinator(None)
+    echt = "https://cdn.cyclingstage.com/images/vuelta/2026/etappe-3-parcours.gpx"
+    opgehaald = []
+
+    async def nep_job(fn, *args):
+        if fn is wt._fetch_gpx_index:
+            return {3: echt}
+        opgehaald.append(args[0])
+        # alleen het adres van de overzichtspagina levert iets op
+        return ([[0.0, 10], [1.0, 20]], []) if args[0] == echt else ([], [])
+
+    c._job = nep_job
+    etappe = {"stage_url": "race/vuelta-a-espana/2026/stage-3",
+              "race_url": "race/vuelta-a-espana/2026", "idx": 3}
+    elev, _ = asyncio.run(c._gpx_for(etappe, 60))
+
+    assert elev, "de terugval leverde geen profiel op"
+    assert opgehaald[-1] == echt
+    # en de diagnose laat zien wélk adres het werd
+    assert c._gpx_gebruikt[etappe["stage_url"]] == echt
+
+
+def test_gpx_overzichtspagina_hoogstens_een_keer_per_koers(wt):
+    """De terugval kost een verzoek; niet per etappe opnieuw."""
+    import asyncio
+
+    c = wt.CyclingCoordinator(None)
+    index_verzoeken = []
+
+    async def nep_job(fn, *args):
+        if fn is wt._fetch_gpx_index:
+            index_verzoeken.append(args[0])
+            return {}
+        return [], []
+
+    c._job = nep_job
+    for n in (3, 4):
+        asyncio.run(c._gpx_for({"stage_url": f"race/vuelta-a-espana/2026/stage-{n}",
+                                "race_url": "race/vuelta-a-espana/2026",
+                                "idx": n}, 60))
+    assert index_verzoeken == ["race/vuelta-a-espana/2026"]

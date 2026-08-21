@@ -1189,10 +1189,14 @@ def _channels_from(html, race_url, idx, race_name):
 CYCLINGSTAGE_ROUTE = {
     "tour-de-france":
         "https://www.cyclingstage.com/tour-de-france-{y}-route/stage-{n}-tdf-{y}/",
+    # Let op: het achtervoegsel is het land, niet de koers - "stage-5-italy-2026"
+    # en "stage-3-spain-2026", niet "stage-5-giro-2026". Nagekeken op de
+    # koerspagina's van cyclingstage (2025 en 2026); alleen de Tour gebruikt
+    # zijn eigen afkorting.
     "giro-d-italia":
-        "https://www.cyclingstage.com/giro-{y}-route/stage-{n}-giro-{y}/",
+        "https://www.cyclingstage.com/giro-{y}-route/stage-{n}-italy-{y}/",
     "vuelta-a-espana":
-        "https://www.cyclingstage.com/vuelta-{y}-route/stage-{n}-vuelta-{y}/",
+        "https://www.cyclingstage.com/vuelta-{y}-route/stage-{n}-spain-{y}/",
     # vrouwen (adressen geverifieerd op cyclingstage)
     "tour-de-france-femmes":
         "https://www.cyclingstage.com/tour-de-france-femmes-{y}/stage-{n}-tdf-{y}-women/",
@@ -1519,6 +1523,79 @@ def _gpx_urls(race_url: str, stage_idx, one_day: bool) -> list[str]:
             f"{basis.format(cs)}/etappe-{stage_idx}-route.gpx"]
 
 
+# Overzichtspagina met de GPX-bestanden van één koers, bv.
+# ".../vuelta-2026-gpx/". De naam volgt de cyclingstage-slug hierboven;
+# nagekeken voor de Tour, de Giro en de Vuelta.
+CYCLINGSTAGE_GPX_INDEX = "https://www.cyclingstage.com/{cs}-{y}-gpx/"
+
+_GPX_HREF = re.compile(r'href=["\']([^"\']+\.gpx)["\']', re.I)
+_GPX_NUMMER = re.compile(r"(?:stage|etappe|rit)[-_]?0*(\d{1,2})(?:\D|$)", re.I)
+
+
+def _gpx_index_urls(race_url: str) -> list[str]:
+    """Overzichtspagina's van cyclingstage met de GPX-links van deze koers."""
+    m = re.match(r"race/([^/]+)/(\d{4})", race_url or "")
+    if not m:
+        return []
+    slug, year = m.group(1), m.group(2)
+    cs = CYCLINGSTAGE_SLUG.get(slug) or CYCLINGSTAGE_STAGERACE.get(slug)
+    namen = (cs,) if cs else (CYCLINGSTAGE_ONEDAY.get(slug) or ())
+    if isinstance(namen, str):
+        namen = (namen,)
+    return [CYCLINGSTAGE_GPX_INDEX.format(cs=n, y=year) for n in namen]
+
+
+def _parse_gpx_index(html: str, basis: str, year: str) -> dict:
+    """{etappenummer: gpx-adres} uit een cyclingstage GPX-pagina.
+
+    Het nummer komt uit de **bestandsnaam** en niet uit de linktekst: die is
+    opgemaakt en verschilt per koers, het bestandspad niet. Een eendaagse
+    koers levert nummer 0 op.
+
+    De pagina bevat ook links naar eerdere jaargangen, dus alleen adressen
+    met dit jaar erin tellen mee - anders krijgt etappe 3 het profiel van
+    vorig jaar. Staat het jaar nergens in een adres, dan is er niets te
+    filteren en gaan ze allemaal mee.
+    """
+    from html import unescape
+    from urllib.parse import urljoin
+
+    gevonden = [urljoin(basis, unescape(h)) for h in _GPX_HREF.findall(html or "")]
+    van_dit_jaar = [u for u in gevonden if f"/{year}/" in u or f"-{year}" in u]
+    uit: dict[int, str] = {}
+    for url in (van_dit_jaar or gevonden):
+        m = _GPX_NUMMER.search(url.rsplit("/", 1)[-1])
+        uit.setdefault(int(m.group(1)) if m else 0, url)
+    return uit
+
+
+def _fetch_gpx_index(race_url: str) -> dict:
+    """{etappenummer: gpx-adres} zoals cyclingstage ze zelf op een rij zet.
+
+    Terugval voor als geen van de vaste adressen uit `_gpx_urls` iets
+    oplevert. Die adressen zijn een aanname over de bestandsnaam; deze
+    pagina noemt het echte adres, dus hier wordt niets geraden.
+    """
+    import urllib.request
+    for index_url in _gpx_index_urls(race_url):
+        try:
+            req = urllib.request.Request(
+                index_url,
+                headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                html = resp.read().decode("utf-8", "replace")
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("GPX-overzicht ophalen mislukt (%s): %s", index_url, err)
+            continue
+        year = re.search(r"(\d{4})", race_url or "")
+        index = _parse_gpx_index(html, index_url, year.group(1) if year else "")
+        if index:
+            _LOGGER.debug("GPX-overzicht %s: %s etappes", index_url, len(index))
+            return index
+        _LOGGER.debug("GPX-overzicht %s: geen .gpx-links gevonden", index_url)
+    return {}
+
+
 def _times_urls(race_url, stage_idx, one_day):
     """Tijdschema-pagina's van cyclingstage (bevatten o.a. de tussensprint).
 
@@ -1781,6 +1858,14 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._upcoming_cache: dict[str, dict] = {}
         self._elev_cache: dict[tuple[str, int], tuple] = {}
         self._gpx_beschikbaar: dict[str, bool] = {}
+        # {koers/jaar: {etappenummer: gpx-adres}} van de overzichtspagina van
+        # cyclingstage. Wordt alleen gevuld als de vaste adressen niets geven,
+        # en dan hoogstens één keer per koers per dag.
+        self._gpxindex_cache: dict[str, dict] = {}
+        # welk gpx-adres het uiteindelijk werd, per etappe; gaat als
+        # `gpx_used` naar de attributen zodat een ontbrekend profiel te
+        # herleiden is zonder in het debuglogboek te duiken
+        self._gpx_gebruikt: dict[str, str] = {}
         # de tv-gids van vandaag als HTML; daar staan álle koersen op, dus
         # één verzoek per dag bedient de tegel en de pop-up samen
         self._tv_cache = None
@@ -2193,19 +2278,57 @@ class CyclingCoordinator(DataUpdateCoordinator):
             return 0 if bekend else 1
         return 0 if _gpx_urls(s["race_url"], s.get("idx"), s.get("one_day")) else 1
 
+    async def _gpx_index(self, race_url):
+        """De GPX-adressen die cyclingstage zelf op een rij zet, per koers."""
+        m = re.match(r"race/([^/]+)/(\d{4})", race_url or "")
+        if not m:
+            return {}
+        sleutel = f"{m.group(1)}/{m.group(2)}"
+        if sleutel not in self._gpxindex_cache:
+            self._gpxindex_cache[sleutel] = await self._job(
+                _fetch_gpx_index, race_url)
+        return self._gpxindex_cache[sleutel]
+
+    async def _gpx_van(self, s, n_out):
+        """Hoogteprofiel + cols van één etappe, zonder cache.
+
+        Eerst de vaste adressen uit `_gpx_urls`. Die zijn een aanname over de
+        bestandsnaam, en zodra cyclingstage er voor één koers van afwijkt
+        blijft het profiel leeg zonder dat iets kapot lijkt. Levert geen
+        enkel adres iets op, dan wordt het adres opgezocht op de
+        GPX-overzichtspagina van die koers - de bron, dus geen gokwerk.
+        """
+        kandidaten = _gpx_urls(s["race_url"], s.get("idx"), s.get("one_day"))
+        # één voor één en niet de hele lijst aan `_fetch_gpx`, want dan is
+        # achteraf te zeggen wélk adres het werd (`gpx_used`)
+        for kandidaat in kandidaten:
+            elev, climbs = await self._job(_fetch_gpx, kandidaat, n_out)
+            if elev:
+                self._gpx_gebruikt[s["stage_url"]] = kandidaat
+                return elev, climbs
+        alt = (await self._gpx_index(s["race_url"])).get(s.get("idx") or 0)
+        if not alt or alt in kandidaten:
+            return [], []
+        elev, climbs = await self._job(_fetch_gpx, alt, n_out)
+        if elev:
+            _LOGGER.debug("GPX via de overzichtspagina: %s", alt)
+            self._gpx_gebruikt[s["stage_url"]] = alt
+        return elev, climbs
+
     # 60 punten voor de kleine profieltjes in "Komende dagen"; de getoonde
     # etappe vraagt er expliciet 200. Meer punten kosten alleen ruimte in de
     # attributen: bij 150 werd de state ruim 37 kB, boven de grens van de
     # recorder (MAX_STATE_ATTRS_BYTES = 16384).
-    async def _gpx_for(self, stage_url, gpx_url, n_out=60):
+    async def _gpx_for(self, s, n_out=60):
         # de cache staat op (etappe, aantal punten): dezelfde etappe wordt
         # eerst als komende dag opgehaald met 60 punten en later, als hij de
         # getoonde etappe is, met 200. Zonder het aantal in de sleutel kreeg
         # het grote profiel de kleine versie uit de cache.
+        stage_url = s["stage_url"]
         sleutel = (stage_url, n_out)
         if sleutel in self._elev_cache:
             return self._elev_cache[sleutel]
-        elev, climbs = await self._job(_fetch_gpx, gpx_url, n_out)
+        elev, climbs = await self._gpx_van(s, n_out)
         if elev:
             self._elev_cache[sleutel] = (elev, climbs)
         self._gpx_beschikbaar[stage_url] = bool(elev)
@@ -2228,8 +2351,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         else:
             await asyncio.sleep(0.4)  # niet overspoelen
             meta = await self._job(_fetch_stage_meta, url, s.get("one_day"))
-            gpx = _gpx_urls(s["race_url"], s.get("idx"), s.get("one_day"))
-            elev, gpx_climbs = await self._job(_fetch_gpx, gpx, 45)
+            elev, gpx_climbs = await self._gpx_van(s, 45)
             dist = meta.get("distance")
             if dist is None and elev:
                 dist = elev[-1][0]
@@ -2395,6 +2517,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._upcoming_cache.clear()
                 self._elev_cache.clear()
                 self._gpx_beschikbaar.clear()
+                self._gpxindex_cache.clear()
+                self._gpx_gebruikt.clear()
                 self._tv_cache = None
                 self._sprints_cache.clear()
                 self._other_cache.clear()
@@ -2550,7 +2674,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
 
         # Echt hoogteprofiel + gedetecteerde cols (GPX) voor de getoonde etappe
         gpx_url = _gpx_urls(shown["race_url"], shown.get("idx"), shown.get("one_day"))
-        elevation, gpx_climbs = await self._gpx_for(shown["stage_url"], gpx_url, 200)
+        elevation, gpx_climbs = await self._gpx_for(shown, 200)
         cs_route = {}
         elev_bron = "gpx" if elevation else ""
         if gpx_climbs:
@@ -2747,6 +2871,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 "days_until": days_until,
                 "women": bool(shown.get("women")),
                 "gpx_diag": [u.split("/images/")[-1] for u in (gpx_url or [])],
+                # welk adres het werd; leeg betekent dat geen enkel adres een
+                # bruikbaar bestand gaf, ook het adres van de
+                # overzichtspagina niet
+                "gpx_used": self._gpx_gebruikt.get(
+                    shown["stage_url"], "").split("/images/")[-1],
                 "times_diag": [u.split("/images/")[-1] for u in
                                _times_urls(shown["race_url"], shown.get("idx"),
                                            shown.get("one_day"))],
