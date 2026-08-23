@@ -146,10 +146,26 @@ verdringen:
 Mannen en vrouwen koersen vaak tegelijk. De tegel toont er één, gekozen op:
 
 1. eerstvolgende etappedatum
-2. koers mét hoogteprofiel (`_gpx_rang`)
-3. bij gelijke stand de mannen
+2. grote ronde (`GROTE_RONDES`: Tour, Giro, Vuelta)
+3. koers mét hoogteprofiel (`_gpx_rang`)
+4. bij gelijke stand de mannen
 
-en pas daarna nog gefilterd op `_mag_op_tegel`.
+en pas daarna nog gefilterd op `_mag_op_tegel`. De sleutel staat in
+`_keuzesleutel`, apart van de rest zodat de volgorde te testen is.
+
+Het profiel stond eerst bóven de grote ronde, en dat gaf de Renewi Tour
+voorrang op de Vuelta zodra de Vuelta-GPX niet binnenkwam: een bestand dat
+niet laadt bepaalde zo welke koers de belangrijkste was. Tussen twee koersen
+die verder gelijk staan geeft het profiel nog steeds de doorslag. De rondes
+van een week bij de vrouwen staan bewust niet in `GROTE_RONDES` — dat zijn
+geen grote rondes; wie ze toch voor wil laten gaan verandert de volgorde en
+niet die lijst.
+
+De kandidaten zijn tuples van `_keuzesleutel` plus de koers en zijn etappes.
+`_races_block` leest die twee daarom van **achteren** (`kandidaat[-2]`,
+`kandidaat[-1]`): een sleutel erbij brak anders de uitpakking, en omdat dat
+blok zijn fouten per koers afvangt zag je dat niet als een fout maar als een
+koers die stilletjes uit de pop-up verdween.
 
 De andere koersen komen terug via `_races_block` → het attribuut `races`: een
 lijst met de getoonde koers voorop (`primary: true`) en daarachter hoogstens
@@ -457,6 +473,14 @@ bovendien `days_until`.
 Blijft er na het filteren geen koers over, dan verbergt de kaart zich (zoals
 bij `visible_days`); in de voorvertoning blijft hij staan met een melding,
 anders is hij in het bewerkscherm niet meer terug te vinden.
+
+**Een sensor op `unavailable` of `unknown` krijgt een eigen melding.** Zonder
+die controle tekende de kaart gewoon de tegel met lege attributen, en omdat
+`svgTegel` bij een ontbrekende afstand op `1` terugvalt (`Number(a.distance_km)
+||1`) stond er "1 km · Profiel nog niet bekend" — niet te onderscheiden van
+een koers waarvan alleen het profiel ontbreekt, terwijl er in werkelijkheid
+niets was opgehaald. Verbergen is hier verkeerd: dan is er niets meer om aan
+te zien dat er iets mis is.
 
 Valt de koers van de sensor weg, dan schuift de kaart de eerste koers die
 wél mag naar de tegel (`tegelAttributen`): koersgegevens uit het blok in

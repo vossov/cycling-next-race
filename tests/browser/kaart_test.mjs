@@ -497,6 +497,40 @@ for (const [design, marge] of [['default', '10px'], ['ha', '8px 16px 16px'],
   else console.log('ok    sensor verdwijnt — de kaart komt terug in beeld met een melding');
 }
 
+// ── sensor niet beschikbaar ──────────────────────────────────────
+// Zonder attributen tekent de tegel "1 km" met "Profiel nog niet bekend"
+// eronder: dat ziet eruit als een koers waarvan het profiel ontbreekt,
+// terwijl er niets is opgehaald.
+{
+  const uit = await page.evaluate(() => {
+    const maak = (state) => {
+      document.getElementById('doel').innerHTML = '';
+      const kaart = document.createElement('cycling-next-race-card');
+      kaart.setConfig({ entity: 'sensor.cycling_next_race' });
+      document.getElementById('doel').appendChild(kaart);
+      kaart.hass = { states: { 'sensor.cycling_next_race': {
+        state, last_updated: state, attributes: {} } } };
+      return kaart;
+    };
+    const weg = maak('unavailable');
+    const onbekend = maak('unknown');
+    return {
+      zichtbaar: getComputedStyle(weg).display !== 'none',
+      melding: weg.shadowRoot.textContent.indexOf('niet beschikbaar') >= 0,
+      geenNepkoers: weg.shadowRoot.textContent.indexOf('1 km') < 0,
+      onbekend: onbekend.shadowRoot.textContent.indexOf('nog onbekend') >= 0,
+    };
+  });
+
+  const p = [];
+  if (!uit.zichtbaar) p.push('de kaart verbergt zich in plaats van te melden');
+  if (!uit.melding) p.push('geen melding bij unavailable');
+  if (!uit.geenNepkoers) p.push('er staat nog een koers van 1 km');
+  if (!uit.onbekend) p.push('geen melding bij unknown');
+  if (p.length) { console.log(`FOUT  sensor onbeschikbaar: ${p.join(', ')}`); mislukt++; }
+  else console.log('ok    sensor onbeschikbaar — melding in plaats van een lege tegel');
+}
+
 // ── zichtbaarheid en aftelweergave ───────────────────────────────
 for (const geval of zichtbaarheid) {
   const uit = await page.evaluate(([config, dagen, alle]) => {

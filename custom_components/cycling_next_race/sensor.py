@@ -1418,6 +1418,21 @@ CYCLINGSTAGE_SLUG = {
     "vuelta-a-espana": "vuelta",
 }
 
+# De drie grote rondes. Ze duren drie weken en zijn in die periode de koers
+# waar het om gaat; een tegel die tijdens de Vuelta de Renewi Tour laat zien
+# klopt niet, ook al heeft die toevallig wél een hoogteprofiel. Een vaste
+# lijst van drie koersen en geen weging of score - er valt niets aan te
+# schatten. De rondes van een week bij de vrouwen (Tour de France Femmes,
+# Giro Women, Vuelta Femenina) staan er bewust niet in: dat zijn geen grote
+# rondes, en wie ze toch voor wil laten gaan verandert de volgorde en niet
+# deze lijst.
+GROTE_RONDES = {"tour-de-france", "giro-d-italia", "vuelta-a-espana"}
+
+
+def _is_grote_ronde(race_url: str) -> bool:
+    m = re.match(r"race/([^/]+)/", race_url or "")
+    return bool(m) and m.group(1) in GROTE_RONDES
+
 # Overige rittenkoersen op cyclingstage. Let op: deze gebruiken
 # "stage-{N}-route.gpx" in plaats van "stage-{N}-parcours.gpx".
 # (PCS-slug -> cyclingstage-CDN-slug)
@@ -2258,7 +2273,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
         """
         races = [dict(primair, primary=True)]
         legacy = {"other_label": "", "other_result": [], "other_gc": []}
-        for _d, _g, _w, _i, ev, st in andere[:self._opt(CONF_MAX_OTHER)]:
+        # de koers en zijn etappes staan achteraan; de sleutels ervoor zijn
+        # alleen om te sorteren en er komt er af en toe een bij
+        for kandidaat in andere[:self._opt(CONF_MAX_OTHER)]:
+            ev, st = kandidaat[-2], kandidaat[-1]
             try:
                 blok = await self._race_entry(ev, st, today)
             except Exception as err:  # noqa: BLE001
@@ -2270,6 +2288,25 @@ class CyclingCoordinator(DataUpdateCoordinator):
                           "other_result": blok["last_result"],
                           "other_gc": blok["gc_top"][:5]}
         return dict(legacy, races=races)
+
+    def _keuzesleutel(self, ev, nxt, i):
+        """Waarop de tegel zijn koers kiest; lager sorteert vooraan.
+
+        De volgorde: eerstvolgende etappe, dan de grote ronde, dan een koers
+        waarvan we een hoogteprofiel hebben, dan de mannen, en als tiebreak
+        de plek in de kalender.
+
+        Het profiel stond hiervoor bóven de grote ronde, en dat gaf de Renewi
+        Tour voorrang op de Vuelta zodra de Vuelta-GPX niet binnenkwam. Een
+        bestand dat niet laadt hoort niet te bepalen welke koers de
+        belangrijkste is; andersom mag een ontbrekend profiel nog steeds de
+        doorslag geven tussen twee koersen die verder gelijk staan.
+        """
+        return (nxt["date"],
+                0 if _is_grote_ronde(ev.get("url", "")) else 1,
+                self._gpx_rang(nxt),
+                1 if ev.get("women") else 0,
+                i)
 
     def _gpx_rang(self, s):
         """0 = hoogteprofiel beschikbaar, 1 = (waarschijnlijk) niet."""
@@ -2568,18 +2605,17 @@ class CyclingCoordinator(DataUpdateCoordinator):
             nxt = next((s for s in st if s["date"] >= today), None)
             if nxt is None:
                 continue
-            kandidaten.append((nxt["date"], self._gpx_rang(nxt),
-                               1 if ev.get("women") else 0, i, ev, st))
+            kandidaten.append(self._keuzesleutel(ev, nxt, i) + (ev, st))
         if kandidaten:
-            kandidaten.sort(key=lambda k: k[:4])
-            op_tegel = [k for k in kandidaten if self._mag_op_tegel(k[4])]
+            kandidaten.sort(key=lambda k: k[:5])
+            op_tegel = [k for k in kandidaten if self._mag_op_tegel(k[5])]
             gekozen = (op_tegel or kandidaten)[0]
-            cur_idx, cur, stages = gekozen[3], gekozen[4], gekozen[5]
+            cur_idx, cur, stages = gekozen[4], gekozen[5], gekozen[6]
             # in de pop-up ook eerst de niveaus van het dashboard, daarna de
             # niveaus die er alleen in de pop-up bij staan
             andere_koersen = sorted(
                 (k for k in kandidaten if k is not gekozen),
-                key=lambda k: (0 if self._mag_op_tegel(k[4]) else 1,) + tuple(k[:4]))
+                key=lambda k: (0 if self._mag_op_tegel(k[5]) else 1,) + tuple(k[:5]))
             if len(kandidaten) > 1:
                 _LOGGER.debug("Koerskeuze: %s (uit %s kandidaten)",
                               cur["name"], len(kandidaten))

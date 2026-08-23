@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.13.0';
+const VERSIE = '0.14.0';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -836,6 +836,18 @@ class CyclingNextRaceCard extends HTMLElement {
       // verdwijnt daarna de entiteit, dan bleef deze melding onzichtbaar
       this.style.display = 'block';
       root.innerHTML = `<style>${STIJL}</style><ha-card class="${thema}"><div class="leeg">${esc(this._config.entity)} bestaat niet.</div></ha-card>`;
+      return;
+    }
+
+    // Een sensor die niet beschikbaar is heeft geen attributen, en dan tekent
+    // de tegel een koers van "1 km" zonder naam met "Profiel nog niet bekend"
+    // eronder — dat ziet eruit als een koers waarvan het profiel ontbreekt,
+    // terwijl er in werkelijkheid niets is opgehaald. Zeg dan wat er aan de
+    // hand is; dat is het enige aanknopingspunt dat de gebruiker heeft.
+    const status = String(st.state == null ? '' : st.state);
+    if (status === 'unavailable' || status === 'unknown') {
+      this.style.display = 'block';
+      root.innerHTML = `<style>${STIJL}</style><ha-card class="${thema}"><div class="leeg">${esc(this._config.entity)} is ${esc(status === 'unknown' ? 'nog onbekend' : 'niet beschikbaar')} — kijk in het logboek van Home Assistant op cycling_next_race.</div></ha-card>`;
       return;
     }
 

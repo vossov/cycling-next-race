@@ -303,3 +303,87 @@ def test_koersblok_draagt_de_truikleur_mee(wt, coordinator, monkeypatch):
     blok = asyncio.run(co._race_entry(tour, stages, VANDAAG))
 
     assert blok["jersey"] == "#F3C700"
+
+
+# ── welke koers de tegel krijgt ─────────────────────────────────────
+
+def _nxt(ev):
+    return {"date": VANDAAG, "stage_url": f"{ev['url']}/stage-3", "idx": 3,
+            "one_day": False, "race_url": ev["url"], "race_name": ev["name"],
+            "women": bool(ev.get("women")), "level": ev.get("level", WT_M),
+            "profile_icon": "", "name": "Etappe 3"}
+
+
+def test_grote_ronde_gaat_voor_op_een_koers_met_profiel(wt, coordinator):
+    """De Renewi Tour kreeg voorrang op de Vuelta omdat die wél een
+    hoogteprofiel had. Een bestand dat niet laadt hoort niet te bepalen welke
+    koers de belangrijkste is."""
+    co = coordinator()
+    vuelta = _ev("vuelta-a-espana", "La Vuelta ciclista a España", VANDAAG)
+    renewi = _ev("renewi-tour", "Renewi Tour", VANDAAG)
+    # de Vuelta heeft geen profiel, de Renewi Tour wel
+    co._gpx_beschikbaar[_nxt(vuelta)["stage_url"]] = False
+    co._gpx_beschikbaar[_nxt(renewi)["stage_url"]] = True
+
+    sleutels = sorted([co._keuzesleutel(renewi, _nxt(renewi), 0),
+                       co._keuzesleutel(vuelta, _nxt(vuelta), 1)])
+    assert sleutels[0] == co._keuzesleutel(vuelta, _nxt(vuelta), 1)
+
+
+def test_profiel_beslist_nog_steeds_tussen_gelijke_koersen(wt, coordinator):
+    """Alleen de grote ronde is erbij gekomen; de rest van de volgorde blijft."""
+    co = coordinator()
+    met = _ev("renewi-tour", "Renewi Tour", VANDAAG)
+    zonder = _ev("tour-of-britain", "Tour of Britain", VANDAAG)
+    co._gpx_beschikbaar[_nxt(met)["stage_url"]] = True
+    co._gpx_beschikbaar[_nxt(zonder)["stage_url"]] = False
+
+    sleutels = sorted([co._keuzesleutel(zonder, _nxt(zonder), 0),
+                       co._keuzesleutel(met, _nxt(met), 1)])
+    assert sleutels[0] == co._keuzesleutel(met, _nxt(met), 1)
+
+
+def test_een_eerdere_etappedatum_wint_van_alles(wt, coordinator):
+    co = coordinator()
+    ronde = _ev("vuelta-a-espana", "Vuelta", VANDAAG)
+    morgen = dict(_nxt(ronde), date=date(2026, 8, 6))
+    ander = _ev("renewi-tour", "Renewi Tour", VANDAAG)
+    assert co._keuzesleutel(ander, _nxt(ander), 9) < co._keuzesleutel(ronde, morgen, 0)
+
+
+def test_grote_rondes_zijn_er_drie(wt):
+    assert wt._is_grote_ronde("race/vuelta-a-espana/2026")
+    assert wt._is_grote_ronde("race/giro-d-italia/2026")
+    assert wt._is_grote_ronde("race/tour-de-france/2026")
+    # de rondes van een week bij de vrouwen horen er bewust niet bij
+    assert not wt._is_grote_ronde("race/vuelta-espana-femenina/2026")
+    assert not wt._is_grote_ronde("race/renewi-tour/2026")
+    assert not wt._is_grote_ronde("")
+
+
+def test_koersblok_leest_de_koers_achteraan_de_sleutel(wt, coordinator):
+    """`_races_block` pakt ev en stages van achteren, zodat een sleutel erbij
+    de uitpakking niet stukmaakt.
+
+    Dat ging bijna mis toen de grote ronde als sorteersleutel werd toegevoegd:
+    de lus pakte de tuple met een vast aantal namen uit. `_races_block` vangt
+    een fout per blok af, dus zoiets valt niet op als een fout maar als een
+    koers die stilletjes uit de pop-up verdwijnt — vandaar dat `_race_entry`
+    hier wordt vervangen en de aanroep zelf wordt nagekeken.
+    """
+    co = coordinator()
+    ev = _ev("renewi-tour", "Renewi Tour", VANDAAG)
+    gezien = []
+
+    async def _entry(event, stages, today):
+        gezien.append((event, stages))
+        return {"label": event["name"], "last_result": [], "gc_top": [],
+                "last_stage_label": ""}
+
+    co._race_entry = _entry
+    kandidaat = co._keuzesleutel(ev, _nxt(ev), 0) + (ev, [_nxt(ev)])
+    uit = asyncio.run(co._races_block(
+        {"key": "vuelta-a-espana", "label": "Vuelta", "race_name": "Vuelta",
+         "women": False}, [kandidaat], VANDAAG))
+    assert [r.get("label") for r in uit["races"]] == ["Vuelta", "Renewi Tour"]
+    assert gezien and gezien[0][0] is ev and gezien[0][1][0]["idx"] == 3
