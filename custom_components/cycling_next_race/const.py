@@ -11,7 +11,7 @@ NAME = "Cycling Next Race"
 # Gelijk aan "version" in manifest.json; hangt achter de kaart-URL zodat de
 # browser na een update de nieuwe versie ophaalt. tests/test_repo.py bewaakt
 # dat de twee niet uiteenlopen.
-VERSION = "0.15.0"
+VERSION = "0.15.1"
 
 # De meegeleverde Lovelace-kaart, door de integratie zelf geregistreerd.
 KAART_BESTAND = "cycling-next-race-card.js"

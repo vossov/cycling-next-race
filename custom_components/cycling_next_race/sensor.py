@@ -305,6 +305,30 @@ def _parse_start_hhmm(start_time: str | None):
 # Blocking scrape-functies — draaien via async_add_executor_job
 # ──────────────────────────────────────────────────────────────
 
+def _cloudscraper_diag() -> str:
+    """Of `cloudscraper` daadwerkelijk geladen kan worden.
+
+    Nodig omdat de melding van procyclingstats hierover niets zegt. Die
+    luidt altijd "Cloudflare protection detected. Install 'cloudscraper'",
+    ook als cloudscraper wél actief is: `_make_request` kijkt alleen of het
+    antwoord een uitdagingspagina is of een 403, en plakt daar
+    onvoorwaardelijk dat installatie-advies achter (nagekeken in de wheel,
+    `scraper.py`). Uit het log alleen is dus niet te zien of de bypass
+    ontbreekt of dat hij er niet langs komt — en dat is precies het verschil
+    tussen "herstart Home Assistant" en "hier helpt dit pakket niet meer".
+
+    Draait in de executor; `import` leest van schijf.
+    """
+    try:
+        import cloudscraper
+    except Exception as err:  # noqa: BLE001
+        return (f"cloudscraper is NIET geladen ({type(err).__name__}: {err}) — "
+                "herstart Home Assistant zodat de afhankelijkheid uit de "
+                "manifest geïnstalleerd wordt")
+    return (f"cloudscraper {getattr(cloudscraper, '__version__', '?')} is wél "
+            "geladen, dus procyclingstats komt er ondanks die bypass niet langs")
+
+
 def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, list]:
     """Kalender van de gekozen niveaus ophalen van procyclingstats.com.
 
@@ -395,6 +419,12 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
         gezien.add(r["url"])
         uniek.append(r)
     uniek.sort(key=lambda x: (x["start"], x["women"]))
+    if any("cloudflare" in f.lower() for f in fouten):
+        # zeggen wélke van de twee het is; de melding van procyclingstats
+        # zelf maakt dat onderscheid niet
+        diag = _cloudscraper_diag()
+        _LOGGER.warning("Cloudflare bij procyclingstats — %s", diag)
+        fouten.append(diag)
     _LOGGER.debug("Kalender: %s koersen (%s)", len(uniek),
                   ", ".join(f"{n}: {a}" for n, a in telling.items()))
     return uniek, telling, fouten
