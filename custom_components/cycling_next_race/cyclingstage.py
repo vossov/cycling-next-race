@@ -131,3 +131,133 @@ def _rijen(tabel: str, jaar: int, maand: int) -> list[dict]:
             "route_url": route,
         })
     return uit
+
+
+# ── etappelijst ─────────────────────────────────────────────────────
+
+# Op de routepagina van een rittenkoers staat één tabel: nummer, datum,
+# "start - finish", afstand en terreintype, met per etappe het adres.
+_TYPES = {
+    "flat": "flat", "hills": "hilly", "hils": "hilly",  # "hils" staat zo op de site
+    "mountains": "mountain", "mountain": "mountain",
+    "itt": "itt", "ttt": "ttt", "prologue": "prologue",
+}
+# "22-8" = dag-maand; het jaar komt van de koers.
+_DAGMAAND = re.compile(r"(\d{1,2})\s*-\s*(\d{1,2})$")
+
+
+def parse_etappes(html: str, jaar: int) -> list[dict]:
+    """De etappes van een rittenkoers uit zijn routepagina.
+
+    Per etappe: nummer, datum, "start - finish", afstand, terreintype en het
+    eigen adres. Dat adres is opnieuw de winst — de etappepagina hoeft niet
+    uit een sjabloon geraden te worden.
+
+    Rustdagen staan als eigen rij met een lege nummerkolom en `rest day`
+    over drie kolommen. Ze worden overgeslagen: een rustdag is geen etappe,
+    en de nummering in de eerste kolom loopt gewoon door, dus er valt niets
+    mis te tellen.
+    """
+    uit: list[dict] = []
+    tabel = _TABEL.search(html or "")
+    if not tabel:
+        _LOGGER.debug("Routepagina zonder tabel")
+        return uit
+    for rij in _RIJ.findall(tabel.group(0)):
+        if "<th" in rij.lower():
+            continue
+        cellen = _CEL.findall(rij)
+        nummer = _kaal(cellen[0]) if cellen else ""
+        if len(cellen) < 5 or not nummer.isdigit():
+            continue  # rustdag of een rij die we niet herkennen
+        m = _DAGMAAND.match(_kaal(cellen[1]))
+        if not m:
+            continue
+        try:
+            dag = date(jaar, int(m.group(2)), int(m.group(1)))
+        except ValueError:
+            _LOGGER.debug("Etappedatum onbruikbaar: %s", _kaal(cellen[1]))
+            continue
+        naam = _kaal(cellen[2])
+        uit.append({
+            "idx": int(nummer),
+            "date": dag,
+            "name": naam,
+            "departure": _plaats(naam, 0),
+            "arrival": _plaats(naam, 1),
+            "distance_km": _getal(_kaal(cellen[3])),
+            "stage_type": _TYPES.get(_kaal(cellen[4]).lower(), ""),
+            "url": _adres(cellen[2]),
+        })
+    _LOGGER.debug("Routepagina: %s etappes", len(uit))
+    return uit
+
+
+def _plaats(naam: str, kant: int) -> str:
+    """Vertrek of aankomst uit "Start - Finish".
+
+    Spaties rond het koppelteken zijn vereist, zodat plaatsnamen als
+    Orcières-Merlette en Vall d'Alba heel blijven.
+    """
+    delen = re.split(r"\s+[-–]\s+", naam or "", maxsplit=1)
+    return delen[kant].strip() if len(delen) > kant else ""
+
+
+def _getal(tekst: str):
+    try:
+        return float(tekst.replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+# ── de etappetekst ──────────────────────────────────────────────────
+
+# De colnamen uit deze tekst worden al door `_fetch_stage_names` in
+# sensor.py gehaald; die code is beproefd en blijft. Hier staat alleen wat
+# daar níét uit kwam en wat we tot nu toe bij procyclingstats haalden.
+_START_TIJD = re.compile(r"starts?\s+at\s+(\d{1,2}[:.]\d{2})", re.I)
+_FINISH_TIJD = re.compile(r"expected\s+to\s+finish\s+around\s+(\d{1,2}[:.]\d{2})", re.I)
+# "2,953 metres of elevation gain" — de komma is een duizendtalscheiding.
+_HOOGTE = re.compile(
+    r"([\d.,]+)\s*(?:metres|meters|m)\s+of\s+(?:elevation|climbing|vertical)", re.I)
+
+
+def parse_etappe_meta(html: str) -> dict:
+    """Starttijd, verwachte finishtijd en hoogtemeters uit de etappetekst.
+
+    Cyclingstage schrijft dit in gewone zinnen: "Stage 4 of the Vuelta
+    starts at 14:40 and the race is expected to finish around 17:30 - both
+    local times (CEST)", en "a route featuring 2,953 metres of elevation
+    gain".
+
+    De verwachte finishtijd is beter dan wat we hadden: bij procyclingstats
+    werd die geschat uit afstand en profiel (`_finish_est`), hier staat hij
+    er gewoon. De starttijd kwam van procyclingstats en staat hier ook.
+
+    Wat niet gevonden wordt blijft weg uit het resultaat; niets schatten.
+    """
+    tekst = _plat(html)
+    uit: dict = {}
+    m = _START_TIJD.search(tekst)
+    if m:
+        uit["start_time"] = m.group(1).replace(".", ":")
+    m = _FINISH_TIJD.search(tekst)
+    if m:
+        uit["finish_time"] = m.group(1).replace(".", ":")
+    m = _HOOGTE.search(tekst)
+    if m:
+        try:
+            uit["vertical_m"] = int(float(m.group(1).replace(",", "")))
+        except ValueError:
+            pass
+    return uit
+
+
+def _plat(html: str) -> str:
+    """Platte tekst van een hele pagina, script en style eruit."""
+    from html import unescape
+
+    doc = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", html or "",
+                 flags=re.S | re.I)
+    tekst = unescape(re.sub(r"<[^>]+>", " ", doc))
+    return re.sub(r"[ \t\r\n\u00a0]+", " ", tekst)

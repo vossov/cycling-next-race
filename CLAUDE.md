@@ -401,6 +401,26 @@ Twee dingen die cyclingstage **niet** heeft, en die de opzet veranderen:
   het zou toch leeg blijven — maar het is een echt verlies en het hoort in
   de README te staan.
 
+De routepagina van een koers (`/vuelta-2026-route/`) heeft één tabel met
+nummer, datum, "start - finish", afstand en terreintype, en per etappe het
+eigen adres. Rustdagen staan er als eigen rij in, met een lege nummerkolom
+en `rest day` over drie kolommen; `parse_etappes` slaat die over, want de
+rest van de integratie rekent elke regel als een etappe. Het nummer komt uit
+de tabel en niet uit een teller, dus rustdagen verschuiven niets.
+
+Op de etappepagina zelf staat in gewone zinnen wat we tot nu toe bij
+procyclingstats haalden: "starts at 14:40 and the race is expected to finish
+around 17:30" en "2,953 metres of elevation gain". De verwachte finishtijd
+is zelfs beter dan wat we hadden — die werd geschat uit afstand en profiel
+(`_finish_est`), en staat hier gewoon. `parse_etappe_meta` leest die drie;
+de colnamen komen uit `_fetch_stage_names` in `sensor.py`, dat al op deze
+teksten gebouwd is en blijft.
+
+Let op de typefouten op de site: etappe 2 van de Vuelta staat als `hils` in
+plaats van `hills`, en bij de Tour de France Femmes staat in de kalender een
+link die geen adres is (`http://Tour de France Femmes 2026`). Allebei
+opgevangen, allebei met een test.
+
 Het datumformaat verdient aandacht: `1`, `20-25` of `4/28-3`. De tabel staat
 onder de maand waarin de koers **eindigt**; begint hij in een eerdere maand,
 dan staat die maand ervoor. Zonder dat voorvoegsel loopt de Vuelta (`8/22-13`
