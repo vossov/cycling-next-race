@@ -298,6 +298,31 @@ dan is het niet in deze integratie op te lossen en hangt het van het
 Verdwijnt de Cloudflare-bescherming weer, dan kan deze patch eruit; hij doet
 verder geen kwaad, maar is onderhoud dat we liever niet hebben.
 
+**Op 23 augustus 2026 kwam ook curl_cffi er niet langs.** Het log zei
+letterlijk: `cloudscraper 1.2.71 is wél geladen en curl_cffi actief
+(impersonate=chrome); procyclingstats komt er ondanks die bypass(es) niet
+langs`. Verder gokken op bypasses heeft daarna geen zin meer.
+
+### Wát de bron terugstuurt
+
+`_make_request` gooit dezelfde fout bij `'Just a moment' in response.text`
+**en** bij `status_code == 403`, en dat zijn twee heel verschillende dingen:
+
+| wat er terugkomt | betekenis | valt er iets aan te doen |
+|---|---|---|
+| uitdagingspagina ("Just a moment", `challenge-platform`) | JS-challenge | in principe wel, maar alleen met een echte browser — te zwaar voor HA |
+| kale 403, vaak met `Error 1020` | firewallregel of IP-reputatie | nee, niet aan onze kant |
+
+`_pcs_antwoord_diag` doet daarom één verzoek met **dezelfde sessie die het
+pakket gebruikt** en logt statuscode, lengte, de Cloudflare-foutcode uit de
+body, of er uitdagingstekst in staat, de headers `cf-mitigated`, `cf-ray` en
+`server`, en de eerste 160 tekens platte tekst. Alleen bij een
+Cloudflare-fout en hoogstens één keer per ronde, dus het kost niets zolang
+alles werkt.
+
+Dit is diagnose en geen oplossing: het bepaalt of er nog een weg is, en
+zonder dat antwoord is elke volgende stap gokwerk.
+
 
 - Kalender: `races.php?year={y}&circuit={c}&class=&filter=Filter`
   - `circuit=1` mannen-WorldTour, `circuit=24` Women's WorldTour (geverifieerd)
