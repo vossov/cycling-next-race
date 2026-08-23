@@ -44,8 +44,10 @@ in staat krijgt de gewone accentkleur — liever geen kleur dan een gegokte.
 2. Plak de URL van deze repo, categorie **Integration**, en klik toevoegen
 3. Zoek op *Cycling Next Race*, installeer, en herstart Home Assistant
 
-De Python-afhankelijkheid (`procyclingstats`) installeert Home Assistant
-automatisch.
+De Python-afhankelijkheden (`procyclingstats` en `cloudscraper`) installeert
+Home Assistant automatisch. `cloudscraper` is nodig sinds procyclingstats.com
+achter Cloudflare staat: `procyclingstats` gebruikt het vanzelf zodra het
+geïnstalleerd is, en zonder dat pakket komt er geen kalender binnen.
 
 ## Handmatige installatie
 

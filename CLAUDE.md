@@ -146,10 +146,26 @@ verdringen:
 Mannen en vrouwen koersen vaak tegelijk. De tegel toont er één, gekozen op:
 
 1. eerstvolgende etappedatum
-2. koers mét hoogteprofiel (`_gpx_rang`)
-3. bij gelijke stand de mannen
+2. grote ronde (`GROTE_RONDES`: Tour, Giro, Vuelta)
+3. koers mét hoogteprofiel (`_gpx_rang`)
+4. bij gelijke stand de mannen
 
-en pas daarna nog gefilterd op `_mag_op_tegel`.
+en pas daarna nog gefilterd op `_mag_op_tegel`. De sleutel staat in
+`_keuzesleutel`, apart van de rest zodat de volgorde te testen is.
+
+Het profiel stond eerst bóven de grote ronde, en dat gaf de Renewi Tour
+voorrang op de Vuelta zodra de Vuelta-GPX niet binnenkwam: een bestand dat
+niet laadt bepaalde zo welke koers de belangrijkste was. Tussen twee koersen
+die verder gelijk staan geeft het profiel nog steeds de doorslag. De rondes
+van een week bij de vrouwen staan bewust niet in `GROTE_RONDES` — dat zijn
+geen grote rondes; wie ze toch voor wil laten gaan verandert de volgorde en
+niet die lijst.
+
+De kandidaten zijn tuples van `_keuzesleutel` plus de koers en zijn etappes.
+`_races_block` leest die twee daarom van **achteren** (`kandidaat[-2]`,
+`kandidaat[-1]`): een sleutel erbij brak anders de uitpakking, en omdat dat
+blok zijn fouten per koers afvangt zag je dat niet als een fout maar als een
+koers die stilletjes uit de pop-up verdween.
 
 De andere koersen komen terug via `_races_block` → het attribuut `races`: een
 lijst met de getoonde koers voorop (`primary: true`) en daarachter hoogstens
@@ -227,7 +243,25 @@ ze dubbel staan met het eigen blok van die koers.
 
 ## Bronnen en URL-patronen
 
-### procyclingstats (pakket `procyclingstats==0.2.8`)
+### procyclingstats (pakket `procyclingstats==0.2.8` + `cloudscraper`)
+
+**procyclingstats.com staat sinds 23 augustus 2026 achter Cloudflare.** In
+het log van die dag: `Kalender van WorldTour mannen ophalen mislukt:
+Cloudflare protection detected. Install 'cloudscraper': pip install
+cloudscraper`, voor elk niveau, gevolgd door een lege kalender en een
+sensor die niet meer laadde.
+
+`cloudscraper` staat daarom in de manifest onder `requirements`. Er hoefde
+verder niets aan de code te veranderen: `Scraper._get_session()` in
+procyclingstats 0.2.8 doet `import cloudscraper` in een `try` en gebruikt
+het vanzelf als het er is (nagekeken in de wheel van pypi, `scraper.py`).
+Het staat niet in `requires_dist` van het pakket, dus zonder onze regel komt
+het er niet.
+
+Of `cloudscraper` 1.2.71 — de laatste, uit april 2023 — de bescherming van
+vandaag ook echt passeert, is van hieruit **niet na te gaan**: de proxy laat
+procyclingstats niet door. Blijft de melding staan, dan is dat het spoor.
+
 
 - Kalender: `races.php?year={y}&circuit={c}&class=&filter=Filter`
   - `circuit=1` mannen-WorldTour, `circuit=24` Women's WorldTour (geverifieerd)
@@ -350,7 +384,13 @@ praktijk is dat er één — mannen en vrouwen — dus zo'n 28 kB. Bewust géén
 hoogteprofiel in het blok; dat komt uit `upcoming` via `race_key`, anders was
 het een stuk meer. Wordt het te veel, dan is `max_other` verlagen de
 goedkoopste stap; dat is nu een instelling en hoeft niet meer in de code.
-**Niet gemeten in een draaiende Home Assistant, alleen geschat.**
+**De schatting klopt: het gaat er in de praktijk overheen.** Het log van
+21-22 augustus 2026 staat vol met `State attributes for
+sensor.cycling_next_race exceed maximum size of 16384 bytes ... Attributes
+will not be stored` — bij elke update. De sensor werkt gewoon (de
+attributen gaan wel over de websocket naar de kaart), maar de recorder
+bewaart ze niet, dus er is geen historie van. Wie dat wil oplossen zal
+`upcoming` of `max_other` moeten inperken; beide kosten iets zichtbaars.
 
 De startlijst komt er niet bovenop maar staat in de plaats van de uitslag:
 tien renners is zo'n 600 bytes per koers, en een koers zonder uitslag heeft
@@ -364,6 +404,29 @@ Een niveau erbij kost niets zolang er niet méér koersen in beeld komen:
 `max_other` begrenst het aantal blokken en `upcoming_n` het aantal etappes.
 Wat het wél kost zijn verzoeken bij procyclingstats — een kalenderpagina per
 niveau per dag, en een etappelijst per koers die in het venster valt.
+
+## Opzetten: de entiteit wacht niet op een geslaagde ronde
+
+`async_setup_entry` in `sensor.py` gebruikt bewust `async_refresh()` en
+**niet** `async_config_entry_first_refresh()`. Die laatste gooit
+`ConfigEntryNotReady` zodra de eerste ophaalronde faalt, en dan wordt de
+entiteit niet toegevoegd. Home Assistant zet er dan zelf een neer uit het
+entiteitsregister: status `unavailable`, attribuut `restored: true`, verder
+niets. Daar is niet aan te zien dát het opzetten mislukte en al helemaal
+niet waarom — en de kaart tekende er een lege tegel mee ("1 km · Profiel nog
+niet bekend"). **`restored: true` op deze sensor betekent dus: de integratie
+is niet geladen, kijk in het log, niet naar de data.**
+
+Eén mislukte ronde bij procyclingstats hoort deze integratie ook niet te
+blokkeren: er hangt geen apparaat aan en de bron ligt er weleens even uit.
+De prijs is dat Home Assistant de entry als geladen beschouwt en zelf niet
+opnieuw probeert; dat doet de coordinator al op zijn eigen ritme. Mislukt de
+eerste ronde, dan logt `async_setup_entry` een waarschuwing met de reden.
+
+Om dezelfde reden staat `_registreer_kaart` in `__init__.py` in een `try`:
+zijn eigen fouten ving het al af, maar `add_extra_js_url` en het lezen van
+het kaartbestand niet, en een dashboardkaart hoort de sensor nooit onderuit
+te halen.
 
 ## Diagnose-attributen
 
@@ -457,6 +520,14 @@ bovendien `days_until`.
 Blijft er na het filteren geen koers over, dan verbergt de kaart zich (zoals
 bij `visible_days`); in de voorvertoning blijft hij staan met een melding,
 anders is hij in het bewerkscherm niet meer terug te vinden.
+
+**Een sensor op `unavailable` of `unknown` krijgt een eigen melding.** Zonder
+die controle tekende de kaart gewoon de tegel met lege attributen, en omdat
+`svgTegel` bij een ontbrekende afstand op `1` terugvalt (`Number(a.distance_km)
+||1`) stond er "1 km · Profiel nog niet bekend" — niet te onderscheiden van
+een koers waarvan alleen het profiel ontbreekt, terwijl er in werkelijkheid
+niets was opgehaald. Verbergen is hier verkeerd: dan is er niets meer om aan
+te zien dat er iets mis is.
 
 Valt de koers van de sensor weg, dan schuift de kaart de eerste koers die
 wél mag naar de tegel (`tegelAttributen`): koersgegevens uit het blok in

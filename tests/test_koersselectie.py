@@ -192,7 +192,7 @@ def nep_kalender(wt, monkeypatch):
 
 
 def test_kalender_haalt_alleen_de_gekozen_niveaus(wt, nep_kalender):
-    koersen, telling = wt._fetch_calendar(2026, ["1", "24"])
+    koersen, telling, _ = wt._fetch_calendar(2026, ["1", "24"])
 
     assert {k["name"] for k in koersen} == {"Tour de Pologne",
                                             "Ronde van Vlaanderen"}
@@ -200,7 +200,7 @@ def test_kalender_haalt_alleen_de_gekozen_niveaus(wt, nep_kalender):
 
 
 def test_elke_koers_draagt_zijn_niveau_en_geslacht(wt, nep_kalender):
-    koersen, _ = wt._fetch_calendar(2026, ["24", "26"])
+    koersen, _, _ = wt._fetch_calendar(2026, ["24", "26"])
     per_naam = {k["name"]: k for k in koersen}
 
     assert per_naam["Ronde van Vlaanderen"]["level"] == "24"
@@ -211,13 +211,13 @@ def test_elke_koers_draagt_zijn_niveau_en_geslacht(wt, nep_kalender):
 
 def test_kalenderlink_wordt_teruggebracht_tot_de_koers(wt, nep_kalender):
     """De link eindigt vaak op /gc of /result; dat breekt de etappelijst."""
-    koersen, _ = wt._fetch_calendar(2026, ["1"])
+    koersen, _, _ = wt._fetch_calendar(2026, ["1"])
     assert koersen[0]["url"] == "race/tour-de-pologne/2026"
 
 
 def test_niveau_zonder_koersen_staat_in_de_telling(wt, nep_kalender, caplog):
     """Een verkeerd circuitnummer moet zichtbaar zijn, niet stil blijven."""
-    koersen, telling = wt._fetch_calendar(2026, ["1", "27"])
+    koersen, telling, _ = wt._fetch_calendar(2026, ["1", "27"])
 
     assert telling["ProSeries vrouwen"] == 0
     assert len(koersen) == 1
@@ -227,14 +227,14 @@ def test_niveau_zonder_koersen_staat_in_de_telling(wt, nep_kalender, caplog):
 
 
 def test_onbekend_niveau_wordt_overgeslagen(wt, nep_kalender):
-    koersen, telling = wt._fetch_calendar(2026, ["1", "999"])
+    koersen, telling, _ = wt._fetch_calendar(2026, ["1", "999"])
 
     assert len(koersen) == 1
     assert "999" not in telling
 
 
 def test_datums_komen_uit_de_kalenderregel(wt, nep_kalender):
-    koersen, _ = wt._fetch_calendar(2026, ["1", "24"])
+    koersen, _, _ = wt._fetch_calendar(2026, ["1", "24"])
     per_naam = {k["name"]: k for k in koersen}
 
     assert per_naam["Tour de Pologne"]["start"] == date(2026, 8, 4)
@@ -303,3 +303,164 @@ def test_koersblok_draagt_de_truikleur_mee(wt, coordinator, monkeypatch):
     blok = asyncio.run(co._race_entry(tour, stages, VANDAAG))
 
     assert blok["jersey"] == "#F3C700"
+
+
+# ── welke koers de tegel krijgt ─────────────────────────────────────
+
+def _nxt(ev):
+    return {"date": VANDAAG, "stage_url": f"{ev['url']}/stage-3", "idx": 3,
+            "one_day": False, "race_url": ev["url"], "race_name": ev["name"],
+            "women": bool(ev.get("women")), "level": ev.get("level", WT_M),
+            "profile_icon": "", "name": "Etappe 3"}
+
+
+def test_grote_ronde_gaat_voor_op_een_koers_met_profiel(wt, coordinator):
+    """De Renewi Tour kreeg voorrang op de Vuelta omdat die wél een
+    hoogteprofiel had. Een bestand dat niet laadt hoort niet te bepalen welke
+    koers de belangrijkste is."""
+    co = coordinator()
+    vuelta = _ev("vuelta-a-espana", "La Vuelta ciclista a España", VANDAAG)
+    renewi = _ev("renewi-tour", "Renewi Tour", VANDAAG)
+    # de Vuelta heeft geen profiel, de Renewi Tour wel
+    co._gpx_beschikbaar[_nxt(vuelta)["stage_url"]] = False
+    co._gpx_beschikbaar[_nxt(renewi)["stage_url"]] = True
+
+    sleutels = sorted([co._keuzesleutel(renewi, _nxt(renewi), 0),
+                       co._keuzesleutel(vuelta, _nxt(vuelta), 1)])
+    assert sleutels[0] == co._keuzesleutel(vuelta, _nxt(vuelta), 1)
+
+
+def test_profiel_beslist_nog_steeds_tussen_gelijke_koersen(wt, coordinator):
+    """Alleen de grote ronde is erbij gekomen; de rest van de volgorde blijft."""
+    co = coordinator()
+    met = _ev("renewi-tour", "Renewi Tour", VANDAAG)
+    zonder = _ev("tour-of-britain", "Tour of Britain", VANDAAG)
+    co._gpx_beschikbaar[_nxt(met)["stage_url"]] = True
+    co._gpx_beschikbaar[_nxt(zonder)["stage_url"]] = False
+
+    sleutels = sorted([co._keuzesleutel(zonder, _nxt(zonder), 0),
+                       co._keuzesleutel(met, _nxt(met), 1)])
+    assert sleutels[0] == co._keuzesleutel(met, _nxt(met), 1)
+
+
+def test_een_eerdere_etappedatum_wint_van_alles(wt, coordinator):
+    co = coordinator()
+    ronde = _ev("vuelta-a-espana", "Vuelta", VANDAAG)
+    morgen = dict(_nxt(ronde), date=date(2026, 8, 6))
+    ander = _ev("renewi-tour", "Renewi Tour", VANDAAG)
+    assert co._keuzesleutel(ander, _nxt(ander), 9) < co._keuzesleutel(ronde, morgen, 0)
+
+
+def test_grote_rondes_zijn_er_drie(wt):
+    assert wt._is_grote_ronde("race/vuelta-a-espana/2026")
+    assert wt._is_grote_ronde("race/giro-d-italia/2026")
+    assert wt._is_grote_ronde("race/tour-de-france/2026")
+    # de rondes van een week bij de vrouwen horen er bewust niet bij
+    assert not wt._is_grote_ronde("race/vuelta-espana-femenina/2026")
+    assert not wt._is_grote_ronde("race/renewi-tour/2026")
+    assert not wt._is_grote_ronde("")
+
+
+def test_koersblok_leest_de_koers_achteraan_de_sleutel(wt, coordinator):
+    """`_races_block` pakt ev en stages van achteren, zodat een sleutel erbij
+    de uitpakking niet stukmaakt.
+
+    Dat ging bijna mis toen de grote ronde als sorteersleutel werd toegevoegd:
+    de lus pakte de tuple met een vast aantal namen uit. `_races_block` vangt
+    een fout per blok af, dus zoiets valt niet op als een fout maar als een
+    koers die stilletjes uit de pop-up verdwijnt — vandaar dat `_race_entry`
+    hier wordt vervangen en de aanroep zelf wordt nagekeken.
+    """
+    co = coordinator()
+    ev = _ev("renewi-tour", "Renewi Tour", VANDAAG)
+    gezien = []
+
+    async def _entry(event, stages, today):
+        gezien.append((event, stages))
+        return {"label": event["name"], "last_result": [], "gc_top": [],
+                "last_stage_label": ""}
+
+    co._race_entry = _entry
+    kandidaat = co._keuzesleutel(ev, _nxt(ev), 0) + (ev, [_nxt(ev)])
+    uit = asyncio.run(co._races_block(
+        {"key": "vuelta-a-espana", "label": "Vuelta", "race_name": "Vuelta",
+         "women": False}, [kandidaat], VANDAAG))
+    assert [r.get("label") for r in uit["races"]] == ["Vuelta", "Renewi Tour"]
+    assert gezien and gezien[0][0] is ev and gezien[0][1][0]["idx"] == 3
+
+
+# ── de bron ligt eruit ──────────────────────────────────────────────
+
+def test_fout_van_de_bron_reist_mee(wt, monkeypatch):
+    """Een onbereikbare bron is iets anders dan een leeg circuitnummer.
+
+    Op 23 augustus 2026 zette procyclingstats Cloudflare-bescherming aan.
+    De kalender bleef leeg en de sensor meldde "PCS-structuur gewijzigd?" —
+    dat wees de verkeerde kant op, terwijl de echte reden ("Cloudflare
+    protection detected") wel in het log stond.
+    """
+    import sys
+    import types
+
+    class _Weigert:
+        def __init__(self, url):
+            raise ConnectionError(
+                "Cloudflare protection detected. Install 'cloudscraper'")
+
+    scraper = types.ModuleType("procyclingstats.scraper")
+    scraper.Scraper = _Weigert
+    pakket = types.ModuleType("procyclingstats")
+    pakket.scraper = scraper
+    monkeypatch.setitem(sys.modules, "procyclingstats", pakket)
+    monkeypatch.setitem(sys.modules, "procyclingstats.scraper", scraper)
+
+    koersen, telling, fouten = wt._fetch_calendar(2026, ["1", "24"])
+    assert koersen == []
+    assert telling == {"WorldTour mannen": 0, "WorldTour vrouwen": 0}
+    assert fouten and all("Cloudflare" in f for f in fouten)
+
+
+def _zet_vandaag(wt, monkeypatch):
+    """`dt_util.now()` is in de stubs None; hier een echte klok."""
+    from datetime import datetime
+    monkeypatch.setattr(wt.dt_util, "now",
+                        lambda: datetime(VANDAAG.year, VANDAAG.month,
+                                         VANDAAG.day, 12, 0))
+
+
+def test_lege_kalender_noemt_de_reden(wt, coordinator, monkeypatch):
+    """`UpdateFailed` krijgt de melding van de bron, niet de gok."""
+    import asyncio
+
+    _zet_vandaag(wt, monkeypatch)
+    co = coordinator()
+
+    async def _job(fn, *args):
+        if fn is wt._fetch_calendar:
+            return [], {}, ["Cloudflare protection detected"]
+        return fn(*args)
+
+    co._job = _job
+    with pytest.raises(wt.UpdateFailed) as fout:
+        asyncio.run(co._async_update_data())
+    assert "Cloudflare" in str(fout.value)
+    assert "structuur gewijzigd" not in str(fout.value)
+
+
+def test_lege_kalender_zonder_fout_blijft_de_oude_melding(wt, coordinator,
+                                                         monkeypatch):
+    """Kwam alles binnen maar stond er niets in, dan is de opmaak verdacht."""
+    import asyncio
+
+    _zet_vandaag(wt, monkeypatch)
+    co = coordinator()
+
+    async def _job(fn, *args):
+        if fn is wt._fetch_calendar:
+            return [], {}, []
+        return fn(*args)
+
+    co._job = _job
+    with pytest.raises(wt.UpdateFailed) as fout:
+        asyncio.run(co._async_update_data())
+    assert "structuur gewijzigd" in str(fout.value)

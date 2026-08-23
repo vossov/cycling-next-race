@@ -305,12 +305,19 @@ def _parse_start_hhmm(start_time: str | None):
 # Blocking scrape-functies — draaien via async_add_executor_job
 # ──────────────────────────────────────────────────────────────
 
-def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict]:
+def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, list]:
     """Kalender van de gekozen niveaus ophalen van procyclingstats.com.
 
-    Geeft `(koersen, telling)` terug; de telling is het aantal koersen per
-    niveau en gaat als `levels_diag` naar de attributen, zodat een niveau
-    dat niets oplevert in de interface te zien is.
+    Geeft `(koersen, telling, fouten)` terug. De telling is het aantal
+    koersen per niveau en gaat als `levels_diag` naar de attributen, zodat
+    een niveau dat niets oplevert in de interface te zien is.
+
+    `fouten` zijn de meldingen van de niveaus die niet opgehaald konden
+    worden. Die reizen mee omdat een lege kalender twee heel verschillende
+    dingen kan betekenen: een circuitnummer dat niets oplevert, of een bron
+    die niet bereikbaar was. Zonder dat onderscheid meldde de sensor
+    "PCS-structuur gewijzigd?" terwijl procyclingstats simpelweg achter
+    Cloudflare zat — dat wijst de verkeerde kant op.
     """
     from procyclingstats.scraper import Scraper
 
@@ -339,6 +346,7 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict]:
 
     races = []
     telling = {}
+    fouten = []
     for niveau in niveaus or []:
         info = NIVEAUS.get(str(niveau))
         if info is None:
@@ -352,6 +360,7 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict]:
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Kalender van %s ophalen mislukt: %s", info["naam"], err)
             telling[info["naam"]] = 0
+            fouten.append(str(err))
             continue
         for r in rijen:
             m = re.findall(r"(\d{2})\.(\d{2})", r["date"])
@@ -388,7 +397,7 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict]:
     uniek.sort(key=lambda x: (x["start"], x["women"]))
     _LOGGER.debug("Kalender: %s koersen (%s)", len(uniek),
                   ", ".join(f"{n}: {a}" for n, a in telling.items()))
-    return uniek, telling
+    return uniek, telling, fouten
 
 
 def _event_stages(event: dict) -> list[dict]:
@@ -1418,6 +1427,21 @@ CYCLINGSTAGE_SLUG = {
     "vuelta-a-espana": "vuelta",
 }
 
+# De drie grote rondes. Ze duren drie weken en zijn in die periode de koers
+# waar het om gaat; een tegel die tijdens de Vuelta de Renewi Tour laat zien
+# klopt niet, ook al heeft die toevallig wél een hoogteprofiel. Een vaste
+# lijst van drie koersen en geen weging of score - er valt niets aan te
+# schatten. De rondes van een week bij de vrouwen (Tour de France Femmes,
+# Giro Women, Vuelta Femenina) staan er bewust niet in: dat zijn geen grote
+# rondes, en wie ze toch voor wil laten gaan verandert de volgorde en niet
+# deze lijst.
+GROTE_RONDES = {"tour-de-france", "giro-d-italia", "vuelta-a-espana"}
+
+
+def _is_grote_ronde(race_url: str) -> bool:
+    m = re.match(r"race/([^/]+)/", race_url or "")
+    return bool(m) and m.group(1) in GROTE_RONDES
+
 # Overige rittenkoersen op cyclingstage. Let op: deze gebruiken
 # "stage-{N}-route.gpx" in plaats van "stage-{N}-parcours.gpx".
 # (PCS-slug -> cyclingstage-CDN-slug)
@@ -1853,6 +1877,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # aantal koersen per niveau uit de laatste kalender; gaat als
         # `levels_diag` naar de attributen
         self._levels_diag: dict = {}
+        # meldingen van niveaus die niet opgehaald konden worden; bepalen
+        # wat er in `UpdateFailed` komt als de kalender leeg blijft
+        self._kalenderfouten: list = []
         self._stages_cache: dict[str, tuple[date, list[dict]]] = {}
         self._climbs_cache: dict[str, dict] = {}
         self._upcoming_cache: dict[str, dict] = {}
@@ -2258,7 +2285,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
         """
         races = [dict(primair, primary=True)]
         legacy = {"other_label": "", "other_result": [], "other_gc": []}
-        for _d, _g, _w, _i, ev, st in andere[:self._opt(CONF_MAX_OTHER)]:
+        # de koers en zijn etappes staan achteraan; de sleutels ervoor zijn
+        # alleen om te sorteren en er komt er af en toe een bij
+        for kandidaat in andere[:self._opt(CONF_MAX_OTHER)]:
+            ev, st = kandidaat[-2], kandidaat[-1]
             try:
                 blok = await self._race_entry(ev, st, today)
             except Exception as err:  # noqa: BLE001
@@ -2270,6 +2300,25 @@ class CyclingCoordinator(DataUpdateCoordinator):
                           "other_result": blok["last_result"],
                           "other_gc": blok["gc_top"][:5]}
         return dict(legacy, races=races)
+
+    def _keuzesleutel(self, ev, nxt, i):
+        """Waarop de tegel zijn koers kiest; lager sorteert vooraan.
+
+        De volgorde: eerstvolgende etappe, dan de grote ronde, dan een koers
+        waarvan we een hoogteprofiel hebben, dan de mannen, en als tiebreak
+        de plek in de kalender.
+
+        Het profiel stond hiervoor bóven de grote ronde, en dat gaf de Renewi
+        Tour voorrang op de Vuelta zodra de Vuelta-GPX niet binnenkwam. Een
+        bestand dat niet laadt hoort niet te bepalen welke koers de
+        belangrijkste is; andersom mag een ontbrekend profiel nog steeds de
+        doorslag geven tussen twee koersen die verder gelijk staan.
+        """
+        return (nxt["date"],
+                0 if _is_grote_ronde(ev.get("url", "")) else 1,
+                self._gpx_rang(nxt),
+                1 if ev.get("women") else 0,
+                i)
 
     def _gpx_rang(self, s):
         """0 = hoogteprofiel beschikbaar, 1 = (waarschijnlijk) niet."""
@@ -2510,8 +2559,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
         if (self._calendar is None or self._calendar_fetched is None
                 or (today - self._calendar_fetched) >= timedelta(days=1)):
             try:
-                self._calendar, self._levels_diag = await self._job(
-                    _fetch_calendar, today.year, self._niveaus_alles)
+                self._calendar, self._levels_diag, self._kalenderfouten = \
+                    await self._job(_fetch_calendar, today.year,
+                                    self._niveaus_alles)
                 self._calendar_fetched = today
                 self._stages_cache.clear()
                 self._upcoming_cache.clear()
@@ -2536,6 +2586,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Kalender verversen mislukt, oude cache: %s", err)
 
         if not self._calendar:
+            # kwam er van geen enkel niveau een pagina binnen, dan is dat de
+            # melding — niet de gok dat de opmaak van PCS veranderd is
+            if self._kalenderfouten:
+                raise UpdateFailed("Kalender ophalen mislukt: "
+                                   + "; ".join(dict.fromkeys(self._kalenderfouten)))
             raise UpdateFailed("Geen wedstrijden gevonden — PCS-structuur gewijzigd?")
 
         # de tegel gaat bij voorkeur naar een koers van een niveau dat daar
@@ -2568,18 +2623,17 @@ class CyclingCoordinator(DataUpdateCoordinator):
             nxt = next((s for s in st if s["date"] >= today), None)
             if nxt is None:
                 continue
-            kandidaten.append((nxt["date"], self._gpx_rang(nxt),
-                               1 if ev.get("women") else 0, i, ev, st))
+            kandidaten.append(self._keuzesleutel(ev, nxt, i) + (ev, st))
         if kandidaten:
-            kandidaten.sort(key=lambda k: k[:4])
-            op_tegel = [k for k in kandidaten if self._mag_op_tegel(k[4])]
+            kandidaten.sort(key=lambda k: k[:5])
+            op_tegel = [k for k in kandidaten if self._mag_op_tegel(k[5])]
             gekozen = (op_tegel or kandidaten)[0]
-            cur_idx, cur, stages = gekozen[3], gekozen[4], gekozen[5]
+            cur_idx, cur, stages = gekozen[4], gekozen[5], gekozen[6]
             # in de pop-up ook eerst de niveaus van het dashboard, daarna de
             # niveaus die er alleen in de pop-up bij staan
             andere_koersen = sorted(
                 (k for k in kandidaten if k is not gekozen),
-                key=lambda k: (0 if self._mag_op_tegel(k[4]) else 1,) + tuple(k[:4]))
+                key=lambda k: (0 if self._mag_op_tegel(k[5]) else 1,) + tuple(k[:5]))
             if len(kandidaten) > 1:
                 _LOGGER.debug("Koerskeuze: %s (uit %s kandidaten)",
                               cur["name"], len(kandidaten))
@@ -2910,9 +2964,30 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """De gewone weg: opgezet vanuit een config entry."""
+    """De gewone weg: opgezet vanuit een config entry.
+
+    Bewust géén `async_config_entry_first_refresh()`. Die gooit
+    `ConfigEntryNotReady` zodra de eerste ophaalactie faalt, en dan wordt de
+    entiteit niet toegevoegd. Home Assistant zet er vervolgens een herstelde
+    entiteit neer — status `unavailable`, `restored: true`, geen enkel
+    attribuut — en daar valt niets aan af te lezen: niet dát het opzetten
+    mislukte, en niet waaróm. De kaart tekende er een lege tegel mee.
+
+    Eén mislukte ronde bij procyclingstats hoort deze integratie ook niet te
+    blokkeren: er hangt geen apparaat aan, de kalender komt uit een website
+    die er weleens even uit ligt, en een half uur later is het meestal weer
+    goed. De entiteit komt er daarom altijd; lukt de eerste ronde niet, dan
+    staat hij onbeschikbaar tot de volgende en zegt het log waarom.
+
+    De prijs is dat Home Assistant de entry als geladen beschouwt en dus zelf
+    niet opnieuw probeert. Dat doet de coordinator al op zijn eigen ritme.
+    """
     coordinator = CyclingCoordinator(hass, dict(entry.options))
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_refresh()
+    if not coordinator.last_update_success:
+        _LOGGER.warning(
+            "Eerste ophaalronde mislukt; de sensor blijft onbeschikbaar tot "
+            "de volgende ronde. Reden: %s", coordinator.last_exception)
     async_add_entities([CyclingNextRaceSensor(coordinator)])
 
 
@@ -2948,8 +3023,10 @@ class CyclingNextRaceSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("state")
+        # `data` is None zolang er nog geen geslaagde ronde is geweest; de
+        # entiteit bestaat dan wel al, want het opzetten wacht daar niet op
+        return (self.coordinator.data or {}).get("state")
 
     @property
     def extra_state_attributes(self):
-        return self.coordinator.data.get("attributes", {})
+        return (self.coordinator.data or {}).get("attributes", {})

@@ -62,9 +62,14 @@ def _installeer_stubs():
     helpers.config_validation = _stub(
         "homeassistant.helpers.config_validation",
         multi_select=lambda opties: (lambda waarde: waarde))
+    # CoordinatorEntity zet in het echt `self.coordinator`; de sensor leest
+    # daar zijn status en attributen uit, dus de stub moet dat ook doen
     _stub("homeassistant.helpers.update_coordinator",
           DataUpdateCoordinator=_klasse("DataUpdateCoordinator"),
-          CoordinatorEntity=_klasse("CoordinatorEntity"),
+          CoordinatorEntity=type(
+              "CoordinatorEntity", (),
+              {"__init__": lambda self, coordinator=None, *a, **kw:
+                  setattr(self, "coordinator", coordinator)}),
           UpdateFailed=type("UpdateFailed", (Exception,), {}))
     _stub("homeassistant.util")
     _stub("homeassistant.util.dt", now=lambda: None)

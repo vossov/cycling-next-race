@@ -26,7 +26,15 @@ _KAART_GEREGISTREERD = f"{DOMAIN}_kaart_geregistreerd"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Zet de integratie op na toevoegen of na een herstart."""
-    await _registreer_kaart(hass)
+    # De kaart is een extraatje; de sensor is bruikbaar zonder. `_registreer_kaart`
+    # vangt zijn eigen fouten af, maar niet allemaal — `add_extra_js_url` en het
+    # lezen van het kaartbestand staan erbuiten. Ging daar iets mis, dan viel de
+    # hele integratie om en bleef er een herstelde entiteit over zonder
+    # attributen. Dat mag een dashboardkaart nooit veroorzaken.
+    try:
+        await _registreer_kaart(hass)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("Kaart registreren mislukt, de sensor draait door: %s", err)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     return True
