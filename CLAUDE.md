@@ -243,7 +243,25 @@ ze dubbel staan met het eigen blok van die koers.
 
 ## Bronnen en URL-patronen
 
-### procyclingstats (pakket `procyclingstats==0.2.8`)
+### procyclingstats (pakket `procyclingstats==0.2.8` + `cloudscraper`)
+
+**procyclingstats.com staat sinds 23 augustus 2026 achter Cloudflare.** In
+het log van die dag: `Kalender van WorldTour mannen ophalen mislukt:
+Cloudflare protection detected. Install 'cloudscraper': pip install
+cloudscraper`, voor elk niveau, gevolgd door een lege kalender en een
+sensor die niet meer laadde.
+
+`cloudscraper` staat daarom in de manifest onder `requirements`. Er hoefde
+verder niets aan de code te veranderen: `Scraper._get_session()` in
+procyclingstats 0.2.8 doet `import cloudscraper` in een `try` en gebruikt
+het vanzelf als het er is (nagekeken in de wheel van pypi, `scraper.py`).
+Het staat niet in `requires_dist` van het pakket, dus zonder onze regel komt
+het er niet.
+
+Of `cloudscraper` 1.2.71 — de laatste, uit april 2023 — de bescherming van
+vandaag ook echt passeert, is van hieruit **niet na te gaan**: de proxy laat
+procyclingstats niet door. Blijft de melding staan, dan is dat het spoor.
+
 
 - Kalender: `races.php?year={y}&circuit={c}&class=&filter=Filter`
   - `circuit=1` mannen-WorldTour, `circuit=24` Women's WorldTour (geverifieerd)
@@ -366,7 +384,13 @@ praktijk is dat er één — mannen en vrouwen — dus zo'n 28 kB. Bewust géén
 hoogteprofiel in het blok; dat komt uit `upcoming` via `race_key`, anders was
 het een stuk meer. Wordt het te veel, dan is `max_other` verlagen de
 goedkoopste stap; dat is nu een instelling en hoeft niet meer in de code.
-**Niet gemeten in een draaiende Home Assistant, alleen geschat.**
+**De schatting klopt: het gaat er in de praktijk overheen.** Het log van
+21-22 augustus 2026 staat vol met `State attributes for
+sensor.cycling_next_race exceed maximum size of 16384 bytes ... Attributes
+will not be stored` — bij elke update. De sensor werkt gewoon (de
+attributen gaan wel over de websocket naar de kaart), maar de recorder
+bewaart ze niet, dus er is geen historie van. Wie dat wil oplossen zal
+`upcoming` of `max_other` moeten inperken; beide kosten iets zichtbaars.
 
 De startlijst komt er niet bovenop maar staat in de plaats van de uitslag:
 tien renners is zo'n 600 bytes per koers, en een koers zonder uitslag heeft

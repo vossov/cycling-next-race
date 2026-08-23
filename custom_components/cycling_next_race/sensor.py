@@ -305,12 +305,19 @@ def _parse_start_hhmm(start_time: str | None):
 # Blocking scrape-functies — draaien via async_add_executor_job
 # ──────────────────────────────────────────────────────────────
 
-def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict]:
+def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, list]:
     """Kalender van de gekozen niveaus ophalen van procyclingstats.com.
 
-    Geeft `(koersen, telling)` terug; de telling is het aantal koersen per
-    niveau en gaat als `levels_diag` naar de attributen, zodat een niveau
-    dat niets oplevert in de interface te zien is.
+    Geeft `(koersen, telling, fouten)` terug. De telling is het aantal
+    koersen per niveau en gaat als `levels_diag` naar de attributen, zodat
+    een niveau dat niets oplevert in de interface te zien is.
+
+    `fouten` zijn de meldingen van de niveaus die niet opgehaald konden
+    worden. Die reizen mee omdat een lege kalender twee heel verschillende
+    dingen kan betekenen: een circuitnummer dat niets oplevert, of een bron
+    die niet bereikbaar was. Zonder dat onderscheid meldde de sensor
+    "PCS-structuur gewijzigd?" terwijl procyclingstats simpelweg achter
+    Cloudflare zat — dat wijst de verkeerde kant op.
     """
     from procyclingstats.scraper import Scraper
 
@@ -339,6 +346,7 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict]:
 
     races = []
     telling = {}
+    fouten = []
     for niveau in niveaus or []:
         info = NIVEAUS.get(str(niveau))
         if info is None:
@@ -352,6 +360,7 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict]:
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Kalender van %s ophalen mislukt: %s", info["naam"], err)
             telling[info["naam"]] = 0
+            fouten.append(str(err))
             continue
         for r in rijen:
             m = re.findall(r"(\d{2})\.(\d{2})", r["date"])
@@ -388,7 +397,7 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict]:
     uniek.sort(key=lambda x: (x["start"], x["women"]))
     _LOGGER.debug("Kalender: %s koersen (%s)", len(uniek),
                   ", ".join(f"{n}: {a}" for n, a in telling.items()))
-    return uniek, telling
+    return uniek, telling, fouten
 
 
 def _event_stages(event: dict) -> list[dict]:
@@ -1868,6 +1877,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # aantal koersen per niveau uit de laatste kalender; gaat als
         # `levels_diag` naar de attributen
         self._levels_diag: dict = {}
+        # meldingen van niveaus die niet opgehaald konden worden; bepalen
+        # wat er in `UpdateFailed` komt als de kalender leeg blijft
+        self._kalenderfouten: list = []
         self._stages_cache: dict[str, tuple[date, list[dict]]] = {}
         self._climbs_cache: dict[str, dict] = {}
         self._upcoming_cache: dict[str, dict] = {}
@@ -2547,8 +2559,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
         if (self._calendar is None or self._calendar_fetched is None
                 or (today - self._calendar_fetched) >= timedelta(days=1)):
             try:
-                self._calendar, self._levels_diag = await self._job(
-                    _fetch_calendar, today.year, self._niveaus_alles)
+                self._calendar, self._levels_diag, self._kalenderfouten = \
+                    await self._job(_fetch_calendar, today.year,
+                                    self._niveaus_alles)
                 self._calendar_fetched = today
                 self._stages_cache.clear()
                 self._upcoming_cache.clear()
@@ -2573,6 +2586,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Kalender verversen mislukt, oude cache: %s", err)
 
         if not self._calendar:
+            # kwam er van geen enkel niveau een pagina binnen, dan is dat de
+            # melding — niet de gok dat de opmaak van PCS veranderd is
+            if self._kalenderfouten:
+                raise UpdateFailed("Kalender ophalen mislukt: "
+                                   + "; ".join(dict.fromkeys(self._kalenderfouten)))
             raise UpdateFailed("Geen wedstrijden gevonden — PCS-structuur gewijzigd?")
 
         # de tegel gaat bij voorkeur naar een koers van een niveau dat daar

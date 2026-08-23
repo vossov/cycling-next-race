@@ -8,6 +8,6 @@
   "documentation": "https://github.com/vossov/cycling-next-race",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/vossov/cycling-next-race/issues",
-  "requirements": ["procyclingstats==0.2.8"],
-  "version": "0.14.1"
+  "requirements": ["procyclingstats==0.2.8", "cloudscraper==1.2.71"],
+  "version": "0.15.0"
 }
