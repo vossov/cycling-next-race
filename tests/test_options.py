@@ -152,3 +152,39 @@ def test_gpx_overzichtspagina_hoogstens_een_keer_per_koers(wt):
                                 "race_url": "race/vuelta-a-espana/2026",
                                 "idx": n}, 60))
     assert index_verzoeken == ["race/vuelta-a-espana/2026"]
+
+
+
+# ── opzetten ────────────────────────────────────────────────────────
+
+def test_entiteit_komt_er_ook_als_de_eerste_ronde_faalt(wt, monkeypatch):
+    """Anders staat er een herstelde entiteit zonder attributen.
+
+    Met `async_config_entry_first_refresh()` wordt de entiteit bij een
+    mislukte eerste ophaalronde helemaal niet toegevoegd. Home Assistant zet
+    er dan zelf een neer met status `unavailable` en `restored: true`, en
+    daar is niet aan te zien dát het opzetten mislukte, laat staan waarom.
+    """
+    import asyncio
+    import types
+
+    class NepCoordinator:
+        def __init__(self, hass, opties=None):
+            self.data = None
+            self.last_update_success = False
+            self.last_exception = RuntimeError("procyclingstats onbereikbaar")
+            self.geprobeerd = False
+
+        async def async_refresh(self):
+            self.geprobeerd = True
+
+    monkeypatch.setattr(wt, "CyclingCoordinator", NepCoordinator)
+    toegevoegd = []
+    entry = types.SimpleNamespace(options={})
+    asyncio.run(wt.async_setup_entry(None, entry, toegevoegd.extend))
+
+    assert len(toegevoegd) == 1, "de sensor werd niet toegevoegd"
+    assert toegevoegd[0].coordinator.geprobeerd
+    # en de entiteit valt niet over data die er nog niet is
+    assert toegevoegd[0].native_value is None
+    assert toegevoegd[0].extra_state_attributes == {}

@@ -381,6 +381,29 @@ Een niveau erbij kost niets zolang er niet méér koersen in beeld komen:
 Wat het wél kost zijn verzoeken bij procyclingstats — een kalenderpagina per
 niveau per dag, en een etappelijst per koers die in het venster valt.
 
+## Opzetten: de entiteit wacht niet op een geslaagde ronde
+
+`async_setup_entry` in `sensor.py` gebruikt bewust `async_refresh()` en
+**niet** `async_config_entry_first_refresh()`. Die laatste gooit
+`ConfigEntryNotReady` zodra de eerste ophaalronde faalt, en dan wordt de
+entiteit niet toegevoegd. Home Assistant zet er dan zelf een neer uit het
+entiteitsregister: status `unavailable`, attribuut `restored: true`, verder
+niets. Daar is niet aan te zien dát het opzetten mislukte en al helemaal
+niet waarom — en de kaart tekende er een lege tegel mee ("1 km · Profiel nog
+niet bekend"). **`restored: true` op deze sensor betekent dus: de integratie
+is niet geladen, kijk in het log, niet naar de data.**
+
+Eén mislukte ronde bij procyclingstats hoort deze integratie ook niet te
+blokkeren: er hangt geen apparaat aan en de bron ligt er weleens even uit.
+De prijs is dat Home Assistant de entry als geladen beschouwt en zelf niet
+opnieuw probeert; dat doet de coordinator al op zijn eigen ritme. Mislukt de
+eerste ronde, dan logt `async_setup_entry` een waarschuwing met de reden.
+
+Om dezelfde reden staat `_registreer_kaart` in `__init__.py` in een `try`:
+zijn eigen fouten ving het al af, maar `add_extra_js_url` en het lezen van
+het kaartbestand niet, en een dashboardkaart hoort de sensor nooit onderuit
+te halen.
+
 ## Diagnose-attributen
 
 Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:

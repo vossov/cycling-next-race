@@ -2946,9 +2946,30 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """De gewone weg: opgezet vanuit een config entry."""
+    """De gewone weg: opgezet vanuit een config entry.
+
+    Bewust géén `async_config_entry_first_refresh()`. Die gooit
+    `ConfigEntryNotReady` zodra de eerste ophaalactie faalt, en dan wordt de
+    entiteit niet toegevoegd. Home Assistant zet er vervolgens een herstelde
+    entiteit neer — status `unavailable`, `restored: true`, geen enkel
+    attribuut — en daar valt niets aan af te lezen: niet dát het opzetten
+    mislukte, en niet waaróm. De kaart tekende er een lege tegel mee.
+
+    Eén mislukte ronde bij procyclingstats hoort deze integratie ook niet te
+    blokkeren: er hangt geen apparaat aan, de kalender komt uit een website
+    die er weleens even uit ligt, en een half uur later is het meestal weer
+    goed. De entiteit komt er daarom altijd; lukt de eerste ronde niet, dan
+    staat hij onbeschikbaar tot de volgende en zegt het log waarom.
+
+    De prijs is dat Home Assistant de entry als geladen beschouwt en dus zelf
+    niet opnieuw probeert. Dat doet de coordinator al op zijn eigen ritme.
+    """
     coordinator = CyclingCoordinator(hass, dict(entry.options))
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_refresh()
+    if not coordinator.last_update_success:
+        _LOGGER.warning(
+            "Eerste ophaalronde mislukt; de sensor blijft onbeschikbaar tot "
+            "de volgende ronde. Reden: %s", coordinator.last_exception)
     async_add_entities([CyclingNextRaceSensor(coordinator)])
 
 
@@ -2984,8 +3005,10 @@ class CyclingNextRaceSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get("state")
+        # `data` is None zolang er nog geen geslaagde ronde is geweest; de
+        # entiteit bestaat dan wel al, want het opzetten wacht daar niet op
+        return (self.coordinator.data or {}).get("state")
 
     @property
     def extra_state_attributes(self):
-        return self.coordinator.data.get("attributes", {})
+        return (self.coordinator.data or {}).get("attributes", {})
