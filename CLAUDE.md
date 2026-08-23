@@ -82,7 +82,27 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
   profiel heeft, want `_gpx_rang` heeft dat nodig om te kiezen wélke koers
   getoond wordt.
 
-### Welke niveaus meedoen
+### Welke niveaus meedoen (sinds 0.19)
+
+Cyclingstage kent geen UCI-niveaus, dus `NIVEAUS` in `const.py` is nog maar
+twee regels: `"m"` (mannen) en `"v"` (vrouwen). Het geslacht komt uit de
+koersnaam én uit het adres, twee onafhankelijke signalen.
+
+`OUDE_NIVEAUS` vertaalt de circuitnummers die in bestaande installaties
+opgeslagen staan (`1`/`26` → `m`, `24`/`27` → `v`). Zonder die vertaling zou
+een bestaande keuze na de update leeg zijn en stil terugvallen op de
+standaard.
+
+**De slug-tabellen zijn weg.** `CYCLINGSTAGE_SLUG`, `CYCLINGSTAGE_STAGERACE`,
+`CYCLINGSTAGE_ONEDAY` en `CYCLINGSTAGE_ROUTE` stonden met de hand ingevuld en
+kostten ons het profiel van de Vuelta. De kalender geeft het adres van elke
+koers, en `slug_van()` haalt daar de slug uit — nagelopen op alle 49 koersen
+van 2026: 47 leverden exact op wat er met de hand stond, en de twee andere
+waren koersen die die tabellen niet eens hadden. `LEIDERSTRUI` en
+`GROTE_RONDES` draaien nu op diezelfde slugs (`vuelta`, `giro`,
+`tour-de-france`).
+
+### Hoe het vóór 0.19 was
 
 Een niveau is een `circuit=`-nummer bij procyclingstats. `NIVEAUS` in
 `const.py` koppelt nummer → naam, of het een vrouwenkalender is, en of het
@@ -183,6 +203,33 @@ Zo'n blok geeft hetzelfde beeld als de tegelkoers:
   is, want zo ver kijkt de gids niet vooruit.
 - Het profiel komt uit `upcoming` (zie hieronder), inclusief `start_time`,
   `finish_est` en de tussensprint.
+
+### Terugbladeren door de uitslagen
+
+`_build_past` levert het attribuut `past`: de laatst gereden etappes van de
+koers op de tegel, van nieuw naar oud, met hoogstens `PAST_RESULT_N` (5)
+renners per uitslag. De etappe die al als `last_result` in de attributen
+staat wordt overgeslagen; anders stond die dubbel.
+
+**Alleen voor de tegelkoers.** Elke rij draagt `race_key`, dus de kaart kan
+het per koersblok uit elkaar houden en het zou per koers kunnen — maar dat
+vermenigvuldigt zowel de verzoeken bij cyclingstage als de bytes, en die
+zitten al boven de grens van de recorder. Wie het breder wil, begint daar.
+
+`_past_cache` wordt als enige cache **niet** bij een dagwissel geleegd: een
+etappe die gereden is verandert niet meer, en juist gisteren is de etappe
+waarin het meest wordt teruggekeken. Alleen een uitslag die er ook echt is
+komt erin — een pagina die nog leeg was wordt morgen opnieuw geprobeerd.
+
+In de kaart is het één sectie. `uitslagenblok` zet `last_result` als eerste
+bladzijde en de rijen uit `past` daarachter; bij één bladzijde tekent het
+precies wat `tijdlijst` ook zou tekenen, dus zonder pijlen. Alle bladzijden
+staan in de HTML en worden verborgen — de sensor stuurt ze al mee en een
+klik hoort niet op het netwerk te wachten. `_bladerknoppen` handelt elke
+`.uitslagen` los af, want elk koersblok kan er een hebben.
+
+`past` in `sections` zet alleen de pijlen aan of uit; `result` blijft de
+schakelaar voor de uitslag zelf.
 
 ### Startlijst als er nog geen uitslag is
 
@@ -368,6 +415,99 @@ elk half uur een extra verzoek te krijgen omdat wij willen weten waarom.
   voor de vrouwen `rankings/we/individual`. Zie `RANGLIJST` in `sensor.py`;
   het vrouwenadres is **niet geverifieerd**.
 
+### cyclingstage.com wordt de hoofdbron
+
+Nu procyclingstats onbereikbaar is en die weg uitgeput, gaat de kalender —
+en op termijn de rest — naar cyclingstage. Die bron leverde al de GPX, de
+tijdschema's en de etappeteksten, en is vanaf een gewone
+thuisverbinding bereikbaar (bewezen: in het log van 21-22 augustus staat
+geen enkele cyclingstage-fout en de attributen bevatten `elevation`).
+
+De nieuwe parsers staan in `cyclingstage.py`, los van `sensor.py`, zodat de
+oude PCS-code er tijdens de overgang naast blijft staan. Ze zijn beproefd op
+**echte HTML** in `tests/fixtures/` — opgeslagen in een browser, want de
+proxy in de ontwikkelomgeving laat cyclingstage niet door.
+
+**De kalenderpagina geeft het adres van elke koers mee.** Dat is de winst:
+`/uci/cycling-calendar-{jaar}/` heeft één tabel per maand met datum, naam,
+land, route-adres en resultaten-adres. Geen sjablonen meer raden — precies
+dat raden kostte het profiel van de Vuelta en de colnamen van de Giro.
+
+Twee dingen die cyclingstage **niet** heeft, en die de opzet veranderen:
+
+- **Geen UCI-niveaus.** "WorldTour", "ProSeries" en "UWT" komen nul keer
+  voor op de kalenderpagina. `levels` kan daar dus alleen nog mannen en
+  vrouwen onderscheiden. Dat gaat wel betrouwbaar: de naam (`Donne`,
+  `Femmes`, `Femenina`, `Women`, `(w)`) en het adres (`-women`, `-femmes`,
+  `-donne`) zeggen het allebei, onafhankelijk van elkaar.
+- **Het is een redactionele selectie.** Boven de tabel staat het met zoveel
+  woorden: "the races we are passionate about". 49 koersen in 2026, waarvan
+  11 bij de vrouwen. Voor de mannen is dat vrijwel de hele WorldTour (Polen,
+  Denemarken en Guangxi ontbreken); bij de vrouwen ontbreken alle rondes van
+  een week. Wat er niet in staat had ook geen profiel en geen tijdschema, dus
+  het zou toch leeg blijven — maar het is een echt verlies en het hoort in
+  de README te staan.
+
+De routepagina van een koers (`/vuelta-2026-route/`) heeft één tabel met
+nummer, datum, "start - finish", afstand en terreintype, en per etappe het
+eigen adres. Rustdagen staan er als eigen rij in, met een lege nummerkolom
+en `rest day` over drie kolommen; `parse_etappes` slaat die over, want de
+rest van de integratie rekent elke regel als een etappe. Het nummer komt uit
+de tabel en niet uit een teller, dus rustdagen verschuiven niets.
+
+Op de etappepagina zelf staat in gewone zinnen wat we tot nu toe bij
+procyclingstats haalden: "starts at 14:40 and the race is expected to finish
+around 17:30" en "2,953 metres of elevation gain". De verwachte finishtijd
+is zelfs beter dan wat we hadden — die werd geschat uit afstand en profiel
+(`_finish_est`), en staat hier gewoon. `parse_etappe_meta` leest die drie;
+de colnamen komen uit `_fetch_stage_names` in `sensor.py`, dat al op deze
+teksten gebouwd is en blijft.
+
+De resultatenpagina (`/vuelta-2026-results/stage-2-spain-results-2026/`) heeft
+géén tabel: de uitslag staat als `<h2>`-kop met een `<p>` eronder, regels
+gescheiden door `<br>` — `1. Matthew Brennan (gbr) 4:47:47`. `parse_blokken`
+leest elk zo'n blok, `parse_uitslag` kiest daaruit. Een blok telt alleen als
+de nummering 1..n is zonder gaten; een alinea die toevallig met "1." begint
+is geen uitslag.
+
+Drie dingen die daar anders zijn dan bij procyclingstats:
+
+- **Geen ploeg, alleen een landcode.** Een land is geen ploeg, dus het gaat
+  als `country` mee en niet als `team`. De kaart toont het als terugval waar
+  eerst de UCI-ploegcode stond. `_fetch_team_abbr`, `_abbr_cache` en
+  `MAX_PLOEGCODES_PER_RONDE` hebben daarmee geen bron meer.
+- **Geen punten-, berg- en jongerenklassement.** Op 23 augustus 2026 hebben
+  `/vuelta-2026-points-classification/` en `/vuelta-2026-kom-classification/`
+  alleen de puntenverdeling, met de mededeling dat de standen "in a table
+  during La Vuelta" komen en "You'll find the rankings under results" — en op
+  de resultatenpagina staan ze niet. `_KLASSEMENTEN` in `cyclingstage.py`
+  herkent ze op de kop, dus zodra ze verschijnen lopen ze mee zonder
+  codewijziging.
+- **Geen dagwinst.** Die werd berekend uit de "Prev"-kolom; cyclingstage
+  geeft geen vorige stand per rij. `_rank_maps` en `_gain_*` hebben daarmee
+  geen bron meer.
+
+**De kop van het klassement liegt.** Op de pagina van etappe 2 staat "GC
+after stage 1" boven het klassement ná die etappe (Pogacar eerste, Brennan
+derde — precies wat het artikel beschrijft). Dat nummer telt daarom alleen
+om te zien wélk klassement het is, nooit om te bepalen bij welke etappe het
+hoort.
+
+`uitslag_url` leidt het resultatenadres af uit het etappeadres
+(`stage-2-spain-2026` → `stage-2-spain-results-2026`); nagekeken tegen de
+echte pagina. Lukt dat ooit niet, dan staan ze allemaal op
+`uitslag_index_url`.
+
+Let op de typefouten op de site: etappe 2 van de Vuelta staat als `hils` in
+plaats van `hills`, en bij de Tour de France Femmes staat in de kalender een
+link die geen adres is (`http://Tour de France Femmes 2026`). Allebei
+opgevangen, allebei met een test.
+
+Het datumformaat verdient aandacht: `1`, `20-25` of `4/28-3`. De tabel staat
+onder de maand waarin de koers **eindigt**; begint hij in een eerdere maand,
+dan staat die maand ervoor. Zonder dat voorvoegsel loopt de Vuelta (`8/22-13`
+onder September) van 22 september tot 13 september — achteruit.
+
 ### cyclingstage.com
 
 | Doel | Patroon |
@@ -480,6 +620,10 @@ will not be stored` — bij elke update. De sensor werkt gewoon (de
 attributen gaan wel over de websocket naar de kaart), maar de recorder
 bewaart ze niet, dus er is geen historie van. Wie dat wil oplossen zal
 `upcoming` of `max_other` moeten inperken; beide kosten iets zichtbaars.
+
+`past` kost zo'n 400 bytes per etappe: vijf renners zonder ploeg, plus de
+kop en de plaatsnamen. Met de standaard van drie is dat ruim een kilobyte,
+en `past_n` op 0 haalt het er helemaal af.
 
 De startlijst komt er niet bovenop maar staat in de plaats van de uitslag:
 tien renners is zo'n 600 bytes per koers, en een koers zonder uitslag heeft
@@ -629,6 +773,8 @@ koers die de sénsor uitkoos en kan dus van een uitgezet niveau zijn. De
 voorwaarde telt daarom de koersen vóór het filteren (`koersen(a).length < 2`),
 niet erna — op `meerdere` afgaan liet zo'n koers alsnog binnen zodra het
 filter er één overhield.
+
+Een onderdeel erbij raakt twee plekken: `SECTIES` in de kaart en de opsomming onder "Onderdelen van het detailvenster" in de README; `tests/test_kaart.py` faalt als er één achterblijft.
 
 `sections` bepaalt welke onderdelen in het detailvenster staan (`SECTIES`);
 de volgorde ligt in de code vast en niet in de configuratie. Leeg of onzin

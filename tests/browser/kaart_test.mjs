@@ -31,15 +31,15 @@ const attrs = {
   // + etappegegevens
   upcoming: [
     { date: '2026-07-18', eyebrow: 'Etappe 15 · Tour de France', show_state: 'Morgen',
-      race_key: 'tour-de-france', level: '1',
+      race_key: 'tour-de-france', level: 'm',
       departure: 'Loudenvielle', arrival: 'Plateau de Beille', distance_km: 197,
       vertical_m: 2400, profile_score: 402, watchability: 8 },
     { date: '2026-07-19', eyebrow: 'Etappe 4 · Tour de France Femmes · Dames', show_state: 'Overmorgen',
-      race_key: 'tour-de-france-femmes', level: '24',
+      race_key: 'tour-de-france-femmes', level: 'v',
       departure: 'Saumur', arrival: 'Poitiers', distance_km: 130, vertical_m: 1500,
       profile_score: 120, watchability: 5 },
     { date: '2026-07-20', eyebrow: 'Etappe 5 · Tour de France Femmes · Dames', show_state: 'Za 20 jul',
-      race_key: 'tour-de-france-femmes', level: '24',
+      race_key: 'tour-de-france-femmes', level: 'v',
       departure: 'Poitiers', arrival: 'Limoges', distance_km: 152, vertical_m: 1900,
       profile_score: 180, watchability: 6 },
   ],
@@ -47,9 +47,9 @@ const attrs = {
   // koersen die tegelijk lopen met hun eigen uitslag en standen
   races: [
     { primary: true, key: 'tour-de-france', label: 'Tour de France',
-      race_name: 'Tour de France', women: false, level: '1', jersey: '#F3C700' },
+      race_name: 'Tour de France', women: false, level: 'm', jersey: '#F3C700' },
     { key: 'tour-de-france-femmes', label: 'Tour de France Femmes · Dames',
-      race_name: 'Tour de France Femmes', women: true, level: '24', jersey: '#F3C700',
+      race_name: 'Tour de France Femmes', women: true, level: 'v', jersey: '#F3C700',
       eyebrow: 'Etappe 4 · Tour de France Femmes · Dames', show_state: 'Overmorgen',
       days_until: 2,
       last_stage_label: 'Etappe 3 · Tour de France Femmes',
@@ -87,6 +87,21 @@ const attrs = {
     { name: 'NPO 1', time: '14:15', logo: '' },
     { name: 'Eurosport 1', time: '12:45', logo: '' },
   ],
+  // eerder gereden etappes om in terug te bladeren; zo levert `_build_past`
+  // ze aan: nieuw naar oud, alleen voor de koers op de tegel
+  past: [
+    { date: '2026-07-17', race_key: 'tour-de-france', level: 'm',
+      eyebrow: 'Etappe 12 \u00b7 Tour de France',
+      departure: 'Auch', arrival: 'Hautacam', distance_km: 181,
+      results: [
+        { rank: 1, rider: 'Vingegaard Jonas', time: '4:44:12' },
+        { rank: 2, rider: 'Pogacar Tadej', time: '4:44:30' },
+      ] },
+    { date: '2026-07-16', race_key: 'tour-de-france', level: 'm',
+      eyebrow: 'Etappe 11 \u00b7 Tour de France',
+      departure: 'Toulouse', arrival: 'Toulouse', distance_km: 157,
+      results: [{ rank: 1, rider: 'Girmay Biniam', time: '3:31:08' }] },
+  ],
 };
 
 const { races: _races, ...zonderKoerslijst } = attrs;
@@ -98,13 +113,20 @@ const voorDeStart = {
   last_stage_label: '', last_result: [], gc_top: [], points_top: [],
   kom_top: [], youth_top: [], other_label: '', other_result: [],
   races: [{ primary: true, key: 'tour-de-france', label: 'Tour de France',
-            race_name: 'Tour de France', women: false, level: '1', jersey: '#F3C700' }],
+            race_name: 'Tour de France', women: false, level: 'm', jersey: '#F3C700' }],
   startlist_riders: 176, startlist_teams: 22,
   startlist_top: [
     { rank: 1, rider: 'Pogacar Tadej', team: 'UAE Team Emirates', team_code: 'UAD', points: 4521 },
     { rank: 2, rider: 'Evenepoel Remco', team: 'Soudal Quick-Step', points: 3310 },
     { rank: 6, rider: 'Vingegaard Jonas', team: 'Team Visma', team_code: 'TVL', points: 2104 },
   ],
+};
+
+// alleen mannenkoersen: waarmee een kaart die de vrouwen wil niets overhoudt
+const alleenMannen = {
+  ...attrs,
+  upcoming: attrs.upcoming.filter((u) => u.level === 'm'),
+  races: attrs.races.filter((r) => r.level === 'm'),
 };
 
 const gevallen = {
@@ -264,6 +286,71 @@ for (const [naam, a] of Object.entries(gevallen)) {
   await page.screenshot({ path: 'kaart-koerskeuze.png', fullPage: true });
 }
 
+// ── terugbladeren door de uitslagen ─────────────────
+{
+  const uit = await page.evaluate(([alle]) => {
+    document.getElementById('doel').innerHTML = '';
+    const kaart = document.createElement('cycling-next-race-card');
+    kaart.setConfig({ entity: 'sensor.cycling_next_race' });
+    document.getElementById('doel').appendChild(kaart);
+    kaart.hass = { states: { 'sensor.cycling_next_race': {
+      state: 'Tour de France', last_updated: 'blader', attributes: alle } } };
+    const r = kaart.shadowRoot;
+    r.querySelector('dialog').showModal();
+    const sectie = r.querySelector('.uitslagen');
+    if (!sectie) return { sectie: false };
+    const titel = () => sectie.querySelector('.bladtitel').textContent;
+    const zichtbaar = () => Array.prototype.map.call(
+      sectie.querySelectorAll('.blad'), (b) => getComputedStyle(b).display !== 'none');
+    const ouder = sectie.querySelector('.ouder');
+    const nieuwer = sectie.querySelector('.nieuwer');
+    const stand = () => ({ titel: titel(), open: String(zichtbaar()),
+                           terug: ouder.disabled, vooruit: nieuwer.disabled,
+                           tekst: sectie.textContent });
+    const start = stand();
+    ouder.click();
+    const een = stand();
+    ouder.click();
+    const twee = stand();
+    nieuwer.click();
+    const terug = stand();
+    // het tweede koersblok heeft geen `past`: daar horen geen pijlen te staan
+    const knoppen = r.querySelectorAll('.koers');
+    if (knoppen.length > 1) knoppen[1].click();
+    const blokken = r.querySelectorAll('.blok');
+    const ander = blokken[1] ? blokken[1].querySelectorAll('.uitslagen').length : -1;
+    return { sectie: true, bladen: sectie.querySelectorAll('.blad').length,
+             start, een, twee, terug, ander };
+  }, [attrs]);
+
+  const p = [];
+  if (!uit.sectie) p.push('geen bladerbare uitslag getekend');
+  else {
+    if (uit.bladen !== 3) p.push(`${uit.bladen} bladzijden, verwacht 3`);
+    if (uit.start.titel !== 'Etappe 13 \u00b7 uitslag')
+      p.push(`kop bij openen: "${uit.start.titel}"`);
+    if (uit.start.open !== 'true,false,false')
+      p.push(`bij openen staat niet alleen de laatste uitslag open: ${uit.start.open}`);
+    if (!uit.start.vooruit) p.push('de pijl naar voren staat aan op de nieuwste uitslag');
+    if (uit.een.titel !== 'Etappe 12 \u00b7 Tour de France')
+      p.push(`kop na \u00e9\u00e9n keer terug: "${uit.een.titel}"`);
+    if (uit.een.tekst.indexOf('Vingegaard') < 0)
+      p.push('de uitslag van etappe 12 staat er niet');
+    if (uit.een.tekst.indexOf('Pogacar Tadej') >= 0 &&
+        uit.een.open !== 'false,true,false')
+      p.push(`na terug staat de verkeerde bladzijde open: ${uit.een.open}`);
+    if (!uit.twee.terug) p.push('de pijl naar achteren staat aan op de oudste uitslag');
+    if (uit.twee.titel !== 'Etappe 11 \u00b7 Tour de France')
+      p.push(`kop op de oudste uitslag: "${uit.twee.titel}"`);
+    if (uit.terug.titel !== uit.een.titel)
+      p.push(`de pijl naar voren komt niet terug op etappe 12: "${uit.terug.titel}"`);
+    if (uit.ander !== 0)
+      p.push(`het blok van de andere koers heeft ${uit.ander} bladerbare uitslagen`);
+  }
+  if (p.length) { console.log(`FOUT  terugbladeren: ${p.join(', ')}`); mislukt++; }
+  else console.log(`ok    terugbladeren \u2014 ${uit.bladen} bladzijden`);
+}
+
 // ── vormgeving ───────────────────────────────────────────────────
 // Elke vormgeving moet dezelfde kaart opleveren, alleen anders opgemaakt.
 // De ha-card-vervanger hierboven zet zijn achtergrond en afronding inline,
@@ -377,8 +464,8 @@ for (const [design, marge] of [['default', '10px'], ['ha', '8px 16px 16px'],
  * vrouwen wil hoort de vrouwenkoers naar de tegel te halen in plaats van
  * leeg te blijven. */
 {
-  const uit = await page.evaluate(([alle]) => {
-    const bouw = (levels, preview) => {
+  const uit = await page.evaluate(([alle, alleenMannen]) => {
+    const bouw = (levels, preview, attrs) => {
       document.getElementById('doel').innerHTML = '';
       const kaart = document.createElement('cycling-next-race-card');
       const config = { entity: 'sensor.cycling_next_race', visible_days: 0 };
@@ -387,7 +474,8 @@ for (const [design, marge] of [['default', '10px'], ['ha', '8px 16px 16px'],
       if (preview) kaart.preview = true;
       document.getElementById('doel').appendChild(kaart);
       kaart.hass = { states: { 'sensor.cycling_next_race': {
-        state: 'x', last_updated: String(levels) + preview, attributes: alle } } };
+        state: 'x', last_updated: String(levels) + preview + !!attrs,
+        attributes: attrs || alle } } };
       const r = kaart.shadowRoot;
       const dlg = r.querySelector('dialog');
       const html = r.innerHTML;
@@ -402,12 +490,14 @@ for (const [design, marge] of [['default', '10px'], ['ha', '8px 16px 16px'],
     };
     return {
       alles: bouw(null, false),
-      mannen: bouw(['1'], false),
-      vrouwen: bouw(['24'], false),
-      niets: bouw(['26'], false),
-      nietsPreview: bouw(['26'], true),
+      mannen: bouw(['m'], false),
+      vrouwen: bouw(['v'], false),
+      // een niveau waar niets van te koersen valt: de vrouwen gekozen terwijl
+      // de sensor alleen mannenkoersen levert
+      niets: bouw(['v'], false, alleenMannen),
+      nietsPreview: bouw(['v'], true, alleenMannen),
     };
-  }, [attrs]);
+  }, [attrs, alleenMannen]);
 
   const p = [];
   if (uit.alles.knoppen !== 2) p.push(`zonder keuze ${uit.alles.knoppen} knoppen i.p.v. 2`);

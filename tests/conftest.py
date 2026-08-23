@@ -85,6 +85,19 @@ def wt():
 
 
 @pytest.fixture(scope="session")
+def cs():
+    """De cyclingstage-module.
+
+    De module zelf gebruikt alleen de standaardbibliotheek, maar het
+    package-`__init__` importeert Home Assistant, dus de stubs zijn nodig.
+    """
+    _installeer_stubs()
+    if str(COMPONENTS) not in sys.path:
+        sys.path.insert(0, str(COMPONENTS))
+    return importlib.import_module("cycling_next_race.cyclingstage")
+
+
+@pytest.fixture(scope="session")
 def const():
     """De constantenmodule."""
     _installeer_stubs()

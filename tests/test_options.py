@@ -4,6 +4,7 @@ Wat hier getest wordt is de vertaling van opties naar gedrag; of het
 optiescherm zelf verschijnt is alleen in een draaiende Home Assistant te
 zien.
 """
+from datetime import date
 from datetime import timedelta
 
 
@@ -64,8 +65,10 @@ def test_cache_verwart_grote_en_kleine_profielen_niet(wt):
         return [[i * 1.0, 100 + i] for i in range(args[1])], []
 
     c._job = nep_job
-    etappe = {"stage_url": "race/tour-de-france/2026/stage-3",
-              "race_url": "race/tour-de-france/2026", "idx": 3}
+    etappe = {"stage_url": "https://www.cyclingstage.com/tour-de-france-2026-route/"
+                           "stage-3-tdf-2026/",
+              "race_url": "https://www.cyclingstage.com/tour-de-france-2026-route/",
+              "race_slug": "tour-de-france", "idx": 3, "date": date(2026, 7, 3)}
 
     klein = asyncio.run(c._gpx_for(etappe, 60))
     groot = asyncio.run(c._gpx_for(etappe, 200))
@@ -88,8 +91,9 @@ def test_beschikbaarheid_blijft_bekend_voor_de_koerskeuze(wt):
         return {} if fn is wt._fetch_gpx_index else ([], [])
 
     c._job = zonder_profiel
-    geen = {"stage_url": "race/tour-de-france/2026/stage-1",
-            "race_url": "race/tour-de-france/2026", "idx": 1}
+    geen = {"stage_url": "https://www.cyclingstage.com/tour-de-france-2026-route/stage-1-x-2026/",
+           "race_url": "https://www.cyclingstage.com/tour-de-france-2026-route/",
+           "race_slug": "tour-de-france", "idx": 1, "date": date(2026, 7, 1)}
     asyncio.run(c._gpx_for(geen, 60))
     assert c._gpx_rang(geen) == 1
 
@@ -97,8 +101,9 @@ def test_beschikbaarheid_blijft_bekend_voor_de_koerskeuze(wt):
         return [[0.0, 10], [1.0, 20]], []
 
     c._job = met_profiel
-    wel = {"stage_url": "race/giro-d-italia/2026/stage-1",
-           "race_url": "race/giro-d-italia/2026", "idx": 1}
+    wel = {"stage_url": "https://www.cyclingstage.com/giro-d-italia-2026-route/stage-1-x-2026/",
+           "race_url": "https://www.cyclingstage.com/giro-d-italia-2026-route/",
+           "race_slug": "giro-d-italia", "idx": 1, "date": date(2026, 7, 1)}
     asyncio.run(c._gpx_for(wel, 60))
     assert c._gpx_rang(wel) == 0
 
@@ -123,8 +128,9 @@ def test_gpx_valt_terug_op_de_overzichtspagina(wt):
         return ([[0.0, 10], [1.0, 20]], []) if args[0] == echt else ([], [])
 
     c._job = nep_job
-    etappe = {"stage_url": "race/vuelta-a-espana/2026/stage-3",
-              "race_url": "race/vuelta-a-espana/2026", "idx": 3}
+    etappe = {"stage_url": "https://www.cyclingstage.com/vuelta-2026-route/stage-3-x-2026/",
+           "race_url": "https://www.cyclingstage.com/vuelta-2026-route/",
+           "race_slug": "vuelta", "idx": 3, "date": date(2026, 7, 3)}
     elev, _ = asyncio.run(c._gpx_for(etappe, 60))
 
     assert elev, "de terugval leverde geen profiel op"
@@ -142,16 +148,19 @@ def test_gpx_overzichtspagina_hoogstens_een_keer_per_koers(wt):
 
     async def nep_job(fn, *args):
         if fn is wt._fetch_gpx_index:
-            index_verzoeken.append(args[0])
+            index_verzoeken.append(args[0].get("race_slug"))
             return {}
         return [], []
 
     c._job = nep_job
     for n in (3, 4):
-        asyncio.run(c._gpx_for({"stage_url": f"race/vuelta-a-espana/2026/stage-{n}",
-                                "race_url": "race/vuelta-a-espana/2026",
-                                "idx": n}, 60))
-    assert index_verzoeken == ["race/vuelta-a-espana/2026"]
+        asyncio.run(c._gpx_for(
+                {"stage_url": f"https://www.cyclingstage.com/vuelta-2026-route/"
+                              f"stage-{n}-spain-2026/",
+                 "race_url": "https://www.cyclingstage.com/vuelta-2026-route/",
+                 "race_slug": "vuelta", "idx": n,
+                 "date": date(2026, 8, 20 + n)}, 60))
+    assert index_verzoeken == ["vuelta"], index_verzoeken
 
 
 

@@ -42,6 +42,7 @@ from .const import (
     CONF_START_N,
     CONF_UPCOMING_DAYS,
     CONF_UPCOMING_N,
+    CONF_PAST_N,
     DEFAULT_GC_N,
     DEFAULT_LIVE_SCAN_MINUTES,
     DEFAULT_MAX_OTHER,
@@ -53,7 +54,9 @@ from .const import (
     DOMAIN,
     NAME,
     NIVEAUS,
+    OUDE_NIVEAUS,
     OPTION_DEFAULTS,
+    PAST_RESULT_N,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -97,13 +100,13 @@ MAX_PLOEGCODES_PER_RONDE = 12
 LEIDERSTRUI = {
     "tour-de-france": "#F3C700",          # geel
     "tour-de-france-femmes": "#F3C700",   # geel
-    "giro-d-italia": "#E6007E",           # roze
-    "giro-d-italia-women": "#E6007E",     # roze
-    "vuelta-a-espana": "#D0021B",         # rood
-    "vuelta-espana-femenina": "#D0021B",  # rood
+    "giro": "#E6007E",                    # roze
+    "giro-women": "#E6007E",              # roze
+    "vuelta": "#D0021B",                  # rood
+    "vuelta-femenina": "#D0021B",         # rood
     "paris-nice": "#F3C700",              # geel
     "tirreno-adriatico": "#0E5FA8",       # blauw
-    "dauphine": "#F3C700",                # geel
+    "criterium-du-dauphine": "#F3C700",   # geel
     "tour-de-suisse": "#F3C700",          # geel
     "tour-de-romandie": "#F3C700",        # geel
     "tour-down-under": "#C8862B",         # oker
@@ -228,9 +231,19 @@ def _fmt_nl(d: date) -> str:
     return f"{d.day} {MONTHS_NL[d.month]}"
 
 
-def _race_slug(url: str) -> str:
-    m = re.match(r"race/([^/]+)", url)
-    return m.group(1) if m else ""
+def _race_slug(url_of_slug: str) -> str:
+    """De cyclingstage-slug van een koers.
+
+    Neemt zowel een kale slug ("vuelta") als een cyclingstage-adres aan, zodat
+    aanroepers die alleen een adres bij de hand hebben niets hoeven te weten.
+    """
+    from . import cyclingstage as cs
+
+    tekst = url_of_slug or ""
+    if "/" not in tekst:
+        return tekst
+    m = re.search(r"/(\d{4})[-/]", tekst) or re.search(r"-(\d{4})\b", tekst)
+    return cs.slug_van(tekst, int(m.group(1)) if m else 0)
 
 
 def _leiderstrui(race_url: str) -> str:
@@ -250,6 +263,10 @@ def _lees_niveaus(waarde) -> list[str]:
     uit = []
     for deel in waarde:
         niveau = str(deel).strip()
+        # opslag van vóór 0.19 bevat de circuitnummers van procyclingstats;
+        # zonder deze vertaling valt een bestaande installatie stil terug op
+        # de standaard en lijkt zijn keuze zomaar verdwenen
+        niveau = OUDE_NIVEAUS.get(niveau, niveau)
         if niveau in NIVEAUS and niveau not in uit:
             uit.append(niveau)
     return uit
@@ -471,176 +488,173 @@ def _bypass_diag() -> str:
             "procyclingstats komt er ondanks die bypass(es) niet langs")
 
 
-def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, list]:
-    """Kalender van de gekozen niveaus ophalen van procyclingstats.com.
+def _haal_html(url: str, wat: str = "pagina") -> str:
+    """Een pagina van cyclingstage ophalen; "" als het niet lukt.
 
-    Geeft `(koersen, telling, fouten)` terug. De telling is het aantal
-    koersen per niveau en gaat als `levels_diag` naar de attributen, zodat
-    een niveau dat niets oplevert in de interface te zien is.
-
-    `fouten` zijn de meldingen van de niveaus die niet opgehaald konden
-    worden. Die reizen mee omdat een lege kalender twee heel verschillende
-    dingen kan betekenen: een circuitnummer dat niets oplevert, of een bron
-    die niet bereikbaar was. Zonder dat onderscheid meldde de sensor
-    "PCS-structuur gewijzigd?" terwijl procyclingstats simpelweg achter
-    Cloudflare zat — dat wijst de verkeerde kant op.
+    Alle cyclingstage-verzoeken lopen hierlangs, zodat er één plek is waar
+    de user-agent en de tijdslimiet staan. Blokkkeerd worden we hier niet:
+    deze bron doet gewoon open (bewezen — de GPX-profielen kwamen al binnen
+    toen procyclingstats er allang uit lag).
     """
-    from procyclingstats.scraper import Scraper
+    import urllib.request
+    if not url:
+        return ""
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode("utf-8", "replace")
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("%s ophalen mislukt (%s): %s", wat.capitalize(), url, err)
+        return ""
 
-    class RacesCalendar(Scraper):
-        def races(self) -> list[dict]:
-            out = []
-            table = self.html.css_first("table.basic")
-            if table is None:
-                return out
-            for row in table.css("tbody tr"):
-                cells = row.css("td")
-                if len(cells) < 3:
-                    continue
-                link = row.css_first("a")
-                if link is None:
-                    continue
-                href = link.attributes.get("href", "")
-                if not href.startswith("race/"):
-                    continue
-                out.append({
-                    "date": cells[0].text().strip(),
-                    "url": href,
-                    "name": link.text().strip(),
-                })
-            return out
+
+def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, list]:
+    """Kalender van cyclingstage, gefilterd op de gekozen niveaus.
+
+    Eén pagina voor het hele jaar, met per koers het adres erbij. Dat adres
+    is de reden dat de slug-tabellen weg konden: hij komt nu uit de bron in
+    plaats van uit een lijst die iemand had ingevuld.
+
+    Geeft `(koersen, telling, fouten)` terug; de telling is het aantal
+    koersen per niveau en gaat als `levels_diag` naar de attributen.
+
+    Wat cyclingstage dekt is een redactionele keuze — "the races we are
+    passionate about" staat er boven de tabel. Voor de mannen is dat
+    vrijwel de hele WorldTour, bij de vrouwen ontbreken de rondes van een
+    week. Wat er niet in staat heeft ook geen profiel en geen tijdschema.
+    """
+    from . import cyclingstage as cs
 
     global _LAATSTE_KALENDERFOUT
 
-    # vóór de eerste aanroep van het pakket; idempotent, dus dit is na de
-    # eerste ronde een woordenboek-opzoeking
-    _zet_pcs_sessie()
+    url = cs.KALENDER_URL.format(y=year)
+    html = _haal_html(url, "kalender")
+    if not html:
+        melding = f"kalenderpagina {url} kwam niet binnen"
+        nieuw = melding != _LAATSTE_KALENDERFOUT
+        (_LOGGER.warning if nieuw else _LOGGER.debug)("Kalender: %s", melding)
+        _LAATSTE_KALENDERFOUT = melding
+        return [], {}, [melding]
 
-    races = []
-    telling = {}
-    fouten = []
-    proef_pad = ""
-    for niveau in niveaus or []:
-        info = NIVEAUS.get(str(niveau))
-        if info is None:
-            _LOGGER.warning("Onbekend niveau %s, overgeslagen", niveau)
+    alles = cs.parse_kalender(html, year)
+    gekozen = [n for n in (niveaus or []) if n in NIVEAUS]
+    wil_vrouwen = {NIVEAUS[n]["vrouwen"] for n in gekozen}
+
+    koersen, telling = [], {}
+    for n in gekozen:
+        telling[NIVEAUS[n]["naam"]] = 0
+    for k in alles:
+        if k["women"] not in wil_vrouwen:
             continue
-        gevonden = 0
-        pad = f"races.php?year={year}&circuit={niveau}&class=&filter=Filter"
-        try:
-            cal = RacesCalendar(pad)
-            rijen = cal.races()
-        except Exception as err:  # noqa: BLE001
-            # dezelfde fout als de vorige keer? Dan op debug. Dat dempt ook
-            # binnen één ronde: vier niveaus die op hetzelfde stuklopen
-            # leveren één waarschuwing op in plaats van vier.
-            nieuw = str(err) != _LAATSTE_KALENDERFOUT
-            (_LOGGER.warning if nieuw else _LOGGER.debug)(
-                "Kalender van %s ophalen mislukt: %s", info["naam"], err)
-            _LAATSTE_KALENDERFOUT = str(err)
-            telling[info["naam"]] = 0
-            fouten.append(str(err))
-            if nieuw:
-                proef_pad = proef_pad or pad
+        slug = cs.slug_van(k["route_url"] or k["url"], year)
+        if not slug:
+            _LOGGER.debug("Koers zonder bruikbaar adres overgeslagen: %s", k["name"])
             continue
-        for r in rijen:
-            m = re.findall(r"(\d{2})\.(\d{2})", r["date"])
-            if not m:
-                continue
-            # de kalenderlink eindigt vaak op /gc of /result -> terug naar race/<naam>/<jaar>
-            u = re.match(r"(race/[^/]+/\d{4})", r["url"] or "")
-            if not u:
-                continue
-            start = date(year, int(m[0][1]), int(m[0][0]))
-            end = date(year, int(m[-1][1]), int(m[-1][0])) if len(m) > 1 else start
-            races.append({"name": r["name"], "url": u.group(1),
-                          "start": start, "end": end,
-                          "women": info["vrouwen"], "level": str(niveau)})
-            gevonden += 1
-        telling[info["naam"]] = gevonden
-        if not gevonden:
-            # een verkeerd circuitnummer levert stil een lege lijst op; dat
-            # hoort zichtbaar te zijn en niet als "geen koersen deze week"
-            _LOGGER.warning(
-                "Niveau %s (circuit %s) levert geen koersen op%s",
-                info["naam"], niveau,
-                "" if info["zeker"] else
-                " — dit circuitnummer is niet geverifieerd, mogelijk klopt het niet")
-    # dubbele koersen kunnen niet: een koers zit bij PCS in één circuit. Toch
-    # ontdubbelen, want twee blokken van dezelfde koers is lelijker dan de
-    # paar regels die het kost.
-    gezien, uniek = set(), []
-    for r in races:
-        if r["url"] in gezien:
-            continue
-        gezien.add(r["url"])
-        uniek.append(r)
-    uniek.sort(key=lambda x: (x["start"], x["women"]))
-    if any("cloudflare" in f.lower() for f in fouten):
-        # zeggen wélke van de twee het is; de melding van procyclingstats
-        # zelf maakt dat onderscheid niet
-        diag = _bypass_diag()
-        fouten.append(diag)
-        if proef_pad:
-            _LOGGER.warning("Cloudflare bij procyclingstats — %s", diag)
-            # en wat de bron werkelijk terugstuurt: een uitdaging of een
-            # weigering. Alleen bij een fout die we nog niet gezien hadden:
-            # een site die ons weigert hoort niet elk half uur een extra
-            # verzoek te krijgen omdat wij willen weten waaróm.
-            antwoord = _pcs_antwoord_diag(_pcs_url(proef_pad))
-            _LOGGER.warning("Antwoord van procyclingstats — %s", antwoord)
-            fouten.append(antwoord)
-        else:
-            _LOGGER.debug("Cloudflare bij procyclingstats — %s", diag)
-    if uniek:
-        # weer contact; de volgende storing is weer nieuws
+        niveau = "v" if k["women"] else "m"
+        koersen.append({
+            "name": k["name"],
+            # de routepagina is waar de etappelijst vandaan komt; de slug
+            # bedient de GPX, het tijdschema en de overzichtspagina
+            "url": k["route_url"] or k["url"],
+            "slug": slug,
+            "start": k["start"],
+            "end": k["end"],
+            "women": k["women"],
+            "level": niveau,
+        })
+        if NIVEAUS[niveau]["naam"] in telling:
+            telling[NIVEAUS[niveau]["naam"]] += 1
+
+    koersen.sort(key=lambda x: (x["start"], x["women"]))
+    if koersen:
         _LAATSTE_KALENDERFOUT = ""
-    _LOGGER.debug("Kalender: %s koersen (%s)", len(uniek),
+    else:
+        _LOGGER.warning("Kalender %s: geen koersen voor de gekozen niveaus (%s)",
+                        year, ", ".join(gekozen) or "geen")
+    _LOGGER.debug("Kalender %s: %s koersen (%s)", year, len(koersen),
                   ", ".join(f"{n}: {a}" for n, a in telling.items()))
-    return uniek, telling, fouten
+    return koersen, telling, []
 
 
 def _event_stages(event: dict) -> list[dict]:
-    """Etappes van een koers met datum. Eendaagse koers = 1 'etappe'."""
+    """Etappes van een koers met datum. Eendaagse koers = 1 'etappe'.
+
+    De routepagina van cyclingstage geeft nummer, datum, start en finish,
+    afstand, terreintype én het adres van elke etappe. Dat scheelt niet
+    alleen raden: afstand en terrein zijn er meteen, dus daar hoeft later
+    geen apart verzoek meer voor.
+
+    Welke pagina de etappelijst draagt verschilt per koers — bij de Vuelta
+    is dat `/vuelta-2026-route/`, bij de Tour Down Under
+    `/tour-down-under-2026/`. Beide kandidaten worden geprobeerd en de
+    eerste die een tabel oplevert wint; dat is nakijken in plaats van raden.
+    """
+    from . import cyclingstage as cs
+
     race_url = event["url"]
-    year = event["start"].year
+    jaar = event["start"].year
+    slug = event.get("slug") or cs.slug_van(race_url, jaar)
+
     if event["start"] == event["end"]:
+        # eendaagse koers: de routepagina is meteen de etappepagina
         return [{
             "date": event["start"], "stage_url": race_url,
             "profile_icon": "", "name": event["name"], "idx": None,
             "one_day": True, "race_url": race_url, "race_name": event["name"],
-            "women": bool(event.get("women")),
-            # het niveau reist mee tot in de attributen; de kaart filtert
-            # er per dashboardkaart op
+            "race_slug": slug, "women": bool(event.get("women")),
             "level": str(event.get("level", "")),
+            "distance_km": None, "stage_type": "",
+            "departure": "", "arrival": "",
         }]
 
-    from procyclingstats import Race
-    out = []
-    try:
-        race = Race(f"{race_url}/overview")
-        stages = race.stages()
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Etappelijst ophalen mislukt voor %s: %s", race_url, err)
-        return out
-    for i, st in enumerate(stages, 1):
-        sd = st.get("date")
-        if not sd:
-            continue
-        try:
-            mm, dd = sd.split("-")
-            d = date(year, int(mm), int(dd))
-        except (ValueError, AttributeError):
-            continue
-        out.append({
-            "date": d, "stage_url": st.get("stage_url"),
-            "profile_icon": (st.get("profile_icon") or "").strip(),
-            "name": st.get("stage_name", ""), "idx": i, "one_day": False,
-            "race_url": race_url, "race_name": event["name"],
-            "women": bool(event.get("women")),
-            "level": str(event.get("level", "")),
-        })
-    return out
+    for kandidaat in _etappelijst_urls(race_url):
+        rijen = cs.parse_etappes(_haal_html(kandidaat, "routepagina"), jaar)
+        if rijen:
+            break
+    else:
+        _LOGGER.debug("Geen etappelijst gevonden voor %s", race_url)
+        return []
+
+    return [{
+        "date": r["date"],
+        "stage_url": r["url"] or race_url,
+        "profile_icon": "",
+        "name": r["name"],
+        "idx": r["idx"],
+        "one_day": False,
+        "race_url": race_url,
+        "race_name": event["name"],
+        "race_slug": slug,
+        "women": bool(event.get("women")),
+        "level": str(event.get("level", "")),
+        # uit de etappelijst, dus zonder extra verzoek
+        "distance_km": r["distance_km"],
+        "stage_type": r["stage_type"],
+        "departure": r["departure"],
+        "arrival": r["arrival"],
+    } for r in rijen]
+
+
+def _etappelijst_urls(race_url: str) -> list[str]:
+    """Waar de etappetabel van een koers kan staan.
+
+    De kalender wijst naar de routepagina (`/vuelta-2026-route/spain-route-2026/`),
+    maar de etappetabel staat een niveau hoger (`/vuelta-2026-route/`) —
+    nagekeken op de opgeslagen Vuelta-pagina. Vandaar de bovenliggende
+    pagina eerst, met de routepagina zelf als terugval voor koersen waar het
+    andersom ligt. Wie een tabel oplevert heeft gelijk; dat is nakijken en
+    geen aanname.
+    """
+    if not race_url:
+        return []
+    kaal = race_url.rstrip("/")
+    ouder = kaal.rsplit("/", 1)[0]
+    uit = []
+    if ouder.count("/") > 2:            # niet tot voorbij het domein
+        uit.append(ouder + "/")
+    uit.append(kaal + "/")
+    return uit
 
 
 def _fetch_race_climbs(race_url: str) -> dict:
@@ -1003,189 +1017,61 @@ def _repair_rows(rows, roster, name_key="rider", team_key="team"):
     return hersteld
 
 
-def _fetch_stage(stage_url: str, one_day: bool = False,
-                 result_n: int = DEFAULT_RESULT_N,
+def _fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,
                  gc_n: int = DEFAULT_GC_N) -> dict:
-    """Alle relevante velden uit één Stage-pagina (meta + cols + uitslag + klassement)."""
+    """Uitslag en klassementen van één etappe, van cyclingstage.
+
+    Cyclingstage zet de uitslag als kop met een alinea eronder, niet in een
+    tabel; `parse_uitslag` leest dat. Wat er niet staat blijft leeg:
+
+    - **geen ploeg.** Er is alleen een landcode, en een land is geen ploeg.
+      Die gaat als `country` mee; `team` en `team_code` blijven weg en de
+      kaart laat de haakjes dan weg.
+    - **geen punten-, berg- en jongerenklassement.** Op 23 augustus 2026
+      hebben de eigen klassementspagina's alleen de puntenverdeling, met de
+      mededeling dat de standen "in a table during La Vuelta" komen. De
+      herkenning staat klaar in `parse_uitslag`, dus zodra ze verschijnen
+      lopen ze mee.
+    - **geen dagwinst.** Die werd berekend uit de "Prev"-kolom bij
+      procyclingstats; cyclingstage geeft geen vorige stand per rij.
+    """
+    from . import cyclingstage as cs
 
     data = {
         "ok": False, "finished": False,
-        "departure": "", "arrival": "", "distance": None, "vertical": None,
-        "profile_icon": "", "profile_score": None, "stage_type": "",
+        "departure": stage.get("departure") or "", "arrival": stage.get("arrival") or "",
+        "distance": stage.get("distance_km"), "vertical": None,
+        "profile_icon": "", "profile_score": None,
+        "stage_type": stage.get("stage_type") or "",
         "start_time": "", "climbs_raw": [],
         "results": [], "gc": [], "points_leader": "", "kom_leader": "",
         "youth_leader": "", "points_top": [], "kom_top": [], "youth_top": [],
         "startlist_quality": None,
     }
-    if not stage_url:
+    url = cs.uitslag_url(stage.get("stage_url") or "")
+    if not url:
         return data
-    st = _stage_obj(stage_url, one_day)
-    if st is None:
+    html = _haal_html(url, "uitslag")
+    if not html:
         return data
-
+    uit = cs.parse_uitslag(html)
     data["ok"] = True
-    data["departure"] = _safe(st.departure, "") or ""
-    data["arrival"] = _safe(st.arrival, "") or ""
-    data["distance"] = _num(_safe(st.distance))
-    data["vertical"] = _int(_safe(st.vertical_meters))
-    data["profile_icon"] = (_safe(st.profile_icon, "") or "").strip()
-    data["profile_score"] = _int(_safe(st.profile_score))
-    data["stage_type"] = _safe(st.stage_type, "") or ""
-    data["startlist_quality"] = _quality(st)
-    data["start_time"] = _safe(st.start_time, "") or ""
-    data["climbs_raw"] = _safe(
-        lambda: st.climbs("climb_name", "climb_url", "category"), []) or []
-
-    # adres van de ploegpagina per ploegnaam. Blijft binnen deze functie en
-    # gaat níét mee in de rijen: de coordinator zoekt er de ploegcode mee op,
-    # en in de attributen zou het alleen ruimte kosten.
-    team_urls: dict[str, str] = {}
-
-    def _onthoud_ploeg(r):
-        naam = (r.get("team_name") or "").strip()
-        adres = (r.get("team_url") or "").strip()
-        if naam and adres and naam not in team_urls:
-            team_urls[naam] = adres
-
-    results = _safe(lambda: st.results(
-        "rank", "rider_name", "team_name", "team_url", "time", "status"), []) or []
-    if not results:   # oudere pagina zonder ploeglink
-        results = _safe(
-            lambda: st.results("rank", "rider_name", "team_name", "time", "status"), []) or []
-    _fix_names(results, _row_names(st, "stage"), "uitslag")
-    clean = []
-    for r in results:
-        if r.get("rank") in (None, "") or r.get("status") not in (None, "DF", ""):
-            continue
-        _onthoud_ploeg(r)
-        clean.append({
-            "rank": r.get("rank"),
-            "rider": (r.get("rider_name") or "").strip(),
-            "team": (r.get("team_name") or "").strip(),
-            "time": r.get("time") or "",
-        })
-        if len(clean) >= result_n:
-            break
-    data["results"] = clean
-    data["finished"] = bool(clean)
-
-    gc = _safe(lambda: st.gc(
-        "rank", "rider_name", "team_name", "team_url", "time", "prev_rank"), []) or []
-    if not gc:
-        gc = _safe(lambda: st.gc(
-            "rank", "rider_name", "team_name", "time", "prev_rank"), []) or []
-    if not gc:
-        gc = _safe(lambda: st.gc("rank", "rider_name", "team_name", "time"), []) or []
-    _fix_names(gc, _row_names(st, "gc"), "klassement")
-    for _g in gc:
-        _onthoud_ploeg(_g)
-    data["gc"] = [{
-        "rank": g.get("rank"),
-        "rider": (g.get("rider_name") or "").strip(),
-        "team": (g.get("team_name") or "").strip(),
-        "time": g.get("time") or "",
-        "move": _move(g.get("prev_rank"), g.get("rank")),
-        "prev": _int(g.get("prev_rank")),
-    } for g in gc[:gc_n]]
-    _dg, _dh, _draw = _delta_col(st, "gc")
-    data["gain_headers"] = _dh
-    data["gain_raw"] = _draw
-    for _row, _d in zip(data["gc"], _dg):
-        if _d is not None:
-            _row["gain_s"] = _d
-
-    def _leader(fn):
-        rows = _safe(lambda: fn("rank", "rider_name"), []) or []
-        for r in rows:
-            if r.get("rank") in (1, "1"):
-                return (r.get("rider_name") or "").strip()
-        return (rows[0].get("rider_name").strip() if rows else "")
-
-    data["points_leader"] = _leader(st.points)
-    data["kom_leader"] = _leader(st.kom)
-    data["youth_leader"] = _leader(st.youth)
-
-    def _standings(fn, table_key, n=5):
-        rows = _safe(lambda: fn(
-            "rank", "rider_name", "team_name", "team_url", "points", "prev_rank"), []) or []
-        if not rows:
-            rows = _safe(lambda: fn(
-                "rank", "rider_name", "team_name", "points", "prev_rank"), []) or []
-        if not rows:
-            rows = _safe(lambda: fn("rank", "rider_name", "team_name", "points"), []) or []
-        if not rows:
-            rows = _safe(lambda: fn("rank", "rider_name", "team_name"), []) or []
-        _fix_names(rows, _row_names(st, table_key), table_key)
-        out = []
-        for r in rows:
-            rider = (r.get("rider_name") or "").strip()
-            if not rider:
-                continue
-            _onthoud_ploeg(r)
-            out.append({"rank": r.get("rank"), "rider": rider,
-                        "team": (r.get("team_name") or "").strip(),
-                        "points": r.get("points"),
-                        "move": _move(r.get("prev_rank"), r.get("rank")),
-                        "prev": _int(r.get("prev_rank"))})
-            if len(out) >= n:
-                break
-        return out
-
-    data["points_top"] = _standings(st.points, "points")
-    data["kom_top"] = _standings(st.kom, "kom")
-
-    youth = _safe(lambda: st.youth(
-        "rank", "rider_name", "team_name", "team_url", "time", "prev_rank"), []) or []
-    if not youth:
-        youth = _safe(lambda: st.youth(
-            "rank", "rider_name", "team_name", "time", "prev_rank"), []) or []
-    if not youth:
-        youth = _safe(lambda: st.youth("rank", "rider_name", "team_name", "time"), []) or []
-    _fix_names(youth, _row_names(st, "youth"), "jongeren")
-    for _y in youth:
-        _onthoud_ploeg(_y)
-    data["youth_top"] = [{
-        "rank": g.get("rank"),
-        "rider": (g.get("rider_name") or "").strip(),
-        "team": (g.get("team_name") or "").strip(),
-        "time": g.get("time") or "",
-        "move": _move(g.get("prev_rank"), g.get("rank")),
-        "prev": _int(g.get("prev_rank")),
-    } for g in youth[:5]]
-    for _row, _d in zip(data["youth_top"], _delta_col(st, "youth")[0]):
-        if _d is not None:
-            _row["gain_s"] = _d
-    data["team_urls"] = team_urls
+    data["results"] = uit["results"][:result_n]
+    data["gc"] = uit["gc"][:gc_n]
+    data["points_top"] = uit["points"][:gc_n]
+    data["kom_top"] = uit["kom"][:gc_n]
+    data["youth_top"] = uit["youth"][:gc_n]
+    for sleutel, top in (("points_leader", "points_top"),
+                         ("kom_leader", "kom_top"),
+                         ("youth_leader", "youth_top")):
+        if data[top]:
+            data[sleutel] = data[top][0].get("rider", "")
+    # gereden is: er staat een uitslag. Een pagina die er wel is maar nog
+    # geen uitslag heeft, telt niet als afgelopen etappe.
+    data["finished"] = bool(data["results"])
+    _LOGGER.debug("Uitslag %s: %s rijen, gc %s", url,
+                  len(data["results"]), len(data["gc"]))
     return data
-
-
-def _build_climbs(stage_data: dict, race_climbs: dict) -> list[dict]:
-    """Join stage-cols (naam/categorie) met de koersbrede col-details (km/lengte/%/top)."""
-    out = []
-    for c in stage_data.get("climbs_raw", []):
-        det = race_climbs.get(c.get("climb_url"), {})
-        top = _int(det.get("top"))
-        if top is None:
-            continue  # zonder hoogte/positie kunnen we 'm niet plaatsen
-        out.append({
-            "name": (c.get("climb_name") or "").strip(),
-            "category": str(c.get("category", "")).upper(),
-            "km_to_finish": _num(det.get("km_before_finnish")),
-            "top_m": top,
-            "length_km": _num(det.get("length")),
-            "steepness_pct": _num(det.get("steepness")),
-        })
-    return out
-
-
-# ──────────────────────────────────────────────────────────────
-# Coordinator
-# ──────────────────────────────────────────────────────────────
-
-
-
-def _norm(s: str) -> str:
-    return (s or "").strip().lower()
 
 
 def _show_state_for(sd: date, today: date) -> str:
@@ -1203,27 +1089,38 @@ def _quality(st):
         v = v[-1] if v else None
     return _int(v)
 
+def _fetch_stage_meta(stage: dict) -> dict:
+    """Wat er over een etappe bekend is, uit de etappelijst plus zijn pagina.
 
-def _fetch_stage_meta(stage_url: str, one_day: bool = False) -> dict:
-    """Lichte meta-fetch (dep/arr/afstand/hm/score). Eendaagse: info op /result."""
-    d = {"ok": False, "departure": "", "arrival": "",
-         "distance": None, "vertical": None, "profile_score": None}
-    if not stage_url:
-        return d
-    st = _stage_obj(stage_url, one_day)
-    if st is None:
+    Afstand, terreintype, vertrek en aankomst staan al in de etappelijst en
+    kosten dus niets. Alleen de starttijd, de verwachte finishtijd en de
+    hoogtemeters staan op de etappepagina zelf.
+
+    `profile_score` bestaat bij cyclingstage niet en blijft leeg; de
+    watchscore leunt dan op afstand, hoogtemeters, terreintype en de cols
+    uit de GPX. Niets schatten waar de bron zwijgt.
+    """
+    from . import cyclingstage as cs
+
+    d = {
+        "ok": False,
+        "departure": stage.get("departure") or "",
+        "arrival": stage.get("arrival") or "",
+        "distance": stage.get("distance_km"),
+        "vertical": None,
+        "profile_score": None,
+        "stage_type": stage.get("stage_type") or "",
+        "start_time": "",
+    }
+    html = _haal_html(stage.get("stage_url"), "etappepagina")
+    if not html:
         return d
     d["ok"] = True
-    d["departure"] = _safe(st.departure, "") or ""
-    d["arrival"] = _safe(st.arrival, "") or ""
-    d["distance"] = _num(_safe(st.distance))
-    d["vertical"] = _int(_safe(st.vertical_meters))
-    d["profile_score"] = _int(_safe(st.profile_score))
-    d["stage_type"] = _safe(st.stage_type, "") or ""
-    d["startlist_quality"] = _quality(st)
-    # starttijd hoort bij de lichte fetch: de koersen in de pop-up tekenen
-    # hun profiel uit `upcoming` en anders staat daar geen tijd op
-    d["start_time"] = _safe(st.start_time, "") or ""
+    meta = cs.parse_etappe_meta(html)
+    d["start_time"] = meta.get("start_time", "")
+    d["finish_time"] = meta.get("finish_time", "")
+    if meta.get("vertical_m") is not None:
+        d["vertical"] = meta["vertical_m"]
     return d
 
 
@@ -1393,26 +1290,6 @@ def _channels_from(html, race_url, idx, race_name):
     return ch
 
 
-# Etappe-artikelen op cyclingstage (colnamen + verwachte finishtijd).
-# De adressen volgen geen vast patroon, dus per koers een sjabloon.
-CYCLINGSTAGE_ROUTE = {
-    "tour-de-france":
-        "https://www.cyclingstage.com/tour-de-france-{y}-route/stage-{n}-tdf-{y}/",
-    # Let op: het achtervoegsel is het land, niet de koers - "stage-5-italy-2026"
-    # en "stage-3-spain-2026", niet "stage-5-giro-2026". Nagekeken op de
-    # koerspagina's van cyclingstage (2025 en 2026); alleen de Tour gebruikt
-    # zijn eigen afkorting.
-    "giro-d-italia":
-        "https://www.cyclingstage.com/giro-{y}-route/stage-{n}-italy-{y}/",
-    "vuelta-a-espana":
-        "https://www.cyclingstage.com/vuelta-{y}-route/stage-{n}-spain-{y}/",
-    # vrouwen (adressen geverifieerd op cyclingstage)
-    "tour-de-france-femmes":
-        "https://www.cyclingstage.com/tour-de-france-femmes-{y}/stage-{n}-tdf-{y}-women/",
-    "giro-d-italia-women":
-        "https://www.cyclingstage.com/giro-women-{y}/stage-{n}-route-ita-{y}/",
-}
-
 _CLIMB_KW = (r"(?:Grand |Petit |Haut[e]? |Mont )?(?:Col|Côte|Cote|Mur|Ballon|"
              r"Cormet|Montée|Montee|Alpe|Puy|Port|Puerto|Colle|Passo|Cima|"
              r"Monte|Alto|Collada|Hourquette|Croix|Cabane)\b")
@@ -1422,16 +1299,6 @@ _CLIMB_NAME = _CLIMB_KW + (r"(?:(?:[ ]d['’]| du | de la | de l['’]| des | de
 _BARE_CLIMB = {"col", "côte", "cote", "mur", "ballon", "cormet", "montée", "montee",
                "alpe", "puy", "port", "puerto", "colle", "passo", "cima", "monte",
                "alto", "collada", "hourquette", "croix", "cabane"}
-
-
-def _stage_article_url(race_url, stage_idx, one_day):
-    m = re.match(r"race/([^/]+)/(\d{4})", race_url or "")
-    if not m or one_day or not stage_idx:
-        return None
-    sjabloon = CYCLINGSTAGE_ROUTE.get(m.group(1))
-    if not sjabloon:
-        return None
-    return sjabloon.format(y=m.group(2), n=stage_idx)
 
 
 def _fetch_stage_names(url, distance=None):
@@ -1621,12 +1488,6 @@ GPX_OVERRIDE = {
 }
 
 
-CYCLINGSTAGE_SLUG = {
-    "tour-de-france": "tour-de-france",
-    "giro-d-italia": "giro",
-    "vuelta-a-espana": "vuelta",
-}
-
 # De drie grote rondes. Ze duren drie weken en zijn in die periode de koers
 # waar het om gaat; een tegel die tijdens de Vuelta de Renewi Tour laat zien
 # klopt niet, ook al heeft die toevallig wél een hoogteprofiel. Een vaste
@@ -1635,116 +1496,29 @@ CYCLINGSTAGE_SLUG = {
 # Giro Women, Vuelta Femenina) staan er bewust niet in: dat zijn geen grote
 # rondes, en wie ze toch voor wil laten gaan verandert de volgorde en niet
 # deze lijst.
-GROTE_RONDES = {"tour-de-france", "giro-d-italia", "vuelta-a-espana"}
+GROTE_RONDES = {"tour-de-france", "giro", "vuelta"}
 
 
-def _is_grote_ronde(race_url: str) -> bool:
-    m = re.match(r"race/([^/]+)/", race_url or "")
-    return bool(m) and m.group(1) in GROTE_RONDES
+def _is_grote_ronde(slug_of_url: str) -> bool:
+    return _race_slug(slug_of_url) in GROTE_RONDES
 
-# Overige rittenkoersen op cyclingstage. Let op: deze gebruiken
-# "stage-{N}-route.gpx" in plaats van "stage-{N}-parcours.gpx".
-# (PCS-slug -> cyclingstage-CDN-slug)
-CYCLINGSTAGE_STAGERACE = {
-    "tour-down-under": "tour-down-under",
-    "volta-a-la-comunitat-valenciana": "tour-of-valencia",
-    "uae-tour": "uae-tour",
-    "ruta-del-sol": "ruta-del-sol",
-    "volta-ao-algarve": "volta-ao-algarve",
-    "paris-nice": "paris-nice",
-    "tirreno-adriatico": "tirreno-adriatico",
-    "volta-a-catalunya": "volta-a-catalunya",
-    "itzulia-basque-country": "tour-of-the-basque-country",
-    "o-gran-camino": "o-gran-camino",
-    "tour-of-the-alps": "tour-of-the-alps",
-    "tour-de-romandie": "tour-de-romandie",
-    "dauphine": "criterium-du-dauphine",
-    "tour-de-suisse": "tour-de-suisse",
-    "renewi-tour": "renewi-tour",
-    "tour-of-britain": "tour-of-britain",
-    # vrouwen (bevestigd: .../tour-de-france-femmes/2026/stage-1-route.gpx)
-    "tour-de-france-femmes": "tour-de-france-femmes",
-    "giro-d-italia-women": "giro-women",
-    "vuelta-espana-femenina": "vuelta-femenina",
-    "uae-tour-women": "uae-tour-women",
-    "itzulia-women": "itzulia-women",
-    "tour-de-suisse-women": "tour-de-suisse-women",
-}
+def _gpx_urls(stage: dict) -> list[str]:
+    """Kandidaat-GPX-adressen voor een etappe.
 
-# Eendaagse koersen: cyclingstage-GPX = .../{slug}/{jaar}/route.gpx
-# (PCS-slug -> cyclingstage CDN-slug; uitbreidbaar)
-CYCLINGSTAGE_ONEDAY = {
-    # PCS-slug -> kandidaat-namen op de cyclingstage-CDN (eerste die werkt wint).
-    # De CDN-naam volgt doorgaans exact de paginanaam, bv. de pagina
-    # "clasica-de-san-sebastian-2026" hoort bij ".../clasica-de-san-sebastian/2026/".
-    "omloop-het-nieuwsblad": ("omloop-het-nieuwsblad",),
-    "kuurne-brussels-kuurne": ("kuurne-brussels-kuurne",),
-    "strade-bianche": ("strade-bianche",),
-    "milano-sanremo": ("milan-san-remo",),
-    "e3-harelbeke": ("e3-saxo-classic",),
-    "gent-wevelgem": ("gent-wevelgem", "in-flanders-fields"),
-    "dwars-door-vlaanderen": ("dwars-door-vlaanderen",),
-    "ronde-van-vlaanderen": ("tour-of-flanders",),
-    "paris-roubaix": ("paris-roubaix",),
-    "brabantse-pijl": ("brabantse-pijl",),
-    "amstel-gold-race": ("amstel-gold-race",),
-    "la-fleche-wallonne": ("la-fleche-wallonne", "fleche-wallonne"),
-    "liege-bastogne-liege": ("liege-bastogne-liege",),
-    "san-sebastian": ("clasica-san-sebastian", "clasica-de-san-sebastian"),
-    "bretagne-classic-ouest-france": ("bretagne-classic",),
-    "gp-quebec": ("gp-quebec",),
-    "gp-montreal": ("gp-montreal",),
-    "il-lombardia": ("tour-of-lombardy", "il-lombardia"),
-    "paris-tours": ("paris-tours",),
-    # vrouwen: cyclingstage gebruikt eigen paginanamen, dus meerdere kandidaten
-    "strade-bianche-donne": ("strade-bianche-donne",),
-    "milano-sanremo-we": ("milano-san-remo-donne", "milan-san-remo-women"),
-    "gent-wevelgem-women-elite": ("in-flanders-fields-women", "gent-wevelgem-women"),
-    "ronde-van-vlaanderen-we": ("tour-of-flanders-women",),
-    "paris-roubaix-we": ("paris-roubaix-femmes",),
-    "amstel-gold-race-we": ("amstel-gold-race-women",),
-    "la-fleche-wallonne-feminine": ("la-fleche-wallonne-femmes",),
-    "liege-bastogne-liege-femmes": ("liege-bastogne-liege-femmes",),
-    "omloop-het-nieuwsblad-we": ("omloop-het-nieuwsblad-women",),
-}
-
-
-def _gpx_urls(race_url: str, stage_idx, one_day: bool) -> list[str]:
-    """Kandidaat-GPX-adressen op cyclingstage, op volgorde van waarschijnlijkheid.
-
-    Grote rondes gebruiken "stage-{N}-parcours.gpx", de overige rittenkoersen
-    "stage-{N}-route.gpx". Er zit ook een enkele afwijking in ("etappe-5-route"),
-    dus we proberen meerdere varianten.
+    De slug komt uit de kalender en niet meer uit een handmatige tabel; dat
+    was de helft van het Vuelta-probleem. De bestandsnaam blijft een
+    aanname, en daarvoor is `_fetch_gpx_index` de terugval.
     """
-    m = re.match(r"race/([^/]+)/(\d{4})", race_url or "")
-    if not m:
+    from . import cyclingstage as cs
+
+    slug = stage.get("race_slug") or ""
+    jaar = stage["date"].year if stage.get("date") else None
+    if not slug or not jaar:
         return []
-    slug, year = m.group(1), m.group(2)
-    eigen = GPX_OVERRIDE.get(f"{slug}/{year}/{stage_idx}") if stage_idx else None
-    eigen = eigen or GPX_OVERRIDE.get(f"{slug}/{year}")
-    voor = [eigen] if eigen else []
-    basis = f"https://cdn.cyclingstage.com/images/{{}}/{year}"
-    if one_day:
-        namen = CYCLINGSTAGE_ONEDAY.get(slug) or ()
-        if isinstance(namen, str):
-            namen = (namen,)
-        uit = []
-        for cs in namen:
-            uit.append(f"{basis.format(cs)}/route.gpx")
-            uit.append(f"{basis.format(cs)}/parcours.gpx")
-        return voor + uit
-    if not stage_idx:
-        return voor
-    cs = CYCLINGSTAGE_SLUG.get(slug)
-    if cs:
-        return voor + [f"{basis.format(cs)}/stage-{stage_idx}-parcours.gpx",
-                       f"{basis.format(cs)}/stage-{stage_idx}-route.gpx"]
-    cs = CYCLINGSTAGE_STAGERACE.get(slug)
-    if not cs:
-        return voor
-    return voor + [f"{basis.format(cs)}/stage-{stage_idx}-route.gpx",
-            f"{basis.format(cs)}/stage-{stage_idx}-parcours.gpx",
-            f"{basis.format(cs)}/etappe-{stage_idx}-route.gpx"]
+    eigen = GPX_OVERRIDE.get(f"{slug}/{jaar}/{stage.get('idx')}") if stage.get("idx") else None
+    eigen = eigen or GPX_OVERRIDE.get(f"{slug}/{jaar}")
+    vast = cs.gpx_urls(slug, jaar, None if stage.get("one_day") else stage.get("idx"))
+    return ([eigen] if eigen else []) + vast
 
 
 # Overzichtspagina met de GPX-bestanden van één koers, bv.
@@ -1756,17 +1530,14 @@ _GPX_HREF = re.compile(r'href=["\']([^"\']+\.gpx)["\']', re.I)
 _GPX_NUMMER = re.compile(r"(?:stage|etappe|rit)[-_]?0*(\d{1,2})(?:\D|$)", re.I)
 
 
-def _gpx_index_urls(race_url: str) -> list[str]:
-    """Overzichtspagina's van cyclingstage met de GPX-links van deze koers."""
-    m = re.match(r"race/([^/]+)/(\d{4})", race_url or "")
-    if not m:
-        return []
-    slug, year = m.group(1), m.group(2)
-    cs = CYCLINGSTAGE_SLUG.get(slug) or CYCLINGSTAGE_STAGERACE.get(slug)
-    namen = (cs,) if cs else (CYCLINGSTAGE_ONEDAY.get(slug) or ())
-    if isinstance(namen, str):
-        namen = (namen,)
-    return [CYCLINGSTAGE_GPX_INDEX.format(cs=n, y=year) for n in namen]
+def _gpx_index_urls(stage: dict) -> list[str]:
+    """De GPX-overzichtspagina van de koers waar deze etappe bij hoort."""
+    from . import cyclingstage as cs
+
+    slug = stage.get("race_slug") or ""
+    jaar = stage["date"].year if stage.get("date") else None
+    url = cs.gpx_index_url(slug, jaar) if slug and jaar else ""
+    return [url] if url else []
 
 
 def _parse_gpx_index(html: str, basis: str, year: str) -> dict:
@@ -1793,7 +1564,7 @@ def _parse_gpx_index(html: str, basis: str, year: str) -> dict:
     return uit
 
 
-def _fetch_gpx_index(race_url: str) -> dict:
+def _fetch_gpx_index(stage: dict) -> dict:
     """{etappenummer: gpx-adres} zoals cyclingstage ze zelf op een rij zet.
 
     Terugval voor als geen van de vaste adressen uit `_gpx_urls` iets
@@ -1801,7 +1572,7 @@ def _fetch_gpx_index(race_url: str) -> dict:
     pagina noemt het echte adres, dus hier wordt niets geraden.
     """
     import urllib.request
-    for index_url in _gpx_index_urls(race_url):
+    for index_url in _gpx_index_urls(stage):
         try:
             req = urllib.request.Request(
                 index_url,
@@ -1811,8 +1582,8 @@ def _fetch_gpx_index(race_url: str) -> dict:
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("GPX-overzicht ophalen mislukt (%s): %s", index_url, err)
             continue
-        year = re.search(r"(\d{4})", race_url or "")
-        index = _parse_gpx_index(html, index_url, year.group(1) if year else "")
+        jaar = stage["date"].year if stage.get("date") else ""
+        index = _parse_gpx_index(html, index_url, str(jaar))
         if index:
             _LOGGER.debug("GPX-overzicht %s: %s etappes", index_url, len(index))
             return index
@@ -1820,22 +1591,14 @@ def _fetch_gpx_index(race_url: str) -> dict:
     return {}
 
 
-def _times_urls(race_url, stage_idx, one_day):
-    """Tijdschema-pagina's van cyclingstage (bevatten o.a. de tussensprint).
+def _times_urls(stage: dict) -> list[str]:
+    """Tijdschema-pagina's van cyclingstage; daar staat de tussensprint in."""
+    from . import cyclingstage as cs
 
-    Geldt voor alle rittenkoersen die cyclingstage dekt - grote rondes,
-    de overige rittenkoersen en de vrouwenkoersen.
-    """
-    m = re.match(r"race/([^/]+)/(\d{4})", race_url or "")
-    if not m or one_day or not stage_idx:
+    if stage.get("one_day") or not stage.get("idx") or not stage.get("date"):
         return []
-    slug, year = m.group(1), m.group(2)
-    cs = CYCLINGSTAGE_SLUG.get(slug) or CYCLINGSTAGE_STAGERACE.get(slug)
-    if not cs:
-        return []
-    basis = f"https://www.cyclingstage.com/images/{cs}/{year}"
-    return [f"{basis}/stage-{stage_idx}-times.htm",
-            f"{basis}/etappe-{stage_idx}-times.htm"]
+    return cs.times_url(stage.get("race_slug") or "", stage["date"].year,
+                        stage.get("idx"))
 
 
 def _parse_times(html):
@@ -1854,10 +1617,10 @@ def _parse_times(html):
     return sorted(set(out), reverse=True)
 
 
-def _fetch_times(race_url, stage_idx, one_day):
+def _fetch_times(stage: dict):
     """Tussensprint(s) van de etappe; lege lijst als er geen tijdschema is."""
     import urllib.request
-    for url in _times_urls(race_url, stage_idx, one_day):
+    for url in _times_urls(stage):
         try:
             req = urllib.request.Request(
                 url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
@@ -1868,7 +1631,7 @@ def _fetch_times(race_url, stage_idx, one_day):
             continue
         sp = _parse_times(html)
         if sp:
-            _LOGGER.debug("Tussensprint(s) etappe %s: %s km te gaan", stage_idx, sp)
+            _LOGGER.debug("Tussensprint(s) etappe %s: %s km te gaan", stage.get("idx"), sp)
             return sp
     return []
 
@@ -2118,6 +1881,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # alleen bij een nieuwe kalenderdag opnieuw; een mislukte poging
         # staat als "" in de cache en wordt dan morgen weer geprobeerd.
         self._abbr_cache: dict[str, str] = {}
+        # uitslag van een gereden etappe om in terug te bladeren, op
+        # stage_url. Deze wordt bewust *niet* bij een nieuwe dag geleegd: een
+        # etappe die gereden is verandert niet meer, en juist gisteren is de
+        # etappe waar het meest in wordt teruggekeken. Het scheelt elke
+        # ochtend een verzoek per etappe.
+        self._past_cache: dict[str, dict] = {}
         self._names_diag: list = []
 
     def _opt(self, sleutel: str) -> int:
@@ -2356,7 +2125,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             # de ploegcodes die vorige ronde nog niet aan de beurt waren
             await self._ploegcodes(d)
             return d
-        d = await self._job(_fetch_stage, url, s.get("one_day"),
+        d = await self._job(_fetch_stage, s,
                             self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
         if not d.get("finished"):
             await self._ploegcodes(d)
@@ -2525,17 +2294,18 @@ class CyclingCoordinator(DataUpdateCoordinator):
         bekend = self._gpx_beschikbaar.get(s["stage_url"])
         if bekend is not None:
             return 0 if bekend else 1
-        return 0 if _gpx_urls(s["race_url"], s.get("idx"), s.get("one_day")) else 1
+        return 0 if _gpx_urls(s) else 1
 
-    async def _gpx_index(self, race_url):
+    async def _gpx_index(self, stage):
         """De GPX-adressen die cyclingstage zelf op een rij zet, per koers."""
-        m = re.match(r"race/([^/]+)/(\d{4})", race_url or "")
-        if not m:
+        slug = stage.get("race_slug") or ""
+        jaar = stage["date"].year if stage.get("date") else None
+        if not slug or not jaar:
             return {}
-        sleutel = f"{m.group(1)}/{m.group(2)}"
+        sleutel = f"{slug}/{jaar}"
         if sleutel not in self._gpxindex_cache:
             self._gpxindex_cache[sleutel] = await self._job(
-                _fetch_gpx_index, race_url)
+                _fetch_gpx_index, stage)
         return self._gpxindex_cache[sleutel]
 
     async def _gpx_van(self, s, n_out):
@@ -2547,7 +2317,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         enkel adres iets op, dan wordt het adres opgezocht op de
         GPX-overzichtspagina van die koers - de bron, dus geen gokwerk.
         """
-        kandidaten = _gpx_urls(s["race_url"], s.get("idx"), s.get("one_day"))
+        kandidaten = _gpx_urls(s)
         # één voor één en niet de hele lijst aan `_fetch_gpx`, want dan is
         # achteraf te zeggen wélk adres het werd (`gpx_used`)
         for kandidaat in kandidaten:
@@ -2555,7 +2325,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             if elev:
                 self._gpx_gebruikt[s["stage_url"]] = kandidaat
                 return elev, climbs
-        alt = (await self._gpx_index(s["race_url"])).get(s.get("idx") or 0)
+        alt = (await self._gpx_index(s)).get(s.get("idx") or 0)
         if not alt or alt in kandidaten:
             return [], []
         elev, climbs = await self._job(_fetch_gpx, alt, n_out)
@@ -2599,14 +2369,14 @@ class CyclingCoordinator(DataUpdateCoordinator):
             e = dict(cached)
         else:
             await asyncio.sleep(0.4)  # niet overspoelen
-            meta = await self._job(_fetch_stage_meta, url, s.get("one_day"))
+            meta = await self._job(_fetch_stage_meta, s)
             elev, gpx_climbs = await self._gpx_van(s, 45)
             dist = meta.get("distance")
             if dist is None and elev:
                 dist = elev[-1][0]
             cs_route = {}
             if gpx_climbs:  # namen uit de cyclingstage-etappetekst
-                art = _stage_article_url(s["race_url"], s.get("idx"), s.get("one_day"))
+                art = s["stage_url"]   # de etappepagina ís de tekst
                 cs_names, cs_route = await self._job(_fetch_stage_names, art, dist)
                 _match_names(gpx_climbs, cs_names)
                 _name_summit(gpx_climbs, meta.get("arrival") or cs_route.get("arrival"))
@@ -2676,6 +2446,63 @@ class CyclingCoordinator(DataUpdateCoordinator):
             if sprints:
                 e["sprints"] = sprints
         return e
+
+    async def _build_past(self, finished: list[dict], overslaan: str,
+                          today: date) -> list[dict]:
+        """De laatst gereden etappes om in terug te bladeren.
+
+        Alleen van de koers op de tegel. Het zou per koersblok kunnen — elke
+        rij draagt `race_key`, dus de kaart kan het uit elkaar houden — maar
+        dat vermenigvuldigt zowel de verzoeken als de bytes, en de attributen
+        zitten al boven de grens van de recorder. Wie het breder wil, begint
+        daar.
+
+        De etappe die al als `last_result` in de attributen staat wordt
+        overgeslagen; die zou anders dubbel staan.
+
+        Elke uitslag komt uit `_past_cache` zodra hij een keer is opgehaald.
+        Alleen een uitslag die er ook echt is komt in die cache: een pagina
+        die nog leeg was moet morgen opnieuw geprobeerd worden.
+        """
+        aantal = self._opt(CONF_PAST_N)
+        if aantal <= 0:
+            return []
+        out = []
+        # van achteren naar voren: de meest recente etappe eerst
+        for s in reversed(finished):
+            if len(out) >= aantal:
+                break
+            url = s["stage_url"]
+            if url == overslaan:
+                continue
+            rij = self._past_cache.get(url)
+            if rij is None:
+                try:
+                    d = await self._job(_fetch_stage, s, PAST_RESULT_N, 0)
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug("Uitslag terugblik mislukt voor %s: %s", url, err)
+                    continue
+                if not d.get("results"):
+                    continue
+                rij = {
+                    "date": s["date"].isoformat(),
+                    "race_key": _race_slug(s["race_url"]),
+                    "level": str(s.get("level", "")),
+                    "departure": d.get("departure") or "",
+                    "arrival": d.get("arrival") or "",
+                    "distance_km": d.get("distance"),
+                    "results": d["results"],
+                }
+                if s.get("one_day"):
+                    rij["eyebrow"] = _short_race(s["race_name"], 26)
+                else:
+                    rij["eyebrow"] = (f"Etappe {s['idx']} \u00b7 "
+                                      f"{_short_race(s['race_name'])}")
+                if s.get("women") and not _noemt_dames(s["race_name"]):
+                    rij["eyebrow"] += " \u00b7 Dames"
+                self._past_cache[url] = rij
+            out.append(rij)
+        return out
 
     async def _build_upcoming(self, cur_idx: int, shown: dict,
                               future: list[dict], today: date,
@@ -2854,7 +2681,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         today_finished = False
 
         if today_st:
-            td = await self._job(_fetch_stage, today_st["stage_url"], today_st.get("one_day"),
+            td = await self._job(_fetch_stage, today_st,
                                  self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
             if td.get("finished"):
                 today_finished = True
@@ -2880,10 +2707,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
             return {"state": "Seizoen afgelopen", "attributes": {"show_state": "Klaar"}}
 
         if shown_data is None:
-            shown_data = await self._job(_fetch_stage, shown["stage_url"], shown.get("one_day"),
+            shown_data = await self._job(_fetch_stage, shown,
                                          self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
         if last_fin is not None and last_fin_data is None:
-            last_fin_data = await self._job(_fetch_stage, last_fin["stage_url"], last_fin.get("one_day"),
+            last_fin_data = await self._job(_fetch_stage, last_fin,
                                             self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
 
         # namen in de klassementen kunnen bij de verkeerde rij staan; herstellen
@@ -2927,13 +2754,13 @@ class CyclingCoordinator(DataUpdateCoordinator):
         _merge_categories(pcs_climbs, shown_data.get("climbs_raw", []))
 
         # Echt hoogteprofiel + gedetecteerde cols (GPX) voor de getoonde etappe
-        gpx_url = _gpx_urls(shown["race_url"], shown.get("idx"), shown.get("one_day"))
+        gpx_url = _gpx_urls(shown)
         elevation, gpx_climbs = await self._gpx_for(shown, 200)
         cs_route = {}
         elev_bron = "gpx" if elevation else ""
         if gpx_climbs:
             _enrich_names(gpx_climbs, pcs_climbs)
-            art = _stage_article_url(shown["race_url"], shown.get("idx"), shown.get("one_day"))
+            art = shown["stage_url"]
             cs_names, cs_route = await self._names_for(
                 shown["stage_url"], art, shown_data.get("distance"))
             _match_names(gpx_climbs, cs_names)
@@ -3046,6 +2873,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
             cur_idx, shown, future, today,
             {r.get("key") for r in ander.get("races", [])})
 
+        # Terugbladeren door de uitslagen van deze koers. `last_fin` staat al
+        # als `last_result` in de attributen, dus die slaan we hier over.
+        past = await self._build_past(
+            finished, (last_fin or {}).get("stage_url", ""), today)
+
         # Live-positie (alleen als de kop echt onderweg is) + links
         from urllib.parse import quote
         live_dist = svg_stage["distance_km"]
@@ -3100,6 +2932,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 "levels_diag": self._levels_diag,
                 # ── spoiler (alleen tonen in de pop-up!) ──
                 "last_result": last_result,
+                # eerder gereden etappes om in terug te bladeren
+                "past": past,
                 "gc_top": gc_top,
                 "points_leader": last_fin_data.get("points_leader") if last_fin_data else "",
                 "kom_leader": last_fin_data.get("kom_leader") if last_fin_data else "",
@@ -3131,8 +2965,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 "gpx_used": self._gpx_gebruikt.get(
                     shown["stage_url"], "").split("/images/")[-1],
                 "times_diag": [u.split("/images/")[-1] for u in
-                               _times_urls(shown["race_url"], shown.get("idx"),
-                                           shown.get("one_day"))],
+                               _times_urls(shown)],
                 "elevation_source": elev_bron,
                 "sprints": sprints,
                 **ander,

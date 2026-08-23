@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.16.2';
+const VERSIE = '0.22.1';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -60,6 +60,7 @@ const SECTIES = [
   { key: 'upcoming', label: 'Komende dagen' },
   { key: 'start', label: 'Startlijst' },
   { key: 'result', label: 'Uitslag' },
+  { key: 'past', label: 'Terugbladeren door uitslagen' },
   { key: 'gc', label: 'Algemeen klassement' },
   { key: 'points', label: 'Puntenklassement' },
   { key: 'kom', label: 'Bergklassement' },
@@ -68,20 +69,21 @@ const SECTIES = [
 
 const SECTIE_SLEUTELS = SECTIES.map(function (s) { return s.key; });
 
-/* De niveaus die de integratie kan volgen, met het circuitnummer van
- * procyclingstats als sleutel. Gelijk aan NIVEAUS in const.py; deze kaart is
- * statisch en kan die tabel niet opvragen, dus staat hij hier nog een keer.
- * tests/test_kaart.py vergelijkt de twee.
+/* De niveaus die de integratie kan volgen. Gelijk aan NIVEAUS in const.py;
+ * deze kaart is statisch en kan die tabel niet opvragen, dus staat hij hier
+ * nog een keer. tests/test_kaart.py vergelijkt de twee.
+ *
+ * Tot 0.18 waren dit de circuitnummers van procyclingstats, met WorldTour en
+ * ProSeries apart. Die bron is onbereikbaar; cyclingstage kent geen
+ * UCI-niveaus, alleen mannen en vrouwen.
  *
  * Wat je hier kiest is een keuze uit wat de sensor levert. Een niveau dat in
  * de integratie uitstaat komt niet in de attributen voor en kan dus ook niet
  * op een kaart verschijnen — deze lijst maakt geen koersen zichtbaar, hij
  * laat er alleen weg. */
 const NIVEAUS = [
-  { value: '1', label: 'WorldTour mannen' },
-  { value: '24', label: 'WorldTour vrouwen' },
-  { value: '26', label: 'ProSeries mannen' },
-  { value: '27', label: 'ProSeries vrouwen' },
+  { value: 'm', label: 'Mannen' },
+  { value: 'v', label: 'Vrouwen' },
 ];
 
 const NIVEAU_SLEUTELS = NIVEAUS.map(function (n) { return n.value; });
@@ -194,16 +196,22 @@ function tijdwinst(s) {
  * er zolang. Naam en ploeg delen hetzelfde vakje, zodat op een smal
  * scherm eerst de ploeg wegvalt en de rennernaam blijft staan.
  */
+/* De ploeg achter de renner, of anders het land.
+ *
+ * Procyclingstats gaf de officiële UCI-ploegcode; cyclingstage geeft die
+ * niet — daar staat alleen een landcode bij elke renner. Een land in het
+ * ploegveld zetten zou iets zijn wat het niet is, dus het komt als `country`
+ * binnen en wordt hier als terugval getoond. Staat er geen van beide, dan
+ * blijven de haakjes weg. */
 function rennerMetPloeg(x) {
-  const ploeg = x.team_code || x.team;
+  const ploeg = x.team_code || x.team || (x.country ? x.country.toUpperCase() : '');
   const achter = ploeg ? `<span class="ploeg">(${esc(ploeg)})</span>` : '';
   return `<span class="naam">${esc(x.rider)}${achter}</span>`;
 }
 
 /** Uitslag of klassement op tijd (uitslag, algemeen, jongeren). */
-function tijdlijst(titel, rijen, opties = {}) {
-  if (!rijen || !rijen.length) return '';
-  const regels = rijen
+function tijdregels(rijen, opties = {}) {
+  return rijen
     .map((x, i) => {
       const tijd = i === 0 ? x.time || '' : gap(x.time, rijen[0].time);
       const extra = opties.verschillen
@@ -212,7 +220,51 @@ function tijdlijst(titel, rijen, opties = {}) {
       return `<li><span class="pos">${esc(x.rank)}</span>${rennerMetPloeg(x)}<span class="wrd">${esc(tijd)}${extra}</span></li>`;
     })
     .join('');
-  return `<section><h3>${esc(titel)}</h3><ol>${regels}</ol></section>`;
+}
+
+function tijdlijst(titel, rijen, opties = {}) {
+  if (!rijen || !rijen.length) return '';
+  return `<section><h3>${esc(titel)}</h3><ol>${tijdregels(rijen, opties)}</ol></section>`;
+}
+
+/** De uitslag met pijlen om door de eerder gereden etappes te bladeren.
+ *
+ * De eerste bladzijde is de uitslag die de sensor als `last_result` levert;
+ * daarachter komen de etappes uit `past`, van nieuw naar oud. Blijft er maar
+ * één bladzijde over, dan komt er geen pijl bij en is dit precies wat
+ * `tijdlijst` ook zou tekenen.
+ *
+ * De bladzijden staan allemaal in de HTML en worden verborgen in plaats van
+ * opgehaald: de sensor stuurt ze al mee en een klik hoort niet op het
+ * netwerk te wachten.
+ */
+function uitslagenblok(titel, laatste, eerder) {
+  const paginas = [];
+  if (laatste && laatste.length) paginas.push({ titel: titel, rijen: laatste });
+  (eerder || []).forEach((p) => {
+    if (p && p.results && p.results.length) {
+      paginas.push({ titel: p.eyebrow || 'Uitslag', rijen: p.results });
+    }
+  });
+  if (!paginas.length) return '';
+  if (paginas.length === 1) return tijdlijst(paginas[0].titel, paginas[0].rijen);
+  const bladen = paginas
+    .map(
+      (p, i) =>
+        `<ol class="blad${i === 0 ? '' : ' uit'}" data-blad="${i}">${tijdregels(p.rijen)}</ol>`
+    )
+    .join('');
+  const namen = paginas.map((p) => p.titel);
+  return (
+    `<section class="uitslagen" data-namen="${esc(JSON.stringify(namen))}">` +
+    '<h3 class="bladerkop">' +
+    '<button class="blader ouder" aria-label="Vorige etappe">&lsaquo;</button>' +
+    `<span class="bladtitel">${esc(paginas[0].titel)}</span>` +
+    '<button class="blader nieuwer" aria-label="Volgende etappe" disabled>&rsaquo;</button>' +
+    '</h3>' +
+    bladen +
+    '</section>'
+  );
 }
 
 /** Klassement op punten (punten, berg). */
@@ -366,6 +418,25 @@ function komendVoor(a, race, meerdere, gekozenNiveaus) {
   return alles.filter((u) => u.race_key === race.key);
 }
 
+/** De eerder gereden etappes die bij deze koers horen.
+ *
+ * De sensor levert `past` alleen voor de koers op de tegel — elke uitslag
+ * kost daar een verzoek en ruimte in de attributen, en die zitten al aan hun
+ * grens. Voor een ander koersblok blijft het dus leeg, en dan tekent
+ * `uitslagenblok` gewoon de uitslag zonder pijlen.
+ */
+function eerdere(a, race) {
+  const alles = a.past || [];
+  if (!race || !race.primary) {
+    // een blok van een andere koers: alleen als de rijen daar met zoveel
+    // woorden bij horen. Zonder race_key niets, want dan zou de uitslag van
+    // de tegelkoers onder een andere koers komen te staan.
+    if (!race || !race.key) return [];
+    return alles.filter(function (p) { return p.race_key === race.key; });
+  }
+  return alles;
+}
+
 /** De attributen waarmee de tegel deze koers tekent.
  *
  * Voor de koers die de sensor koos zijn dat gewoon de attributen zelf. Kiest
@@ -427,7 +498,10 @@ function koersblok(a, race, meerdere, gekozen, gekozenNiveaus) {
     aan('start')
       ? startlijst(u.startlist_top, u.startlist_riders, u.startlist_teams)
       : '',
-    aan('result') ? tijdlijst(u.last_stage_label || 'Uitslag', u.last_result) : '',
+    aan('result')
+      ? uitslagenblok(u.last_stage_label || 'Uitslag', u.last_result,
+          aan('past') ? eerdere(a, race) : [])
+      : '',
     aan('gc') ? tijdlijst('Algemeen klassement', u.gc_top, { verschillen: true }) : '',
     aan('points') ? puntenlijst('Puntenklassement', u.points_top) : '',
     aan('kom') ? puntenlijst('Bergklassement', u.kom_top) : '',
@@ -654,6 +728,17 @@ const STIJL = `
 
   section { margin-top: 14px; }
   h3 { margin: 0 0 6px; font-size: 14px; font-weight: 700; }
+  h3.bladerkop { display: flex; align-items: center; }
+  h3.bladerkop > * + * { margin-left: 6px; }
+  .bladtitel { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .blader {
+    flex: none; width: 22px; height: 22px; padding: 0;
+    border: 1px solid rgba(127,127,127,.4); border-radius: 4px;
+    background: transparent; color: inherit; font: inherit; line-height: 1;
+    cursor: pointer;
+  }
+  .blader[disabled] { opacity: .3; cursor: default; }
+  .blad.uit { display: none; }
   ol { list-style: none; margin: 0; padding: 0; font-size: 13.5px; }
   li { display: flex; padding: 2px 0; align-items: baseline; }
   li > * + * { margin-left: 8px; }
@@ -900,6 +985,7 @@ class CyclingNextRaceCard extends HTMLElement {
         if (e.target === dlg) dlg.close();
       };
       this._koersknoppen(dlg, a);
+      this._bladerknoppen(dlg);
     }
   }
 
@@ -947,6 +1033,42 @@ class CyclingNextRaceCard extends HTMLElement {
         <div class="inhoud">${blokken}</div>
       </dialog>
     `;
+  }
+
+  /** De pijlen bij de uitslag laten bladeren door de eerder gereden etappes.
+   *
+   * Elk blok in de pop-up heeft er hoogstens één, dus ze worden per
+   * `.uitslagen` afgehandeld en houden hun eigen bladzijde bij.
+   */
+  _bladerknoppen(dlg) {
+    const secties = dlg.querySelectorAll('.uitslagen');
+    for (let i = 0; i < secties.length; i++) {
+      const sectie = secties[i];
+      const bladen = sectie.querySelectorAll('.blad');
+      const titel = sectie.querySelector('.bladtitel');
+      const ouder = sectie.querySelector('.ouder');
+      const nieuwer = sectie.querySelector('.nieuwer');
+      let namen = [];
+      try {
+        namen = JSON.parse(sectie.getAttribute('data-namen') || '[]');
+      } catch (e) {
+        namen = [];
+      }
+      let nu = 0;
+      const toon = (n) => {
+        nu = Math.max(0, Math.min(bladen.length - 1, n));
+        for (let j = 0; j < bladen.length; j++) {
+          bladen[j].className = j === nu ? 'blad' : 'blad uit';
+        }
+        if (titel) titel.textContent = namen[nu] || '';
+        // ouder = verder terug in de tijd, dus hoger in de lijst
+        ouder.disabled = nu >= bladen.length - 1;
+        nieuwer.disabled = nu <= 0;
+      };
+      ouder.onclick = () => toon(nu + 1);
+      nieuwer.onclick = () => toon(nu - 1);
+      toon(0);
+    }
   }
 
   /** De koersknoppen bovenin de pop-up laten wisselen van blok. */

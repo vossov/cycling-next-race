@@ -19,6 +19,7 @@
           "gc_n": "Riders shown in the classification",
           "start_n": "Riders shown in the startlist",
           "upcoming_n": "Maximum number of upcoming stages",
+          "past_n": "Number of past stages to browse",
           "upcoming_days": "Show upcoming stages up to (days ahead)",
           "scan_minutes": "Refresh every (minutes)",
           "live_scan_minutes": "Refresh during a race (minutes)",

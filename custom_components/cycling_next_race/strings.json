@@ -19,6 +19,7 @@
           "gc_n": "Aantal renners in het klassement",
           "start_n": "Aantal renners in de startlijst",
           "upcoming_n": "Maximaal aantal komende etappes",
+          "past_n": "Aantal etappes om terug te bladeren",
           "upcoming_days": "Komende etappes tonen tot (dagen vooruit)",
           "scan_minutes": "Verversen elke (minuten)",
           "live_scan_minutes": "Verversen tijdens een koers (minuten)",

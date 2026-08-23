@@ -17,11 +17,12 @@ const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 // De onderdelen van het detailvenster, in de volgorde waarin de kaart ze
 // zet. Hier met opzet uitgeschreven: een wijziging in de kaart hoort hier
 // zichtbaar te worden en niet stilzwijgend mee te bewegen.
-const SECTIES = ['profile', 'tv', 'upcoming', 'start', 'result', 'gc', 'points', 'kom', 'youth'];
+const SECTIES = ['profile', 'tv', 'upcoming', 'start', 'result', 'past',
+                 'gc', 'points', 'kom', 'youth'];
 
 // De niveaus die de kaart aanbiedt, gelijk aan NIVEAUS in const.py. Ook hier
 // met opzet uitgeschreven; tests/test_kaart.py bewaakt de Python-kant.
-const NIVEAUS = ['1', '24', '26', '27'];
+const NIVEAUS = ['m', 'v'];
 
 const browser = await chromium.launch({ executablePath: CHROME });
 let mislukt = 0;
@@ -73,7 +74,7 @@ for (const metHaForm of [false, true]) {
       r.querySelector('ha-form').dispatchEvent(new CustomEvent('value-changed', {
         detail: { value: { entity: 'sensor.cycling_next_race', view: 'countdown',
                            design: 'bubble', visible_days: 7, details: false,
-                           sections: ['result', 'gc'], levels: ['24'],
+                           sections: ['result', 'gc'], levels: ['v'],
                            title: 'Wielrennen' } },
       }));
     } else {
@@ -90,7 +91,7 @@ for (const metHaForm of [false, true]) {
       const vakjes = [...r.querySelectorAll('[name="sections"]')];
       vakjes.forEach((v) => { v.checked = v.value === 'result' || v.value === 'gc'; });
       const niveaus = [...r.querySelectorAll('[name="levels"]')];
-      niveaus.forEach((v) => { v.checked = v.value === '24'; });
+      niveaus.forEach((v) => { v.checked = v.value === 'v'; });
       const dagen = r.querySelector('[name="visible_days"]');
       dagen.value = '7';
       dagen.dispatchEvent(new Event('change', { bubbles: true }));
@@ -143,9 +144,9 @@ for (const metHaForm of [false, true]) {
           type: 'custom:cycling-next-race-card',
           entity: 'sensor.cycling_next_race', view: 'profile', design: 'default',
           visible_days: 2, details: true,
-          sections: ['profile', 'tv', 'upcoming', 'start', 'result', 'gc', 'points',
-                     'kom', 'youth'],
-          levels: ['1', '24', '26', '27'],
+          sections: ['profile', 'tv', 'upcoming', 'start', 'result', 'past',
+                     'gc', 'points', 'kom', 'youth'],
+          levels: ['m', 'v'],
           title: '',
         });
         let opnieuw = 'ok';
@@ -160,7 +161,7 @@ for (const metHaForm of [false, true]) {
       opgeschoond: (() => {
         const e2 = Kaart.getConfigElement();
         e2.setConfig({ design: 'bestaat-niet', sections: ['gc', 'onzin'],
-                       levels: ['24', '999'] });
+                       levels: ['v', '999'] });
         return { design: e2._config.design, sections: e2._config.sections,
                  levels: e2._config.levels };
       })(),
@@ -189,7 +190,7 @@ for (const metHaForm of [false, true]) {
       problemen.push(`sectiekeuze kwam niet door (sections=${uit.laatste && uit.laatste.sections})`);
     if (!metHaForm && uit.sectiekeuzes !== SECTIES.length)
       problemen.push(`${uit.sectiekeuzes} sectievakjes, verwacht ${SECTIES.length}`);
-    if (!uit.laatste || String(uit.laatste.levels) !== '24')
+    if (!uit.laatste || String(uit.laatste.levels) !== 'v')
       problemen.push(`niveaukeuze kwam niet door (levels=${uit.laatste && uit.laatste.levels})`);
     if (!metHaForm && uit.niveaukeuzes !== NIVEAUS.length)
       problemen.push(`${uit.niveaukeuzes} niveauvakjes, verwacht ${NIVEAUS.length}`);
@@ -224,7 +225,7 @@ for (const metHaForm of [false, true]) {
       problemen.push(`onbekende vormgeving blijft staan: ${uit.opgeschoond.design}`);
     if (String(uit.opgeschoond.sections) !== 'gc')
       problemen.push(`onbekende sectie blijft staan: ${uit.opgeschoond.sections}`);
-    if (String(uit.opgeschoond.levels) !== '24')
+    if (String(uit.opgeschoond.levels) !== 'v')
       problemen.push(`onbekend niveau blijft staan: ${uit.opgeschoond.levels}`);
   }
   if (fouten.length) problemen.push('JS-fouten: ' + fouten.join(' | '));
