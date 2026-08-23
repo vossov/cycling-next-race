@@ -63,7 +63,7 @@ def _kandidaat(ev, stages):
 PRIMAIR = {"key": "tour-de-france", "label": "Tour de France",
            "race_name": "Tour de France", "women": False}
 
-FEMMES = {"name": "Tour de France Femmes", "url": "race/tour-de-france-femmes/2026",
+FEMMES = {"name": "Tour de France Femmes", "url": "https://www.cyclingstage.com/tour-de-france-femmes-2026-route/",
           "start": date(2026, 7, 16), "end": date(2026, 7, 24), "women": True}
 
 
@@ -110,7 +110,7 @@ def test_uitslag_van_vandaag_schuift_door_naar_de_volgende_etappe(
 
 
 def test_dames_erbij_als_de_naam_het_niet_zegt(wt, coordinator, monkeypatch):
-    ev = dict(FEMMES, name="Ronde van Vlaanderen", url="race/rvv-vrouwen/2026")
+    ev = dict(FEMMES, name="Ronde van Vlaanderen", url="https://www.cyclingstage.com/rvv-vrouwen-2026-route/")
     stages = _stages(ev["url"], ev["name"], [VANDAAG], women=True)
     monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag(finished=False))
 
@@ -256,7 +256,7 @@ def test_koers_die_omvalt_haalt_de_rest_niet_onderuit(wt, coordinator, monkeypat
         return _uitslag()
 
     monkeypatch.setattr(wt, "_fetch_stage", _fetch)
-    stuk = dict(FEMMES, name="Kapotte Koers", url="race/stuk/2026")
+    stuk = dict(FEMMES, name="Kapotte Koers", url="https://www.cyclingstage.com/stuk-2026-route/")
     andere = [
         _kandidaat(stuk, _stages(stuk["url"], stuk["name"], [date(2026, 7, 17)])),
         _kandidaat(FEMMES, _stages(FEMMES["url"], FEMMES["name"],
@@ -395,8 +395,8 @@ def test_tussensprint_alleen_bij_de_eerste_etappe_van_een_popupkoers(
     coordinator._upcoming_entry = _entry
     coordinator._stages_for = _stages_for
     coordinator._calendar = [FEMMES]
-    shown = {"stage_url": "race/tour-de-france/2026/stage-14",
-             "race_url": "race/tour-de-france/2026", "date": VANDAAG}
+    shown = {"stage_url": "https://www.cyclingstage.com/tour-de-france-2026-route/stage-14-x-2026/",
+             "race_url": "https://www.cyclingstage.com/tour-de-france-2026-route/", "date": VANDAAG}
 
     asyncio.run(coordinator._build_upcoming(
         99, shown, [], VANDAAG, {"tour-de-france-femmes"}))
@@ -414,10 +414,10 @@ def test_geen_tussensprint_voor_de_etappes_van_de_tegelkoers(wt, coordinator):
 
     coordinator._upcoming_entry = _entry
     coordinator._calendar = []
-    eigen = _stages("race/tour-de-france/2026", "Tour de France",
+    eigen = _stages("https://www.cyclingstage.com/tour-de-france-2026-route/", "Tour de France",
                     [date(2026, 7, 19), date(2026, 7, 20)])
-    shown = {"stage_url": "race/tour-de-france/2026/stage-14",
-             "race_url": "race/tour-de-france/2026", "date": VANDAAG}
+    shown = {"stage_url": "https://www.cyclingstage.com/tour-de-france-2026-route/stage-14-x-2026/",
+             "race_url": "https://www.cyclingstage.com/tour-de-france-2026-route/", "date": VANDAAG}
 
     asyncio.run(coordinator._build_upcoming(
         99, shown, eigen, VANDAAG, {"tour-de-france"}))
@@ -591,7 +591,7 @@ def test_niet_alle_ploegcodes_in_een_keer(wt, coordinator, monkeypatch,
 def test_koersblok_draagt_zijn_niveau_en_dagen(wt, coordinator, monkeypatch):
     """Genoeg voor een kaart om deze koers zelf naar de tegel te halen."""
     monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag())
-    stages = _stages("race/tour-de-france-femmes/2026", "Tour de France Femmes",
+    stages = _stages("https://www.cyclingstage.com/tour-de-france-femmes-2026-route/", "Tour de France Femmes",
                      [VANDAAG - timedelta(days=1), VANDAAG + timedelta(days=2)],
                      women=True)
     ev = dict(FEMMES, level="24")
@@ -605,7 +605,7 @@ def test_koersblok_zonder_komende_etappe_heeft_geen_dagen(wt, coordinator,
                                                           monkeypatch):
     """None en niet 0: een afgelopen koers is niet 'vandaag'."""
     monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag())
-    stages = _stages("race/tour-de-france-femmes/2026", "Tour de France Femmes",
+    stages = _stages("https://www.cyclingstage.com/tour-de-france-femmes-2026-route/", "Tour de France Femmes",
                      [VANDAAG - timedelta(days=2)], women=True)
 
     blok = asyncio.run(coordinator._race_entry(dict(FEMMES, level="24"),
@@ -616,7 +616,7 @@ def test_koersblok_zonder_komende_etappe_heeft_geen_dagen(wt, coordinator,
 def test_koers_zonder_niveau_krijgt_een_leeg_veld(wt, coordinator, monkeypatch):
     """Een kalender van vóór de niveaus mag geen KeyError opleveren."""
     monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag())
-    stages = _stages("race/tour-de-france-femmes/2026", "Tour de France Femmes",
+    stages = _stages("https://www.cyclingstage.com/tour-de-france-femmes-2026-route/", "Tour de France Femmes",
                      [VANDAAG + timedelta(days=1)], women=True)
 
     blok = asyncio.run(coordinator._race_entry(FEMMES, stages, VANDAAG))
@@ -626,7 +626,7 @@ def test_koers_zonder_niveau_krijgt_een_leeg_veld(wt, coordinator, monkeypatch):
 def test_etappes_dragen_het_niveau_van_hun_koers(wt):
     """`_event_stages` geeft het door; `_upcoming_entry` leest het daar."""
     eendaags = wt._event_stages({
-        "name": "Milano-Sanremo", "url": "race/milano-sanremo/2026",
+        "name": "Milano-Sanremo", "url": "https://www.cyclingstage.com/milano-sanremo-2026-route/",
         "start": VANDAAG, "end": VANDAAG, "women": False, "level": "1"})
     assert [s["level"] for s in eendaags] == ["1"]
 
@@ -637,7 +637,7 @@ def test_komende_etappe_draagt_het_niveau(coordinator):
     De cache vooraf vullen scheelt het ophalen van profiel en meta; alles
     wat hier telt zet `_upcoming_entry` daarna alsnog.
     """
-    stage = _stages("race/tour-de-france-femmes/2026", "Tour de France Femmes",
+    stage = _stages("https://www.cyclingstage.com/tour-de-france-femmes-2026-route/", "Tour de France Femmes",
                     [VANDAAG + timedelta(days=1)], women=True)[0]
     stage["level"] = "24"
     coordinator._upcoming_cache[stage["stage_url"]] = {"elevation": [], "climbs": []}

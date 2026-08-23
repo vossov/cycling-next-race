@@ -82,7 +82,27 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
   profiel heeft, want `_gpx_rang` heeft dat nodig om te kiezen wélke koers
   getoond wordt.
 
-### Welke niveaus meedoen
+### Welke niveaus meedoen (sinds 0.19)
+
+Cyclingstage kent geen UCI-niveaus, dus `NIVEAUS` in `const.py` is nog maar
+twee regels: `"m"` (mannen) en `"v"` (vrouwen). Het geslacht komt uit de
+koersnaam én uit het adres, twee onafhankelijke signalen.
+
+`OUDE_NIVEAUS` vertaalt de circuitnummers die in bestaande installaties
+opgeslagen staan (`1`/`26` → `m`, `24`/`27` → `v`). Zonder die vertaling zou
+een bestaande keuze na de update leeg zijn en stil terugvallen op de
+standaard.
+
+**De slug-tabellen zijn weg.** `CYCLINGSTAGE_SLUG`, `CYCLINGSTAGE_STAGERACE`,
+`CYCLINGSTAGE_ONEDAY` en `CYCLINGSTAGE_ROUTE` stonden met de hand ingevuld en
+kostten ons het profiel van de Vuelta. De kalender geeft het adres van elke
+koers, en `slug_van()` haalt daar de slug uit — nagelopen op alle 49 koersen
+van 2026: 47 leverden exact op wat er met de hand stond, en de twee andere
+waren koersen die die tabellen niet eens hadden. `LEIDERSTRUI` en
+`GROTE_RONDES` draaien nu op diezelfde slugs (`vuelta`, `giro`,
+`tour-de-france`).
+
+### Hoe het vóór 0.19 was
 
 Een niveau is een `circuit=`-nummer bij procyclingstats. `NIVEAUS` in
 `const.py` koppelt nummer → naam, of het een vrouwenkalender is, en of het

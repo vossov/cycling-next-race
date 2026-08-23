@@ -11,7 +11,7 @@ NAME = "Cycling Next Race"
 # Gelijk aan "version" in manifest.json; hangt achter de kaart-URL zodat de
 # browser na een update de nieuwe versie ophaalt. tests/test_repo.py bewaakt
 # dat de twee niet uiteenlopen.
-VERSION = "0.18.0"
+VERSION = "0.19.0"
 
 # De meegeleverde Lovelace-kaart, door de integratie zelf geregistreerd.
 KAART_BESTAND = "cycling-next-race-card.js"
@@ -43,14 +43,22 @@ CONF_MAX_OTHER = "max_other"
 # waarschuwing en de sensor zet het attribuut `levels_diag` met het aantal
 # koersen per niveau, zodat je het in de interface ziet staan.
 #
-# `vrouwen` bepaalt de vlag op elke koers uit dat niveau; die komt niet uit
-# de kalenderpagina zelf.
+# `vrouwen` zegt welke koersen dit niveau oplevert.
+#
+# Tot 0.18 waren dit de `circuit=`-nummers van procyclingstats, met
+# WorldTour en ProSeries apart. Die bron is onbereikbaar; cyclingstage kent
+# géén UCI-niveaus — "WorldTour" en "ProSeries" komen op de kalenderpagina
+# niet één keer voor. Mannen en vrouwen zijn wél betrouwbaar te scheiden,
+# uit de koersnaam én uit het adres, onafhankelijk van elkaar.
 NIVEAUS: dict[str, dict] = {
-    "1": {"naam": "WorldTour mannen", "vrouwen": False, "zeker": True},
-    "24": {"naam": "WorldTour vrouwen", "vrouwen": True, "zeker": True},
-    "26": {"naam": "ProSeries mannen", "vrouwen": False, "zeker": False},
-    "27": {"naam": "ProSeries vrouwen", "vrouwen": True, "zeker": False},
+    "m": {"naam": "Mannen", "vrouwen": False, "zeker": True},
+    "v": {"naam": "Vrouwen", "vrouwen": True, "zeker": True},
 }
+
+# Wat er in de opslag kan staan van vóór 0.19: de oude circuitnummers.
+# Zonder deze vertaling zou een bestaande installatie na de update op een
+# lege keuze uitkomen en stilletjes terugvallen op de standaard.
+OUDE_NIVEAUS: dict[str, str] = {"1": "m", "26": "m", "24": "v", "27": "v"}
 
 # Wat het optiescherm als keuzelijst laat zien: nummer -> naam.
 NIVEAU_KEUZE: dict[str, str] = {k: v["naam"] for k, v in NIVEAUS.items()}
@@ -65,7 +73,7 @@ DEFAULT_SCAN_MINUTES = 30
 DEFAULT_LIVE_SCAN_MINUTES = 5
 # Alleen de WorldTour, en niets dat alleen in de pop-up staat: precies de
 # kalender zoals de integratie hem altijd al liet zien.
-DEFAULT_LEVELS = ["1", "24"]
+DEFAULT_LEVELS = ["m", "v"]
 DEFAULT_LEVELS_POPUP: list[str] = []
 DEFAULT_MAX_OTHER = 2
 

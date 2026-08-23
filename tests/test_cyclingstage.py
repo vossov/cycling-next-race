@@ -238,3 +238,120 @@ def test_de_bestaande_colparser_leest_deze_pagina(wt, monkeypatch):
     assert climbs[1]["length_km"] == 6.5 and climbs[1]["steepness_pct"] == 8.5
     # de tekst noemt alleen bij de Ordino hoeveel er nog te gaan is
     assert climbs[2]["km_to_finish"] == 26.1
+
+
+# ── adressen uit de bron in plaats van uit een tabel ────────────────
+
+def test_slug_uit_de_kalenderadressen(cs, kalender):
+    """Nagelopen op alle 49 koersen van 2026, niet op een handvol.
+
+    Tot 0.18 stond deze koppeling in drie handmatige tabellen. Een
+    verkeerd geraden slug liet het profiel stilletjes leeg — dat is precies
+    wat er met de Vuelta gebeurde.
+    """
+    gevonden = {k["name"]: cs.slug_van(k["url"] or k["route_url"], 2026)
+                for k in kalender}
+    assert gevonden["Vuelta a España"] == "vuelta"
+    assert gevonden["Giro d'Italia"] == "giro"
+    assert gevonden["Tour de France"] == "tour-de-france"
+    assert gevonden["Tour Down Under"] == "tour-down-under"
+    assert gevonden["Paris - Roubaix"] == "paris-roubaix"
+    # het jaartal staat bij vrouwenkoersen middenin het pad
+    assert gevonden["Tour of Flanders (w)"] == "tour-of-flanders-women"
+    assert gevonden["Amstel Gold Race (w)"] == "amstel-gold-race-women"
+    # elke koers levert een slug op, en geen enkele houdt het jaartal
+    assert all(gevonden.values())
+    assert not any("2026" in s for s in gevonden.values())
+
+
+def test_slug_van_onzin(cs):
+    assert cs.slug_van("", 2026) == ""
+    assert cs.slug_van("https://elders.nl/iets/", 2026) == ""
+
+
+def test_gpx_adressen(cs):
+    urls = cs.gpx_urls("vuelta", 2026, 4)
+    assert urls[0] == ("https://cdn.cyclingstage.com/images/vuelta/2026/"
+                       "stage-4-parcours.gpx")
+    assert any(u.endswith("stage-4-route.gpx") for u in urls)
+    # eendaagse koers: geen etappenummer
+    assert cs.gpx_urls("paris-roubaix", 2026)[0].endswith("/2026/route.gpx")
+    assert cs.gpx_urls("", 2026, 4) == []
+
+
+def test_gpx_overzichtspagina(cs):
+    assert cs.gpx_index_url("vuelta", 2026) == (
+        "https://www.cyclingstage.com/vuelta-2026-gpx/")
+    assert cs.gpx_index_url("", 2026) == ""
+
+
+def test_tijdschema_adressen(cs):
+    urls = cs.times_url("vuelta", 2026, 4)
+    assert urls[0] == ("https://www.cyclingstage.com/images/vuelta/2026/"
+                       "stage-4-times.htm")
+    assert cs.times_url("vuelta", 2026, None) == []
+
+
+# ── de keten: kalender -> etappes ───────────────────────────────────
+
+def test_kalender_en_etappes_samen(wt, monkeypatch):
+    """Van kalenderpagina tot etappelijst, met de echte pagina's.
+
+    Dit is de test die de overstap dekt: hij loopt dezelfde weg als de
+    coordinator en gebruikt geen enkele handmatige tabel meer.
+    """
+    kal = (Path(__file__).parent / "fixtures"
+           / "cyclingstage_kalender_2026.html").read_text()
+    route = ROUTE.read_text()
+
+    def nep_haal(url, wat=""):
+        if "cycling-calendar" in url:
+            return kal
+        # de etappetabel staat op /vuelta-2026-route/, niet op de routepagina
+        return route if url.endswith("/vuelta-2026-route/") else ""
+
+    monkeypatch.setattr(wt, "_haal_html", nep_haal)
+
+    koersen, telling, fouten = wt._fetch_calendar(2026, ["m", "v"])
+    assert fouten == []
+    assert telling == {"Mannen": 38, "Vrouwen": 11}
+
+    vuelta = next(k for k in koersen if k["name"] == "Vuelta a España")
+    assert vuelta["slug"] == "vuelta"
+
+    etappes = wt._event_stages(vuelta)
+    assert len(etappes) == 21
+    eerste, vierde, laatste = etappes[0], etappes[3], etappes[-1]
+
+    assert eerste["date"] == date(2026, 8, 22)
+    assert laatste["date"] == date(2026, 9, 13)
+    assert vierde["idx"] == 4
+    assert vierde["departure"] == "Andorra La Vella"
+    assert vierde["distance_km"] == 104.8
+    assert vierde["stage_type"] == "mountain"
+    assert vierde["race_slug"] == "vuelta"
+    assert vierde["stage_url"].endswith("/stage-4-spain-2026/")
+    assert vierde["level"] == "m" and not vierde["women"]
+
+    # en de adressen die daaruit volgen, zonder één handmatige tabel
+    assert wt._gpx_urls(vierde)[0].endswith("vuelta/2026/stage-4-parcours.gpx")
+    assert wt._times_urls(vierde)[0].endswith("vuelta/2026/stage-4-times.htm")
+    assert wt._gpx_index_urls(vierde) == [
+        "https://www.cyclingstage.com/vuelta-2026-gpx/"]
+    assert wt._is_grote_ronde(vuelta["slug"])
+    assert wt._leiderstrui(vuelta["slug"]) == "#D0021B"
+
+
+def test_eendaagse_koers_krijgt_een_etappe(wt, monkeypatch):
+    monkeypatch.setattr(wt, "_haal_html", lambda url, wat="": "")
+    koers = {"name": "Paris - Roubaix",
+             "url": "https://www.cyclingstage.com/paris-roubaix-2026/route-pr-2026/",
+             "slug": "paris-roubaix", "start": date(2026, 4, 12),
+             "end": date(2026, 4, 12), "women": False, "level": "m"}
+    etappes = wt._event_stages(koers)
+    assert len(etappes) == 1
+    assert etappes[0]["one_day"] is True
+    assert etappes[0]["idx"] is None
+    # eendaags: geen etappenummer in het GPX-adres, geen tijdschema
+    assert wt._gpx_urls(etappes[0])[0].endswith("paris-roubaix/2026/route.gpx")
+    assert wt._times_urls(etappes[0]) == []

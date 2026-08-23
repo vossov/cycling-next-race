@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.18.0';
+const VERSIE = '0.19.0';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -68,20 +68,21 @@ const SECTIES = [
 
 const SECTIE_SLEUTELS = SECTIES.map(function (s) { return s.key; });
 
-/* De niveaus die de integratie kan volgen, met het circuitnummer van
- * procyclingstats als sleutel. Gelijk aan NIVEAUS in const.py; deze kaart is
- * statisch en kan die tabel niet opvragen, dus staat hij hier nog een keer.
- * tests/test_kaart.py vergelijkt de twee.
+/* De niveaus die de integratie kan volgen. Gelijk aan NIVEAUS in const.py;
+ * deze kaart is statisch en kan die tabel niet opvragen, dus staat hij hier
+ * nog een keer. tests/test_kaart.py vergelijkt de twee.
+ *
+ * Tot 0.18 waren dit de circuitnummers van procyclingstats, met WorldTour en
+ * ProSeries apart. Die bron is onbereikbaar; cyclingstage kent geen
+ * UCI-niveaus, alleen mannen en vrouwen.
  *
  * Wat je hier kiest is een keuze uit wat de sensor levert. Een niveau dat in
  * de integratie uitstaat komt niet in de attributen voor en kan dus ook niet
  * op een kaart verschijnen — deze lijst maakt geen koersen zichtbaar, hij
  * laat er alleen weg. */
 const NIVEAUS = [
-  { value: '1', label: 'WorldTour mannen' },
-  { value: '24', label: 'WorldTour vrouwen' },
-  { value: '26', label: 'ProSeries mannen' },
-  { value: '27', label: 'ProSeries vrouwen' },
+  { value: 'm', label: 'Mannen' },
+  { value: 'v', label: 'Vrouwen' },
 ];
 
 const NIVEAU_SLEUTELS = NIVEAUS.map(function (n) { return n.value; });

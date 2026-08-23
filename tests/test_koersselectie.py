@@ -6,24 +6,27 @@ alleen in de pop-up. Alles hier draait zonder netwerk.
 """
 import asyncio
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 VANDAAG = date(2026, 8, 5)
 
-WT_M, WT_V, PRO_M = "1", "24", "26"
+WT_M, WT_V = "m", "v"
 
 
 def _ev(slug, naam, start, eind=None, niveau=WT_M, vrouwen=False):
     """Een kalenderregel zoals `_fetch_calendar` hem oplevert."""
-    return {"name": naam, "url": f"race/{slug}/2026", "start": start,
+    return {"name": naam,
+            "url": f"https://www.cyclingstage.com/{slug}-2026-route/",
+            "slug": slug, "start": start,
             "end": eind or start, "women": vrouwen, "level": niveau}
 
 
 POLEN = _ev("tour-de-pologne", "Tour de Pologne", date(2026, 8, 4),
             date(2026, 8, 10))
 DENEMARKEN = _ev("danmark-rundt", "Danmark Rundt", date(2026, 8, 4),
-                 date(2026, 8, 8), niveau=PRO_M)
+                 date(2026, 8, 8), niveau=WT_V, vrouwen=True)
 
 
 @pytest.fixture
@@ -53,10 +56,10 @@ def test_zonder_keuze_geldt_de_worldtour(wt, const, coordinator):
 
 
 def test_niveau_alleen_in_de_popup_wordt_wel_opgehaald(wt, const, coordinator):
-    co = coordinator({const.CONF_LEVELS_POPUP: [PRO_M]})
+    co = coordinator({const.CONF_LEVELS_POPUP: [WT_V]})
 
     assert co._niveaus_tegel == [WT_M, WT_V]
-    assert co._niveaus_alles == [WT_M, WT_V, PRO_M]
+    assert co._niveaus_alles == [WT_M, WT_V]
 
 
 def test_hetzelfde_niveau_twee_keer_telt_een_keer(wt, const, coordinator):
@@ -85,163 +88,114 @@ def test_opgeslagen_tekst_wordt_ook_gelezen(wt, const, coordinator):
 # ── op de tegel of alleen in de pop-up ──────────────────────────────
 
 def test_niveau_uit_de_popup_hoort_niet_op_de_tegel(wt, const, coordinator):
-    co = coordinator({const.CONF_LEVELS_POPUP: [PRO_M]})
+    co = coordinator({const.CONF_LEVELS: [WT_M], const.CONF_LEVELS_POPUP: [WT_V]})
 
     assert co._mag_op_tegel(POLEN) is True
     assert co._mag_op_tegel(DENEMARKEN) is False
 
 
 def test_niveau_op_het_dashboard_mag_de_tegel_pakken(wt, const, coordinator):
-    co = coordinator({const.CONF_LEVELS: [WT_M, WT_V, PRO_M]})
+    co = coordinator({const.CONF_LEVELS: [WT_M, WT_V, WT_V]})
     assert co._mag_op_tegel(DENEMARKEN) is True
 
 
 def test_koers_zonder_niveau_wordt_niet_uitgesloten(wt, coordinator):
     """Een kalender uit een oudere versie kent het veld nog niet."""
     co = coordinator()
-    assert co._mag_op_tegel({"url": "race/x/2026"}) is True
+    assert co._mag_op_tegel({"url": "https://www.cyclingstage.com/x-2026-route/"}) is True
 
 
 # ── de kalender per niveau ──────────────────────────────────────────
+#
+# Sinds 0.19 komt de kalender van cyclingstage. Deze tests draaien op de
+# échte pagina uit tests/fixtures/, niet op een nagebouwde tabel — dat is
+# waarom ze mogen vaststellen dat de Vuelta van 22 augustus tot 13 september
+# loopt.
 
-# Deze neppagina bootst de boomstructuur na die selectolax teruggeeft, niet
-# de HTML zelf. Wat hier getest wordt is dus wat er per niveau gebeurt —
-# welke circuits worden opgehaald, welk niveau en geslacht op elke koers
-# komt te staan en wat er gebeurt als een niveau niets oplevert. Of de
-# selectors (`table.basic`, `tbody tr`) op de echte pagina kloppen zegt dit
-# niet; die code is ongewijzigd en alleen tegen de echte site te toetsen.
-
-class _NepLink:
-    def __init__(self, href, tekst):
-        self.attributes = {"href": href}
-        self._tekst = tekst
-
-    def text(self):
-        return self._tekst
-
-
-class _NepCel:
-    def __init__(self, tekst):
-        self._tekst = tekst
-
-    def text(self):
-        return self._tekst
-
-
-class _NepRij:
-    def __init__(self, rij):
-        # de parser wil minstens drie cellen en leest alleen de eerste
-        self._cellen = [_NepCel(rij["date"]), _NepCel(""), _NepCel("")]
-        self._link = _NepLink(rij["url"], rij["name"])
-
-    def css(self, selector):
-        return self._cellen if selector == "td" else []
-
-    def css_first(self, selector):
-        return self._link if selector == "a" else None
-
-
-class _NepTabel:
-    def __init__(self, rijen):
-        self._rijen = [_NepRij(r) for r in rijen]
-
-    def css(self, selector):
-        return self._rijen if selector == "tbody tr" else []
-
-
-class _NepHtml:
-    def __init__(self, rijen):
-        self._tabel = _NepTabel(rijen)
-
-    def css_first(self, selector):
-        return self._tabel if selector == "table.basic" else None
-
-
-class _NepPagina:
-    """Vervangt `Scraper`; `RacesCalendar` leest hier zijn tabel uit."""
-
-    #  circuitnummer -> de rijen die op die kalenderpagina staan
-    PAGINAS = {
-        "1": [{"date": "04.08 - 10.08", "url": "race/tour-de-pologne/2026/gc",
-               "name": "Tour de Pologne"}],
-        "24": [{"date": "05.08", "url": "race/rvv-vrouwen/2026/result",
-                "name": "Ronde van Vlaanderen"}],
-        "26": [{"date": "04.08 - 08.08", "url": "race/danmark-rundt/2026",
-                "name": "Danmark Rundt"}],
-        "27": [],           # bootst een circuitnummer na dat niets oplevert
-    }
-
-    def __init__(self, url):
-        import re
-        m = re.search(r"circuit=(\d+)", url)
-        self.html = _NepHtml(self.PAGINAS.get(m.group(1) if m else "", []))
+KALENDER_HTML = (Path(__file__).parent / "fixtures"
+                 / "cyclingstage_kalender_2026.html").read_text()
 
 
 @pytest.fixture
 def nep_kalender(wt, monkeypatch):
-    """`_fetch_calendar` laten praten met de neppagina in plaats van PCS."""
-    import sys
-    import types
-
-    scraper = types.ModuleType("procyclingstats.scraper")
-    scraper.Scraper = _NepPagina
-    pakket = types.ModuleType("procyclingstats")
-    pakket.scraper = scraper
-    monkeypatch.setitem(sys.modules, "procyclingstats", pakket)
-    monkeypatch.setitem(sys.modules, "procyclingstats.scraper", scraper)
+    """`_fetch_calendar` de opgeslagen kalenderpagina laten lezen."""
+    monkeypatch.setattr(wt, "_haal_html", lambda url, wat="": KALENDER_HTML)
 
 
 def test_kalender_haalt_alleen_de_gekozen_niveaus(wt, nep_kalender):
-    koersen, telling, _ = wt._fetch_calendar(2026, ["1", "24"])
+    mannen, telling, _ = wt._fetch_calendar(2026, ["m"])
+    assert all(not k["women"] for k in mannen)
+    assert telling == {"Mannen": 38}
 
-    assert {k["name"] for k in koersen} == {"Tour de Pologne",
-                                            "Ronde van Vlaanderen"}
-    assert telling == {"WorldTour mannen": 1, "WorldTour vrouwen": 1}
+    vrouwen, telling, _ = wt._fetch_calendar(2026, ["v"])
+    assert all(k["women"] for k in vrouwen)
+    assert telling == {"Vrouwen": 11}
+
+    beide, telling, _ = wt._fetch_calendar(2026, ["m", "v"])
+    assert len(beide) == 49
+    assert telling == {"Mannen": 38, "Vrouwen": 11}
 
 
 def test_elke_koers_draagt_zijn_niveau_en_geslacht(wt, nep_kalender):
-    koersen, _, _ = wt._fetch_calendar(2026, ["24", "26"])
-    per_naam = {k["name"]: k for k in koersen}
-
-    assert per_naam["Ronde van Vlaanderen"]["level"] == "24"
-    assert per_naam["Ronde van Vlaanderen"]["women"] is True
-    assert per_naam["Danmark Rundt"]["level"] == "26"
-    assert per_naam["Danmark Rundt"]["women"] is False
+    koersen, _, _ = wt._fetch_calendar(2026, ["m", "v"])
+    vuelta = next(k for k in koersen if k["name"] == "Vuelta a España")
+    assert (vuelta["level"], vuelta["women"]) == ("m", False)
+    femenina = next(k for k in koersen if k["name"] == "Vuelta Femenina")
+    assert (femenina["level"], femenina["women"]) == ("v", True)
 
 
-def test_kalenderlink_wordt_teruggebracht_tot_de_koers(wt, nep_kalender):
-    """De link eindigt vaak op /gc of /result; dat breekt de etappelijst."""
-    koersen, _, _ = wt._fetch_calendar(2026, ["1"])
-    assert koersen[0]["url"] == "race/tour-de-pologne/2026"
-
-
-def test_niveau_zonder_koersen_staat_in_de_telling(wt, nep_kalender, caplog):
-    """Een verkeerd circuitnummer moet zichtbaar zijn, niet stil blijven."""
-    koersen, telling, _ = wt._fetch_calendar(2026, ["1", "27"])
-
-    assert telling["ProSeries vrouwen"] == 0
-    assert len(koersen) == 1
-    assert "levert geen koersen op" in caplog.text
-    assert "niet geverifieerd" in caplog.text, (
-        "bij een niet-geverifieerd nummer hoort dat er expliciet bij te staan")
-
-
-def test_onbekend_niveau_wordt_overgeslagen(wt, nep_kalender):
-    koersen, telling, _ = wt._fetch_calendar(2026, ["1", "999"])
-
-    assert len(koersen) == 1
-    assert "999" not in telling
+def test_elke_koers_draagt_zijn_slug(wt, nep_kalender):
+    """De slug komt uit het adres in de kalender, niet uit een tabel."""
+    koersen, _, _ = wt._fetch_calendar(2026, ["m", "v"])
+    slugs = {k["name"]: k["slug"] for k in koersen}
+    assert slugs["Vuelta a España"] == "vuelta"
+    assert slugs["Giro d'Italia"] == "giro"
+    assert slugs["Tour of Flanders (w)"] == "tour-of-flanders-women"
+    assert all(s and "2026" not in s for s in slugs.values())
 
 
 def test_datums_komen_uit_de_kalenderregel(wt, nep_kalender):
-    koersen, _, _ = wt._fetch_calendar(2026, ["1", "24"])
-    per_naam = {k["name"]: k for k in koersen}
+    koersen, _, _ = wt._fetch_calendar(2026, ["m"])
+    vuelta = next(k for k in koersen if k["name"] == "Vuelta a España")
+    assert (vuelta["start"], vuelta["end"]) == (date(2026, 8, 22), date(2026, 9, 13))
+    lombardije = next(k for k in koersen if k["name"] == "Tour of Lombardy")
+    assert lombardije["start"] == lombardije["end"] == date(2026, 10, 10)
 
-    assert per_naam["Tour de Pologne"]["start"] == date(2026, 8, 4)
-    assert per_naam["Tour de Pologne"]["end"] == date(2026, 8, 10)
-    # eendaagse koers: begin en eind vallen samen
-    assert (per_naam["Ronde van Vlaanderen"]["start"]
-            == per_naam["Ronde van Vlaanderen"]["end"] == date(2026, 8, 5))
+
+def test_koersen_staan_op_datum(wt, nep_kalender):
+    koersen, _, _ = wt._fetch_calendar(2026, ["m", "v"])
+    assert [k["start"] for k in koersen] == sorted(k["start"] for k in koersen)
+
+
+def test_onbekend_niveau_wordt_overgeslagen(wt, nep_kalender):
+    koersen, telling, _ = wt._fetch_calendar(2026, ["m", "999"])
+    assert telling == {"Mannen": 38}
+    assert koersen
+
+
+def test_kalenderpagina_die_niet_binnenkomt(wt, monkeypatch, caplog):
+    import logging
+    monkeypatch.setattr(wt, "_haal_html", lambda url, wat="": "")
+    monkeypatch.setattr(wt, "_LAATSTE_KALENDERFOUT", "")
+    with caplog.at_level(logging.WARNING, logger="cycling_next_race.sensor"):
+        koersen, telling, fouten = wt._fetch_calendar(2026, ["m"])
+    assert koersen == [] and telling == {}
+    assert fouten and "kwam niet binnen" in fouten[0]
+    assert [r for r in caplog.records if "Kalender" in r.message]
+
+
+def test_zelfde_kalenderfout_logt_maar_een_keer(wt, monkeypatch, caplog):
+    """Een bron die eruit ligt hoort het logboek niet vol te schrijven."""
+    import logging
+    monkeypatch.setattr(wt, "_haal_html", lambda url, wat="": "")
+    monkeypatch.setattr(wt, "_LAATSTE_KALENDERFOUT", "")
+    with caplog.at_level(logging.WARNING, logger="cycling_next_race.sensor"):
+        wt._fetch_calendar(2026, ["m"])
+        eerste = len(caplog.records)
+        caplog.clear()
+        wt._fetch_calendar(2026, ["m"])
+        tweede = len(caplog.records)
+    assert eerste == 1 and tweede == 0
 
 
 # ── hoeveel koersen er naast de getoonde passen ─────────────────────
@@ -272,13 +226,13 @@ def test_aantal_koersen_in_de_popup_is_instelbaar(wt, const, coordinator,
 # ── kleur van de leiderstrui ────────────────────────────────────────
 
 def test_bekende_koersen_krijgen_hun_truikleur(wt):
-    assert wt._leiderstrui("race/tour-de-france/2026") == "#F3C700"
-    assert wt._leiderstrui("race/giro-d-italia/2026") == "#E6007E"
+    assert wt._leiderstrui("tour-de-france") == "#F3C700"
+    assert wt._leiderstrui("giro") == "#E6007E"
 
 
 def test_onbekende_koers_krijgt_geen_kleur(wt):
     """Liever geen kleur dan een verzonnen kleur."""
-    assert wt._leiderstrui("race/danmark-rundt/2026") == ""
+    assert wt._leiderstrui("danmark-rundt") == ""
     assert wt._leiderstrui("") == ""
 
 
@@ -319,7 +273,7 @@ def test_grote_ronde_gaat_voor_op_een_koers_met_profiel(wt, coordinator):
     hoogteprofiel had. Een bestand dat niet laadt hoort niet te bepalen welke
     koers de belangrijkste is."""
     co = coordinator()
-    vuelta = _ev("vuelta-a-espana", "La Vuelta ciclista a España", VANDAAG)
+    vuelta = _ev("vuelta", "La Vuelta ciclista a España", VANDAAG)
     renewi = _ev("renewi-tour", "Renewi Tour", VANDAAG)
     # de Vuelta heeft geen profiel, de Renewi Tour wel
     co._gpx_beschikbaar[_nxt(vuelta)["stage_url"]] = False
@@ -345,19 +299,19 @@ def test_profiel_beslist_nog_steeds_tussen_gelijke_koersen(wt, coordinator):
 
 def test_een_eerdere_etappedatum_wint_van_alles(wt, coordinator):
     co = coordinator()
-    ronde = _ev("vuelta-a-espana", "Vuelta", VANDAAG)
+    ronde = _ev("vuelta", "Vuelta", VANDAAG)
     morgen = dict(_nxt(ronde), date=date(2026, 8, 6))
     ander = _ev("renewi-tour", "Renewi Tour", VANDAAG)
     assert co._keuzesleutel(ander, _nxt(ander), 9) < co._keuzesleutel(ronde, morgen, 0)
 
 
 def test_grote_rondes_zijn_er_drie(wt):
-    assert wt._is_grote_ronde("race/vuelta-a-espana/2026")
-    assert wt._is_grote_ronde("race/giro-d-italia/2026")
-    assert wt._is_grote_ronde("race/tour-de-france/2026")
+    assert wt._is_grote_ronde("vuelta")
+    assert wt._is_grote_ronde("giro")
+    assert wt._is_grote_ronde("tour-de-france")
     # de rondes van een week bij de vrouwen horen er bewust niet bij
-    assert not wt._is_grote_ronde("race/vuelta-espana-femenina/2026")
-    assert not wt._is_grote_ronde("race/renewi-tour/2026")
+    assert not wt._is_grote_ronde("vuelta-femenina")
+    assert not wt._is_grote_ronde("renewi-tour")
     assert not wt._is_grote_ronde("")
 
 
@@ -383,44 +337,13 @@ def test_koersblok_leest_de_koers_achteraan_de_sleutel(wt, coordinator):
     co._race_entry = _entry
     kandidaat = co._keuzesleutel(ev, _nxt(ev), 0) + (ev, [_nxt(ev)])
     uit = asyncio.run(co._races_block(
-        {"key": "vuelta-a-espana", "label": "Vuelta", "race_name": "Vuelta",
+        {"key": "vuelta", "label": "Vuelta", "race_name": "Vuelta",
          "women": False}, [kandidaat], VANDAAG))
     assert [r.get("label") for r in uit["races"]] == ["Vuelta", "Renewi Tour"]
     assert gezien and gezien[0][0] is ev and gezien[0][1][0]["idx"] == 3
 
 
 # ── de bron ligt eruit ──────────────────────────────────────────────
-
-def test_fout_van_de_bron_reist_mee(wt, monkeypatch):
-    """Een onbereikbare bron is iets anders dan een leeg circuitnummer.
-
-    Op 23 augustus 2026 zette procyclingstats Cloudflare-bescherming aan.
-    De kalender bleef leeg en de sensor meldde "PCS-structuur gewijzigd?" —
-    dat wees de verkeerde kant op, terwijl de echte reden ("Cloudflare
-    protection detected") wel in het log stond.
-    """
-    import sys
-    import types
-
-    class _Weigert:
-        def __init__(self, url):
-            raise ConnectionError(
-                "Cloudflare protection detected. Install 'cloudscraper'")
-
-    scraper = types.ModuleType("procyclingstats.scraper")
-    scraper.Scraper = _Weigert
-    pakket = types.ModuleType("procyclingstats")
-    pakket.scraper = scraper
-    monkeypatch.setitem(sys.modules, "procyclingstats", pakket)
-    monkeypatch.setitem(sys.modules, "procyclingstats.scraper", scraper)
-
-    koersen, telling, fouten = wt._fetch_calendar(2026, ["1", "24"])
-    assert koersen == []
-    assert telling == {"WorldTour mannen": 0, "WorldTour vrouwen": 0}
-    assert any("Cloudflare" in f for f in fouten)
-    # en erachteraan of de bypass er wel of niet is; de melding van
-    # procyclingstats zegt daar niets over
-    assert any("cloudscraper" in f for f in fouten)
 
 
 def test_bypass_diag_zegt_of_het_pakket_er_is(wt, monkeypatch):
@@ -456,42 +379,6 @@ def _zet_vandaag(wt, monkeypatch):
                                          VANDAAG.day, 12, 0))
 
 
-def test_lege_kalender_noemt_de_reden(wt, coordinator, monkeypatch):
-    """`UpdateFailed` krijgt de melding van de bron, niet de gok."""
-    import asyncio
-
-    _zet_vandaag(wt, monkeypatch)
-    co = coordinator()
-
-    async def _job(fn, *args):
-        if fn is wt._fetch_calendar:
-            return [], {}, ["Cloudflare protection detected"]
-        return fn(*args)
-
-    co._job = _job
-    with pytest.raises(wt.UpdateFailed) as fout:
-        asyncio.run(co._async_update_data())
-    assert "Cloudflare" in str(fout.value)
-    assert "structuur gewijzigd" not in str(fout.value)
-
-
-def test_lege_kalender_zonder_fout_blijft_de_oude_melding(wt, coordinator,
-                                                         monkeypatch):
-    """Kwam alles binnen maar stond er niets in, dan is de opmaak verdacht."""
-    import asyncio
-
-    _zet_vandaag(wt, monkeypatch)
-    co = coordinator()
-
-    async def _job(fn, *args):
-        if fn is wt._fetch_calendar:
-            return [], {}, []
-        return fn(*args)
-
-    co._job = _job
-    with pytest.raises(wt.UpdateFailed) as fout:
-        asyncio.run(co._async_update_data())
-    assert "structuur gewijzigd" in str(fout.value)
 
 
 # ── curl_cffi aansluiten op procyclingstats ─────────────────────────
@@ -722,81 +609,3 @@ def _kalenderfout_vergeten(wt):
     wt._LAATSTE_KALENDERFOUT = ""
 
 
-def _blokkerende_bron(wt, monkeypatch, melding="Cloudflare protection detected"):
-    """Elke kalenderpagina loopt stuk; telt de proefverzoeken.
-
-    `_PCS_SESSIE` wordt gevuld zodat `_zet_pcs_sessie` de nep-Scraper met
-    rust laat — anders hangt die er de echte curl_cffi-sessie aan en gaat
-    het proefverzoek het net op.
-    """
-    import sys
-    import types
-
-    monkeypatch.setattr(wt, "_PCS_SESSIE", "curl_cffi actief (test)")
-    proeven = []
-
-    class Scraper:
-        BASE_URL = "https://www.procyclingstats.com/"
-
-        def __init__(self, url):
-            raise ConnectionError(melding)
-
-        @classmethod
-        def _get_session(cls):
-            class S:
-                def get(self, url, timeout=None):
-                    proeven.append(url)
-
-                    class R:
-                        status_code = 403
-                        text = "Just a moment"
-                        headers = {}
-                    return R()
-            return S()
-
-    scraper = types.ModuleType("procyclingstats.scraper")
-    scraper.Scraper = Scraper
-    pakket = types.ModuleType("procyclingstats")
-    pakket.scraper = scraper
-    monkeypatch.setitem(sys.modules, "procyclingstats", pakket)
-    monkeypatch.setitem(sys.modules, "procyclingstats.scraper", scraper)
-    return proeven
-
-
-def test_zelfde_blokkade_logt_maar_een_keer(wt, monkeypatch, caplog):
-    import logging
-
-    _blokkerende_bron(wt, monkeypatch)
-
-    with caplog.at_level(logging.WARNING, logger="cycling_next_race.sensor"):
-        wt._fetch_calendar(2026, ["1", "24", "26", "27"])
-        eerste = [r for r in caplog.records if "ophalen mislukt" in r.message]
-        caplog.clear()
-        wt._fetch_calendar(2026, ["1", "24", "26", "27"])
-        tweede = [r for r in caplog.records if "ophalen mislukt" in r.message]
-
-    assert len(eerste) == 1, f"vier niveaus gaven {len(eerste)} waarschuwingen"
-    assert tweede == [], "dezelfde blokkade werd opnieuw als nieuws gemeld"
-
-
-def test_geen_proefverzoek_bij_een_blokkade_die_we_al_kennen(wt, monkeypatch):
-    """Een site die ons weigert hoort niet elk half uur extra bezoek te krijgen."""
-    proeven = _blokkerende_bron(wt, monkeypatch)
-
-    wt._fetch_calendar(2026, ["1"])
-    assert len(proeven) == 1, "de eerste keer hoort er één proefverzoek te zijn"
-
-    wt._fetch_calendar(2026, ["1"])
-    wt._fetch_calendar(2026, ["1"])
-    assert len(proeven) == 1, f"er zijn {len(proeven)} proefverzoeken gedaan"
-
-
-def test_een_andere_fout_is_wel_weer_nieuws(wt, monkeypatch):
-    """Verandert de blokkade van aard, dan wil je dat wél weten."""
-    eerst = _blokkerende_bron(wt, monkeypatch, "Cloudflare protection detected")
-    wt._fetch_calendar(2026, ["1"])
-    assert len(eerst) == 1
-
-    daarna = _blokkerende_bron(wt, monkeypatch, "Cloudflare: nu met Error 1020")
-    wt._fetch_calendar(2026, ["1"])
-    assert len(daarna) == 1, "een nieuwe fout hoort opnieuw nagekeken te worden"

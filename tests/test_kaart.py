@@ -128,7 +128,9 @@ def test_kaart_kent_dezelfde_niveaus_als_const(const):
     """
     tekst = _kaart()
     blok = tekst[tekst.index("const NIVEAUS = ["):tekst.index("const NIVEAU_SLEUTELS")]
-    gevonden = dict(re.findall(r"value:\s*'(\d+)',\s*label:\s*'([^']+)'", blok))
+    # sleutels zijn sinds 0.19 letters ("m"/"v") in plaats van de
+    # circuitnummers van procyclingstats
+    gevonden = dict(re.findall(r"value:\s*'([\w-]+)',\s*label:\s*'([^']+)'", blok))
     verwacht = {k: v["naam"] for k, v in const.NIVEAUS.items()}
     assert gevonden == verwacht, (
         f"kaart en const.py lopen uiteen: {set(gevonden.items()) ^ set(verwacht.items())}")

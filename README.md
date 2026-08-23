@@ -1,12 +1,12 @@
 # Cycling Next Race
 
-Home Assistant-integratie die de eerstvolgende WorldTour-wielerwedstrijd op je
+Home Assistant-integratie die de eerstvolgende profwielerwedstrijd op je
 dashboard zet — met hoogteprofiel, cols, tussensprint, uitslagen, klassementen
 en de Nederlandse tv-zenders.
 
-Standaard worden de mannen- en de vrouwen-WorldTour gevolgd; in de
-instellingen vink je zelf aan welke niveaus meedoen en welke daarvan alleen
-in de pop-up mogen — zie [Welke niveaus je
+Standaard worden de mannen en de vrouwen allebei gevolgd; in de
+instellingen vink je zelf aan wat meedoet en wat daarvan alleen
+in de pop-up mag — zie [Welke niveaus je
 volgt](#welke-niveaus-je-volgt). Koersen tegelijk? Dan toont de tegel er één:
 eerst de eerstvolgende etappe, dan de koers met een hoogteprofiel, en bij
 gelijke stand de mannen. De andere koers is in de pop-up aan te klikken:
@@ -44,10 +44,14 @@ in staat krijgt de gewone accentkleur — liever geen kleur dan een gegokte.
 2. Plak de URL van deze repo, categorie **Integration**, en klik toevoegen
 3. Zoek op *Cycling Next Race*, installeer, en herstart Home Assistant
 
-De Python-afhankelijkheden installeert Home Assistant automatisch:
-`procyclingstats` voor de gegevens, plus `cloudscraper` en `curl_cffi` om
-langs de Cloudflare-bescherming van procyclingstats.com te komen. Zonder die
-twee komt er sinds 23 augustus 2026 geen kalender binnen.
+De kalender, de etappes, de hoogteprofielen en de tijdschema's komen van
+cyclingstage.com; de tv-zenders van wielerflits.nl. Beide zijn gewoon
+bereikbaar en vragen geen afhankelijkheden.
+
+De uitslagen en klassementen komen (nog) van procyclingstats, waarvoor Home
+Assistant `procyclingstats`, `cloudscraper` en `curl_cffi` automatisch
+installeert. Die site staat sinds 23 augustus 2026 achter een
+Cloudflare-uitdaging; tot dat verandert blijven de uitslagen leeg.
 
 ## Handmatige installatie
 
@@ -75,7 +79,7 @@ Achter **Configureren** bij de integratie stel je in:
 | Komende etappes tonen tot (dagen vooruit) | 7 |
 | Verversen elke (minuten) | 30 |
 | Verversen tijdens een koers (minuten) | 5 |
-| Niveaus op het dashboard | WorldTour mannen + vrouwen |
+| Niveaus op het dashboard | mannen + vrouwen |
 | Niveaus alleen in de pop-up | geen |
 | Aantal koersen naast de getoonde in de pop-up | 2 |
 
@@ -83,34 +87,36 @@ Wijzigingen gaan meteen in; de integratie herlaadt zichzelf.
 
 ### Welke niveaus je volgt
 
-Je vinkt aan welke niveaus meedoen. Er zijn er vier:
-
-- WorldTour mannen
-- WorldTour vrouwen
-- ProSeries mannen
-- ProSeries vrouwen
+Je vinkt aan wie meedoet: **mannen**, **vrouwen**, of allebei.
 
 Dat gebeurt in twee lijstjes. **Niveaus op het dashboard** mogen de tegel
-pakken én staan in de pop-up; standaard zijn dat de twee WorldTours, precies
-zoals het altijd was. **Niveaus alleen in de pop-up** komen er als knop bij,
-maar blijven van de tegel af.
+pakken én staan in de pop-up; standaard zijn dat allebei. **Niveaus alleen in
+de pop-up** komen er als knop bij, maar blijven van de tegel af.
 
-Wil je bijvoorbeeld de Ronde van Denemarken volgen zonder dat je dashboard
-verandert: zet *ProSeries mannen* bij het tweede lijstje. Die koersen krijgen
+Wil je bijvoorbeeld de vrouwenkoersen volgen zonder dat je dashboard
+verandert: zet *Vrouwen* alleen bij het tweede lijstje. Die koersen krijgen
 dan een eigen knop in de pop-up, met uitslag, klassementen, tv-zenders en
-hoogteprofielen, terwijl de tegel de WorldTour blijft tonen.
+hoogteprofielen, terwijl de tegel de mannen blijft tonen.
 
 Lopen er meer koersen tegelijk dan er knoppen passen, dan gaan de niveaus van
 het dashboard voor. Met *Aantal koersen naast de getoonde* bepaal je hoeveel
 knoppen er naast de tegelkoers passen.
 
-> **Let op bij ProSeries.** De WorldTour-nummers waarmee de kalender wordt
-> opgehaald zijn nagekeken op procyclingstats, die van ProSeries niet. Levert
-> een niveau geen koersen op, dan staat dat in het logboek én in het attribuut
-> `levels_diag` van de sensor (**Ontwikkelhulpmiddelen → Statussen**), met het
-> aantal koersen per niveau. Staat daar `ProSeries mannen: 0` terwijl er wel
-> koersen zijn, dan klopt het nummer niet; het is één regel in
-> `NIVEAUS` in `const.py`.
+> **Waarom geen WorldTour en ProSeries meer?** Tot 0.18 kwam de kalender van
+> procyclingstats, met de UCI-niveaus erbij. Die site is sinds 23 augustus
+> 2026 achter een Cloudflare-uitdaging gegaan die geen enkele HTTP-client
+> passeert. De kalender komt nu van cyclingstage.com, en die kent geen
+> UCI-niveaus — alleen mannen en vrouwen, en dat is uit de koersnaam én uit
+> het adres betrouwbaar af te leiden.
+>
+> **Wat je daarmee inlevert:** cyclingstage dekt de koersen waar de redactie
+> over schrijft, niet de complete UCI-kalender. In 2026 zijn dat er 49. Voor
+> de mannen is dat vrijwel de hele WorldTour (Polen, Denemarken en Guangxi
+> ontbreken); bij de vrouwen staan de klassiekers en de grote rondes erin,
+> maar de rondes van een week niet. Koersen die er niet in staan hadden ook
+> geen hoogteprofiel en geen tijdschema, dus die bleven op de tegel toch al
+> leeg. Het attribuut `levels_diag` op de sensor laat zien hoeveel koersen er
+> per niveau gevonden zijn.
 
 ## Dashboard
 
@@ -186,16 +192,13 @@ er; dat scheelt ook ruimte in de attributen.
 
 ### Niveaus per kaart
 
-`levels` bepaalt welke niveaus op *deze* kaart mogen. Dezelfde vier als in het
-optiescherm van de integratie, met het circuitnummer van procyclingstats als
-waarde:
+`levels` bepaalt welke niveaus op *deze* kaart mogen. Dezelfde als in het
+optiescherm van de integratie:
 
 | waarde | niveau |
 |---|---|
-| `1` | WorldTour mannen |
-| `24` | WorldTour vrouwen |
-| `26` | ProSeries mannen |
-| `27` | ProSeries vrouwen |
+| `m` | Mannen |
+| `v` | Vrouwen |
 
 Zo staat bovenaan je dashboard een andere kaart dan verderop:
 

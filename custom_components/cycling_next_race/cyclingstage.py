@@ -261,3 +261,74 @@ def _plat(html: str) -> str:
                  flags=re.S | re.I)
     tekst = unescape(re.sub(r"<[^>]+>", " ", doc))
     return re.sub(r"[ \t\r\n\u00a0]+", " ", tekst)
+
+
+# ── adressen afleiden uit de bron ───────────────────────────────────
+
+# Alles hieronder hing tot 0.18 aan drie handmatige tabellen (PCS-slug ->
+# cyclingstage-slug, met aparte lijsten voor grote rondes, rittenkoersen en
+# eendaagse koersen). Die zijn weg: de kalender geeft het adres van elke
+# koers, en daar staat de slug gewoon in. Nagelopen op alle 49 koersen van
+# 2026 — 47 leverden exact de slug op die eerder met de hand was ingevuld,
+# en de twee andere waren koersen die die tabellen niet eens hadden.
+#
+# Dat is meer dan onderhoudswinst: een slug die uit de bron komt kan niet
+# verouderen, en juist een verkeerd geraden slug liet het profiel van de
+# Vuelta stilletjes leeg.
+
+CDN = "https://cdn.cyclingstage.com/images"
+
+
+def slug_van(url: str, jaar: int) -> str:
+    """De cyclingstage-slug van een koers uit een van zijn adressen.
+
+    `/vuelta-2026-route/spain-route-2026/` -> `vuelta`
+    `/tour-down-under-2026/route-tdu-2026/` -> `tour-down-under`
+    `/tour-of-flanders-2026-women/` -> `tour-of-flanders-women`
+
+    Het jaartal staat niet altijd achteraan (bij vrouwenkoersen zit het er
+    middenin), dus het wordt overal weggeknipt en niet alleen aan het eind.
+    """
+    pad = url or ""
+    if pad.startswith("http"):
+        m = re.match(r"https?://(?:www\.)?cyclingstage\.com/(.*)", pad)
+        if not m:
+            return ""      # een adres ergens anders zegt ons niets
+        pad = m.group(1)
+    pad = pad.strip("/")
+    if not pad:
+        return ""
+    eerste = re.sub(rf"-{jaar}\b", "", pad.split("/")[0])
+    return re.sub(r"-route$", "", eerste).strip("-")
+
+
+def gpx_urls(slug: str, jaar: int, idx=None) -> list[str]:
+    """Kandidaat-GPX-adressen voor een etappe (of een eendaagse koers).
+
+    De bestandsnaam blijft een aanname — grote rondes gebruiken
+    `parcours.gpx`, de rest `route.gpx`, en er zit een enkele `etappe-`
+    tussen. De slug is dat níét meer, en dat was de helft van het probleem.
+    Levert geen van deze adressen iets op, dan wordt het echte adres
+    opgezocht op de GPX-overzichtspagina (`gpx_index_url`).
+    """
+    if not slug:
+        return []
+    basis = f"{CDN}/{slug}/{jaar}"
+    if not idx:
+        return [f"{basis}/route.gpx", f"{basis}/parcours.gpx"]
+    return [f"{basis}/stage-{idx}-parcours.gpx",
+            f"{basis}/stage-{idx}-route.gpx",
+            f"{basis}/etappe-{idx}-route.gpx"]
+
+
+def gpx_index_url(slug: str, jaar: int) -> str:
+    """De pagina waar cyclingstage zijn GPX-bestanden op een rij zet."""
+    return f"{BASIS}/{slug}-{jaar}-gpx/" if slug else ""
+
+
+def times_url(slug: str, jaar: int, idx) -> list[str]:
+    """Het tijdschema van een etappe; daar staat de tussensprint in."""
+    if not slug or not idx:
+        return []
+    basis = f"{BASIS}/images/{slug}/{jaar}"
+    return [f"{basis}/stage-{idx}-times.htm", f"{basis}/etappe-{idx}-times.htm"]
