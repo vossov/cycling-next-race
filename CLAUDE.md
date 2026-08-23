@@ -368,6 +368,44 @@ elk half uur een extra verzoek te krijgen omdat wij willen weten waarom.
   voor de vrouwen `rankings/we/individual`. Zie `RANGLIJST` in `sensor.py`;
   het vrouwenadres is **niet geverifieerd**.
 
+### cyclingstage.com wordt de hoofdbron
+
+Nu procyclingstats onbereikbaar is en die weg uitgeput, gaat de kalender —
+en op termijn de rest — naar cyclingstage. Die bron leverde al de GPX, de
+tijdschema's en de etappeteksten, en is vanaf een gewone
+thuisverbinding bereikbaar (bewezen: in het log van 21-22 augustus staat
+geen enkele cyclingstage-fout en de attributen bevatten `elevation`).
+
+De nieuwe parsers staan in `cyclingstage.py`, los van `sensor.py`, zodat de
+oude PCS-code er tijdens de overgang naast blijft staan. Ze zijn beproefd op
+**echte HTML** in `tests/fixtures/` — opgeslagen in een browser, want de
+proxy in de ontwikkelomgeving laat cyclingstage niet door.
+
+**De kalenderpagina geeft het adres van elke koers mee.** Dat is de winst:
+`/uci/cycling-calendar-{jaar}/` heeft één tabel per maand met datum, naam,
+land, route-adres en resultaten-adres. Geen sjablonen meer raden — precies
+dat raden kostte het profiel van de Vuelta en de colnamen van de Giro.
+
+Twee dingen die cyclingstage **niet** heeft, en die de opzet veranderen:
+
+- **Geen UCI-niveaus.** "WorldTour", "ProSeries" en "UWT" komen nul keer
+  voor op de kalenderpagina. `levels` kan daar dus alleen nog mannen en
+  vrouwen onderscheiden. Dat gaat wel betrouwbaar: de naam (`Donne`,
+  `Femmes`, `Femenina`, `Women`, `(w)`) en het adres (`-women`, `-femmes`,
+  `-donne`) zeggen het allebei, onafhankelijk van elkaar.
+- **Het is een redactionele selectie.** Boven de tabel staat het met zoveel
+  woorden: "the races we are passionate about". 49 koersen in 2026, waarvan
+  11 bij de vrouwen. Voor de mannen is dat vrijwel de hele WorldTour (Polen,
+  Denemarken en Guangxi ontbreken); bij de vrouwen ontbreken alle rondes van
+  een week. Wat er niet in staat had ook geen profiel en geen tijdschema, dus
+  het zou toch leeg blijven — maar het is een echt verlies en het hoort in
+  de README te staan.
+
+Het datumformaat verdient aandacht: `1`, `20-25` of `4/28-3`. De tabel staat
+onder de maand waarin de koers **eindigt**; begint hij in een eerdere maand,
+dan staat die maand ervoor. Zonder dat voorvoegsel loopt de Vuelta (`8/22-13`
+onder September) van 22 september tot 13 september — achteruit.
+
 ### cyclingstage.com
 
 | Doel | Patroon |
