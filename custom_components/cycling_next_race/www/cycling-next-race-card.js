@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.20.0';
+const VERSIE = '0.21.0';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -195,8 +195,15 @@ function tijdwinst(s) {
  * er zolang. Naam en ploeg delen hetzelfde vakje, zodat op een smal
  * scherm eerst de ploeg wegvalt en de rennernaam blijft staan.
  */
+/* De ploeg achter de renner, of anders het land.
+ *
+ * Procyclingstats gaf de officiële UCI-ploegcode; cyclingstage geeft die
+ * niet — daar staat alleen een landcode bij elke renner. Een land in het
+ * ploegveld zetten zou iets zijn wat het niet is, dus het komt als `country`
+ * binnen en wordt hier als terugval getoond. Staat er geen van beide, dan
+ * blijven de haakjes weg. */
 function rennerMetPloeg(x) {
-  const ploeg = x.team_code || x.team;
+  const ploeg = x.team_code || x.team || (x.country ? x.country.toUpperCase() : '');
   const achter = ploeg ? `<span class="ploeg">(${esc(ploeg)})</span>` : '';
   return `<span class="naam">${esc(x.rider)}${achter}</span>`;
 }

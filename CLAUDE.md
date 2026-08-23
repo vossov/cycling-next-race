@@ -436,6 +436,41 @@ is zelfs beter dan wat we hadden — die werd geschat uit afstand en profiel
 de colnamen komen uit `_fetch_stage_names` in `sensor.py`, dat al op deze
 teksten gebouwd is en blijft.
 
+De resultatenpagina (`/vuelta-2026-results/stage-2-spain-results-2026/`) heeft
+géén tabel: de uitslag staat als `<h2>`-kop met een `<p>` eronder, regels
+gescheiden door `<br>` — `1. Matthew Brennan (gbr) 4:47:47`. `parse_blokken`
+leest elk zo'n blok, `parse_uitslag` kiest daaruit. Een blok telt alleen als
+de nummering 1..n is zonder gaten; een alinea die toevallig met "1." begint
+is geen uitslag.
+
+Drie dingen die daar anders zijn dan bij procyclingstats:
+
+- **Geen ploeg, alleen een landcode.** Een land is geen ploeg, dus het gaat
+  als `country` mee en niet als `team`. De kaart toont het als terugval waar
+  eerst de UCI-ploegcode stond. `_fetch_team_abbr`, `_abbr_cache` en
+  `MAX_PLOEGCODES_PER_RONDE` hebben daarmee geen bron meer.
+- **Geen punten-, berg- en jongerenklassement.** Op 23 augustus 2026 hebben
+  `/vuelta-2026-points-classification/` en `/vuelta-2026-kom-classification/`
+  alleen de puntenverdeling, met de mededeling dat de standen "in a table
+  during La Vuelta" komen en "You'll find the rankings under results" — en op
+  de resultatenpagina staan ze niet. `_KLASSEMENTEN` in `cyclingstage.py`
+  herkent ze op de kop, dus zodra ze verschijnen lopen ze mee zonder
+  codewijziging.
+- **Geen dagwinst.** Die werd berekend uit de "Prev"-kolom; cyclingstage
+  geeft geen vorige stand per rij. `_rank_maps` en `_gain_*` hebben daarmee
+  geen bron meer.
+
+**De kop van het klassement liegt.** Op de pagina van etappe 2 staat "GC
+after stage 1" boven het klassement ná die etappe (Pogacar eerste, Brennan
+derde — precies wat het artikel beschrijft). Dat nummer telt daarom alleen
+om te zien wélk klassement het is, nooit om te bepalen bij welke etappe het
+hoort.
+
+`uitslag_url` leidt het resultatenadres af uit het etappeadres
+(`stage-2-spain-2026` → `stage-2-spain-results-2026`); nagekeken tegen de
+echte pagina. Lukt dat ooit niet, dan staan ze allemaal op
+`uitslag_index_url`.
+
 Let op de typefouten op de site: etappe 2 van de Vuelta staat als `hils` in
 plaats van `hills`, en bij de Tour de France Femmes staat in de kalender een
 link die geen adres is (`http://Tour de France Femmes 2026`). Allebei

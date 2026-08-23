@@ -79,8 +79,8 @@ def test_andere_koers_krijgt_eigen_uitslag_en_stand(wt, coordinator, monkeypatch
     stages = _stages(FEMMES["url"], FEMMES["name"],
                      [date(2026, 7, 16), date(2026, 7, 17), VANDAAG], women=True)
     # de etappe van vandaag is nog niet binnen; die van gisteren wel
-    monkeypatch.setattr(wt, "_fetch_stage", lambda url, *a: _uitslag(
-        finished=not url.endswith("stage-3")))
+    monkeypatch.setattr(wt, "_fetch_stage", lambda st, *a: _uitslag(
+        finished=not st["stage_url"].endswith("stage-3")))
 
     uit = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])
     blok = uit["races"][1]
@@ -250,8 +250,8 @@ def test_lopende_etappe_wordt_niet_bewaard(wt, coordinator, monkeypatch):
 
 def test_koers_die_omvalt_haalt_de_rest_niet_onderuit(wt, coordinator, monkeypatch):
     """Degraderen: een mislukte koers verdwijnt, de andere blijven staan."""
-    def _fetch(url, *a):
-        if "stuk" in url:
+    def _fetch(stage, *a):
+        if "stuk" in stage["stage_url"]:
             raise RuntimeError("PCS geeft onzin terug")
         return _uitslag()
 

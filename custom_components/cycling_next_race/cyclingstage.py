@@ -410,14 +410,34 @@ def parse_uitslag(html: str) -> dict:
     zien wélk klassement het is, nooit om te bepalen bij welke etappe het
     hoort.
     """
-    uit = {"results": [], "gc": []}
+    uit = {"results": [], "gc": [], "points": [], "kom": [], "youth": []}
     for kop, rijen in parse_blokken(html):
         laag = kop.lower()
-        if not uit["results"] and "result" in laag:
-            uit["results"] = rijen
-        elif not uit["gc"] and ("gc" in laag or "general classification" in laag):
-            uit["gc"] = rijen
+        for sleutel, woorden in _KLASSEMENTEN:
+            if not uit[sleutel] and any(w in laag for w in woorden):
+                uit[sleutel] = rijen
+                break
     return uit
+
+
+# Welke kop bij welk klassement hoort. "result" staat achteraan omdat het in
+# bijna elke kop voorkomt ("Stage 2 Results"); de specifiekere woorden gaan
+# voor, anders zou een blok "Points classification results" als etappe-uitslag
+# eindigen.
+#
+# Punten-, berg- en jongerenklassement staan er op 23 augustus 2026 níét op:
+# de resultatenpagina heeft alleen "Stage N Results" en "GC after stage N",
+# en de eigen klassementspagina's bevatten alleen de puntenverdeling met de
+# mededeling dat de standen "in a table during La Vuelta" komen. Deze
+# herkenning staat er alvast, zodat ze meelopen zodra cyclingstage ze
+# publiceert — leeg blijven is beter dan iets invullen.
+_KLASSEMENTEN = [
+    ("points", ("points classification", "green jersey", "points competition")),
+    ("kom", ("kom", "mountains classification", "polka", "king of the mountains")),
+    ("youth", ("youth classification", "young rider", "white jersey")),
+    ("gc", ("gc", "general classification", "overall")),
+    ("results", ("result",)),
+]
 
 
 def uitslag_url(stage_url: str) -> str:

@@ -432,8 +432,35 @@ def test_gaten_in_de_nummering_maken_het_ongeldig(cs):
 
 
 def test_lege_pagina(cs):
-    assert cs.parse_uitslag("") == {"results": [], "gc": []}
+    leeg = cs.parse_uitslag("")
+    assert all(v == [] for v in leeg.values())
+    assert set(leeg) == {"results", "gc", "points", "kom", "youth"}
     assert cs.parse_blokken("") == []
+
+
+def test_klassementen_staan_er_nog_niet_op(cs, uitslag):
+    """Cyclingstage publiceert punten-, berg- en jongerenklassement (nog)
+    niet in leesbare vorm: de resultatenpagina heeft ze niet en de eigen
+    klassementspagina's bevatten alleen de puntenverdeling met de melding
+    dat de standen "in a table during La Vuelta" komen."""
+    assert uitslag["points"] == []
+    assert uitslag["kom"] == []
+    assert uitslag["youth"] == []
+
+
+def test_klassement_wordt_herkend_zodra_het_er_is(cs):
+    """De herkenning staat klaar; als cyclingstage het gaat publiceren
+    loopt het mee zonder codewijziging."""
+    html = ("<h2>Points classification after stage 5</h2>"
+            "<p>1. Mads Pedersen (den) 96<br>2. Jasper Philipsen (bel) 74</p>"
+            "<h2>KOM classification after stage 5</h2>"
+            "<p>1. Jay Vine (aus) 31<br>2. Koen Bouwman (ned) 22</p>")
+    uit = cs.parse_uitslag(html)
+    assert [r["rider"] for r in uit["points"]] == ["Mads Pedersen", "Jasper Philipsen"]
+    assert uit["points"][0]["time"] == "96"
+    assert [r["rider"] for r in uit["kom"]] == ["Jay Vine", "Koen Bouwman"]
+    # en zo'n kop mag niet als etappe-uitslag eindigen
+    assert uit["results"] == []
 
 
 def test_uitslagadres_uit_het_etappeadres(cs):
@@ -457,3 +484,65 @@ def test_overzicht_en_klassementsadressen(cs):
     assert urls["points"].endswith("/vuelta-2026-points-classification/")
     assert urls["kom"].endswith("/vuelta-2026-kom-classification/")
     assert cs.klassement_urls("", 2026) == {}
+
+
+def test_hele_keten_tot_en_met_de_uitslag(wt, monkeypatch):
+    """Kalender -> etappes -> uitslag, met de vier echte pagina's."""
+    fix = Path(__file__).parent / "fixtures"
+    # op volledige achtervoegsels matchen; de etappeadressen bevatten het
+    # routeadres, dus "bevat" zou de verkeerde pagina teruggeven
+    paginas = {
+        "/uci/cycling-calendar-2026/": (fix / "cyclingstage_kalender_2026.html").read_text(),
+        "/vuelta-2026-route/": (fix / "cyclingstage_vuelta_2026_route.html").read_text(),
+        "/stage-4-spain-2026/": (fix / "cyclingstage_vuelta_2026_stage4.html").read_text(),
+        "/stage-2-spain-results-2026/": UITSLAG2.read_text(),
+    }
+
+    def nep_haal(url, wat=""):
+        for sleutel, html in paginas.items():
+            if url.endswith(sleutel):
+                return html
+        return ""
+
+    monkeypatch.setattr(wt, "_haal_html", nep_haal)
+
+    koersen, _, _ = wt._fetch_calendar(2026, ["m"])
+    vuelta = next(k for k in koersen if k["name"] == "Vuelta a España")
+    etappes = wt._event_stages(vuelta)
+
+    # etappe 4: meta van zijn eigen pagina
+    meta = wt._fetch_stage_meta(etappes[3])
+    assert meta["start_time"] == "14:40"
+    assert meta["finish_time"] == "17:30"
+    assert meta["vertical"] == 2953
+    assert meta["distance"] == 104.8
+    assert meta["departure"] == "Andorra La Vella"
+
+    # etappe 2: uitslag en klassement
+    data = wt._fetch_stage(etappes[1], result_n=10, gc_n=10)
+    assert data["ok"] and data["finished"]
+    assert data["results"][0]["rider"] == "Matthew Brennan"
+    assert data["results"][0]["time"] == "4:47:47"
+    assert data["gc"][0]["rider"] == "Tadej Pogacar"
+    assert len(data["gc"]) == 10
+    # de klassementen die cyclingstage nog niet publiceert blijven leeg
+    assert data["points_top"] == [] and data["kom_top"] == []
+    assert data["points_leader"] == ""
+
+
+def test_uitslag_wordt_afgekapt_op_de_ingestelde_lengte(wt, monkeypatch):
+    monkeypatch.setattr(wt, "_haal_html", lambda url, wat="": UITSLAG2.read_text())
+    etappe = {"stage_url":
+              "https://www.cyclingstage.com/vuelta-2026-route/stage-2-spain-2026/"}
+    data = wt._fetch_stage(etappe, result_n=3, gc_n=5)
+    assert len(data["results"]) == 3
+    assert len(data["gc"]) == 5
+
+
+def test_etappe_zonder_uitslagpagina(wt, monkeypatch):
+    monkeypatch.setattr(wt, "_haal_html", lambda url, wat="": "")
+    etappe = {"stage_url":
+              "https://www.cyclingstage.com/vuelta-2026-route/stage-9-spain-2026/"}
+    data = wt._fetch_stage(etappe)
+    assert data["ok"] is False and data["finished"] is False
+    assert data["results"] == []

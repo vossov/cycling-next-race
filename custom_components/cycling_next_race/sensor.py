@@ -1015,192 +1015,61 @@ def _repair_rows(rows, roster, name_key="rider", team_key="team"):
     return hersteld
 
 
-def _fetch_stage(stage_url: str, one_day: bool = False,
-                 result_n: int = DEFAULT_RESULT_N,
+def _fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,
                  gc_n: int = DEFAULT_GC_N) -> dict:
-    """Alle relevante velden uit één Stage-pagina (meta + cols + uitslag + klassement)."""
-    # wat hier nog van procyclingstats komt loopt langs dezelfde bypass als
-    # voorheen; de kalender doet dat niet meer, die komt van cyclingstage
-    _zet_pcs_sessie()
+    """Uitslag en klassementen van één etappe, van cyclingstage.
+
+    Cyclingstage zet de uitslag als kop met een alinea eronder, niet in een
+    tabel; `parse_uitslag` leest dat. Wat er niet staat blijft leeg:
+
+    - **geen ploeg.** Er is alleen een landcode, en een land is geen ploeg.
+      Die gaat als `country` mee; `team` en `team_code` blijven weg en de
+      kaart laat de haakjes dan weg.
+    - **geen punten-, berg- en jongerenklassement.** Op 23 augustus 2026
+      hebben de eigen klassementspagina's alleen de puntenverdeling, met de
+      mededeling dat de standen "in a table during La Vuelta" komen. De
+      herkenning staat klaar in `parse_uitslag`, dus zodra ze verschijnen
+      lopen ze mee.
+    - **geen dagwinst.** Die werd berekend uit de "Prev"-kolom bij
+      procyclingstats; cyclingstage geeft geen vorige stand per rij.
+    """
+    from . import cyclingstage as cs
 
     data = {
         "ok": False, "finished": False,
-        "departure": "", "arrival": "", "distance": None, "vertical": None,
-        "profile_icon": "", "profile_score": None, "stage_type": "",
+        "departure": stage.get("departure") or "", "arrival": stage.get("arrival") or "",
+        "distance": stage.get("distance_km"), "vertical": None,
+        "profile_icon": "", "profile_score": None,
+        "stage_type": stage.get("stage_type") or "",
         "start_time": "", "climbs_raw": [],
         "results": [], "gc": [], "points_leader": "", "kom_leader": "",
         "youth_leader": "", "points_top": [], "kom_top": [], "youth_top": [],
         "startlist_quality": None,
     }
-    if not stage_url:
+    url = cs.uitslag_url(stage.get("stage_url") or "")
+    if not url:
         return data
-    st = _stage_obj(stage_url, one_day)
-    if st is None:
+    html = _haal_html(url, "uitslag")
+    if not html:
         return data
-
+    uit = cs.parse_uitslag(html)
     data["ok"] = True
-    data["departure"] = _safe(st.departure, "") or ""
-    data["arrival"] = _safe(st.arrival, "") or ""
-    data["distance"] = _num(_safe(st.distance))
-    data["vertical"] = _int(_safe(st.vertical_meters))
-    data["profile_icon"] = (_safe(st.profile_icon, "") or "").strip()
-    data["profile_score"] = _int(_safe(st.profile_score))
-    data["stage_type"] = _safe(st.stage_type, "") or ""
-    data["startlist_quality"] = _quality(st)
-    data["start_time"] = _safe(st.start_time, "") or ""
-    data["climbs_raw"] = _safe(
-        lambda: st.climbs("climb_name", "climb_url", "category"), []) or []
-
-    # adres van de ploegpagina per ploegnaam. Blijft binnen deze functie en
-    # gaat níét mee in de rijen: de coordinator zoekt er de ploegcode mee op,
-    # en in de attributen zou het alleen ruimte kosten.
-    team_urls: dict[str, str] = {}
-
-    def _onthoud_ploeg(r):
-        naam = (r.get("team_name") or "").strip()
-        adres = (r.get("team_url") or "").strip()
-        if naam and adres and naam not in team_urls:
-            team_urls[naam] = adres
-
-    results = _safe(lambda: st.results(
-        "rank", "rider_name", "team_name", "team_url", "time", "status"), []) or []
-    if not results:   # oudere pagina zonder ploeglink
-        results = _safe(
-            lambda: st.results("rank", "rider_name", "team_name", "time", "status"), []) or []
-    _fix_names(results, _row_names(st, "stage"), "uitslag")
-    clean = []
-    for r in results:
-        if r.get("rank") in (None, "") or r.get("status") not in (None, "DF", ""):
-            continue
-        _onthoud_ploeg(r)
-        clean.append({
-            "rank": r.get("rank"),
-            "rider": (r.get("rider_name") or "").strip(),
-            "team": (r.get("team_name") or "").strip(),
-            "time": r.get("time") or "",
-        })
-        if len(clean) >= result_n:
-            break
-    data["results"] = clean
-    data["finished"] = bool(clean)
-
-    gc = _safe(lambda: st.gc(
-        "rank", "rider_name", "team_name", "team_url", "time", "prev_rank"), []) or []
-    if not gc:
-        gc = _safe(lambda: st.gc(
-            "rank", "rider_name", "team_name", "time", "prev_rank"), []) or []
-    if not gc:
-        gc = _safe(lambda: st.gc("rank", "rider_name", "team_name", "time"), []) or []
-    _fix_names(gc, _row_names(st, "gc"), "klassement")
-    for _g in gc:
-        _onthoud_ploeg(_g)
-    data["gc"] = [{
-        "rank": g.get("rank"),
-        "rider": (g.get("rider_name") or "").strip(),
-        "team": (g.get("team_name") or "").strip(),
-        "time": g.get("time") or "",
-        "move": _move(g.get("prev_rank"), g.get("rank")),
-        "prev": _int(g.get("prev_rank")),
-    } for g in gc[:gc_n]]
-    _dg, _dh, _draw = _delta_col(st, "gc")
-    data["gain_headers"] = _dh
-    data["gain_raw"] = _draw
-    for _row, _d in zip(data["gc"], _dg):
-        if _d is not None:
-            _row["gain_s"] = _d
-
-    def _leader(fn):
-        rows = _safe(lambda: fn("rank", "rider_name"), []) or []
-        for r in rows:
-            if r.get("rank") in (1, "1"):
-                return (r.get("rider_name") or "").strip()
-        return (rows[0].get("rider_name").strip() if rows else "")
-
-    data["points_leader"] = _leader(st.points)
-    data["kom_leader"] = _leader(st.kom)
-    data["youth_leader"] = _leader(st.youth)
-
-    def _standings(fn, table_key, n=5):
-        rows = _safe(lambda: fn(
-            "rank", "rider_name", "team_name", "team_url", "points", "prev_rank"), []) or []
-        if not rows:
-            rows = _safe(lambda: fn(
-                "rank", "rider_name", "team_name", "points", "prev_rank"), []) or []
-        if not rows:
-            rows = _safe(lambda: fn("rank", "rider_name", "team_name", "points"), []) or []
-        if not rows:
-            rows = _safe(lambda: fn("rank", "rider_name", "team_name"), []) or []
-        _fix_names(rows, _row_names(st, table_key), table_key)
-        out = []
-        for r in rows:
-            rider = (r.get("rider_name") or "").strip()
-            if not rider:
-                continue
-            _onthoud_ploeg(r)
-            out.append({"rank": r.get("rank"), "rider": rider,
-                        "team": (r.get("team_name") or "").strip(),
-                        "points": r.get("points"),
-                        "move": _move(r.get("prev_rank"), r.get("rank")),
-                        "prev": _int(r.get("prev_rank"))})
-            if len(out) >= n:
-                break
-        return out
-
-    data["points_top"] = _standings(st.points, "points")
-    data["kom_top"] = _standings(st.kom, "kom")
-
-    youth = _safe(lambda: st.youth(
-        "rank", "rider_name", "team_name", "team_url", "time", "prev_rank"), []) or []
-    if not youth:
-        youth = _safe(lambda: st.youth(
-            "rank", "rider_name", "team_name", "time", "prev_rank"), []) or []
-    if not youth:
-        youth = _safe(lambda: st.youth("rank", "rider_name", "team_name", "time"), []) or []
-    _fix_names(youth, _row_names(st, "youth"), "jongeren")
-    for _y in youth:
-        _onthoud_ploeg(_y)
-    data["youth_top"] = [{
-        "rank": g.get("rank"),
-        "rider": (g.get("rider_name") or "").strip(),
-        "team": (g.get("team_name") or "").strip(),
-        "time": g.get("time") or "",
-        "move": _move(g.get("prev_rank"), g.get("rank")),
-        "prev": _int(g.get("prev_rank")),
-    } for g in youth[:5]]
-    for _row, _d in zip(data["youth_top"], _delta_col(st, "youth")[0]):
-        if _d is not None:
-            _row["gain_s"] = _d
-    data["team_urls"] = team_urls
+    data["results"] = uit["results"][:result_n]
+    data["gc"] = uit["gc"][:gc_n]
+    data["points_top"] = uit["points"][:gc_n]
+    data["kom_top"] = uit["kom"][:gc_n]
+    data["youth_top"] = uit["youth"][:gc_n]
+    for sleutel, top in (("points_leader", "points_top"),
+                         ("kom_leader", "kom_top"),
+                         ("youth_leader", "youth_top")):
+        if data[top]:
+            data[sleutel] = data[top][0].get("rider", "")
+    # gereden is: er staat een uitslag. Een pagina die er wel is maar nog
+    # geen uitslag heeft, telt niet als afgelopen etappe.
+    data["finished"] = bool(data["results"])
+    _LOGGER.debug("Uitslag %s: %s rijen, gc %s", url,
+                  len(data["results"]), len(data["gc"]))
     return data
-
-
-def _build_climbs(stage_data: dict, race_climbs: dict) -> list[dict]:
-    """Join stage-cols (naam/categorie) met de koersbrede col-details (km/lengte/%/top)."""
-    out = []
-    for c in stage_data.get("climbs_raw", []):
-        det = race_climbs.get(c.get("climb_url"), {})
-        top = _int(det.get("top"))
-        if top is None:
-            continue  # zonder hoogte/positie kunnen we 'm niet plaatsen
-        out.append({
-            "name": (c.get("climb_name") or "").strip(),
-            "category": str(c.get("category", "")).upper(),
-            "km_to_finish": _num(det.get("km_before_finnish")),
-            "top_m": top,
-            "length_km": _num(det.get("length")),
-            "steepness_pct": _num(det.get("steepness")),
-        })
-    return out
-
-
-# ──────────────────────────────────────────────────────────────
-# Coordinator
-# ──────────────────────────────────────────────────────────────
-
-
-
-def _norm(s: str) -> str:
-    return (s or "").strip().lower()
 
 
 def _show_state_for(sd: date, today: date) -> str:
@@ -1217,7 +1086,6 @@ def _quality(st):
     if isinstance(v, (tuple, list)):
         v = v[-1] if v else None
     return _int(v)
-
 
 def _fetch_stage_meta(stage: dict) -> dict:
     """Wat er over een etappe bekend is, uit de etappelijst plus zijn pagina.
@@ -2249,7 +2117,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             # de ploegcodes die vorige ronde nog niet aan de beurt waren
             await self._ploegcodes(d)
             return d
-        d = await self._job(_fetch_stage, url, s.get("one_day"),
+        d = await self._job(_fetch_stage, s,
                             self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
         if not d.get("finished"):
             await self._ploegcodes(d)
@@ -2748,7 +2616,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         today_finished = False
 
         if today_st:
-            td = await self._job(_fetch_stage, today_st["stage_url"], today_st.get("one_day"),
+            td = await self._job(_fetch_stage, today_st,
                                  self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
             if td.get("finished"):
                 today_finished = True
@@ -2774,10 +2642,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
             return {"state": "Seizoen afgelopen", "attributes": {"show_state": "Klaar"}}
 
         if shown_data is None:
-            shown_data = await self._job(_fetch_stage, shown["stage_url"], shown.get("one_day"),
+            shown_data = await self._job(_fetch_stage, shown,
                                          self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
         if last_fin is not None and last_fin_data is None:
-            last_fin_data = await self._job(_fetch_stage, last_fin["stage_url"], last_fin.get("one_day"),
+            last_fin_data = await self._job(_fetch_stage, last_fin,
                                             self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
 
         # namen in de klassementen kunnen bij de verkeerde rij staan; herstellen
