@@ -711,3 +711,92 @@ def test_pcs_url_gebruikt_het_adres_van_het_pakket(wt, monkeypatch):
     _sessie_die_antwoordt(monkeypatch, 200, "")
     assert wt._pcs_url("races.php?year=2026") == (
         "https://www.procyclingstats.com/races.php?year=2026")
+
+
+# ── niet blijven roepen bij een blokkade die blijft ─────────────────
+
+@pytest.fixture(autouse=True)
+def _kalenderfout_vergeten(wt):
+    wt._LAATSTE_KALENDERFOUT = ""
+    yield
+    wt._LAATSTE_KALENDERFOUT = ""
+
+
+def _blokkerende_bron(wt, monkeypatch, melding="Cloudflare protection detected"):
+    """Elke kalenderpagina loopt stuk; telt de proefverzoeken.
+
+    `_PCS_SESSIE` wordt gevuld zodat `_zet_pcs_sessie` de nep-Scraper met
+    rust laat — anders hangt die er de echte curl_cffi-sessie aan en gaat
+    het proefverzoek het net op.
+    """
+    import sys
+    import types
+
+    monkeypatch.setattr(wt, "_PCS_SESSIE", "curl_cffi actief (test)")
+    proeven = []
+
+    class Scraper:
+        BASE_URL = "https://www.procyclingstats.com/"
+
+        def __init__(self, url):
+            raise ConnectionError(melding)
+
+        @classmethod
+        def _get_session(cls):
+            class S:
+                def get(self, url, timeout=None):
+                    proeven.append(url)
+
+                    class R:
+                        status_code = 403
+                        text = "Just a moment"
+                        headers = {}
+                    return R()
+            return S()
+
+    scraper = types.ModuleType("procyclingstats.scraper")
+    scraper.Scraper = Scraper
+    pakket = types.ModuleType("procyclingstats")
+    pakket.scraper = scraper
+    monkeypatch.setitem(sys.modules, "procyclingstats", pakket)
+    monkeypatch.setitem(sys.modules, "procyclingstats.scraper", scraper)
+    return proeven
+
+
+def test_zelfde_blokkade_logt_maar_een_keer(wt, monkeypatch, caplog):
+    import logging
+
+    _blokkerende_bron(wt, monkeypatch)
+
+    with caplog.at_level(logging.WARNING, logger="cycling_next_race.sensor"):
+        wt._fetch_calendar(2026, ["1", "24", "26", "27"])
+        eerste = [r for r in caplog.records if "ophalen mislukt" in r.message]
+        caplog.clear()
+        wt._fetch_calendar(2026, ["1", "24", "26", "27"])
+        tweede = [r for r in caplog.records if "ophalen mislukt" in r.message]
+
+    assert len(eerste) == 1, f"vier niveaus gaven {len(eerste)} waarschuwingen"
+    assert tweede == [], "dezelfde blokkade werd opnieuw als nieuws gemeld"
+
+
+def test_geen_proefverzoek_bij_een_blokkade_die_we_al_kennen(wt, monkeypatch):
+    """Een site die ons weigert hoort niet elk half uur extra bezoek te krijgen."""
+    proeven = _blokkerende_bron(wt, monkeypatch)
+
+    wt._fetch_calendar(2026, ["1"])
+    assert len(proeven) == 1, "de eerste keer hoort er één proefverzoek te zijn"
+
+    wt._fetch_calendar(2026, ["1"])
+    wt._fetch_calendar(2026, ["1"])
+    assert len(proeven) == 1, f"er zijn {len(proeven)} proefverzoeken gedaan"
+
+
+def test_een_andere_fout_is_wel_weer_nieuws(wt, monkeypatch):
+    """Verandert de blokkade van aard, dan wil je dat wél weten."""
+    eerst = _blokkerende_bron(wt, monkeypatch, "Cloudflare protection detected")
+    wt._fetch_calendar(2026, ["1"])
+    assert len(eerst) == 1
+
+    daarna = _blokkerende_bron(wt, monkeypatch, "Cloudflare: nu met Error 1020")
+    wt._fetch_calendar(2026, ["1"])
+    assert len(daarna) == 1, "een nieuwe fout hoort opnieuw nagekeken te worden"
