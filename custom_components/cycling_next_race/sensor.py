@@ -310,6 +310,22 @@ def _parse_start_hhmm(start_time: str | None):
 # iemand het merkt, en juist een oude vingerafdruk valt op.
 PCS_IMPERSONATE = "chrome"
 
+# Basisadres van procyclingstats; het pakket werkt met relatieve paden en
+# `_pcs_antwoord_diag` heeft een volledig adres nodig.
+PCS_BASE = "https://www.procyclingstats.com/"
+
+
+def _pcs_url(pad: str) -> str:
+    """Relatief pad -> volledig adres, met het adres van het pakket zelf
+    als dat er is (dan blijft het kloppen als procyclingstats verhuist)."""
+    try:
+        from procyclingstats.scraper import Scraper
+
+        basis = getattr(Scraper, "BASE_URL", "") or PCS_BASE
+    except Exception:  # noqa: BLE001
+        basis = PCS_BASE
+    return basis.rstrip("/") + "/" + (pad or "").lstrip("/")
+
 # Of de sessie van procyclingstats al vervangen is. Modulewijd, want de
 # patch zit op de klasse en hoeft maar één keer.
 _PCS_SESSIE = ""
@@ -360,6 +376,68 @@ def _zet_pcs_sessie() -> str:
     _PCS_SESSIE = f"curl_cffi actief (impersonate={PCS_IMPERSONATE})"
     _LOGGER.debug("procyclingstats praat nu via %s", _PCS_SESSIE)
     return _PCS_SESSIE
+
+
+def _kop(headers, naam: str) -> str:
+    """Eén header, ongeacht hoe de client hem schrijft."""
+    try:
+        waarde = headers.get(naam)
+        if waarde:
+            return str(waarde)
+        for k, v in dict(headers).items():
+            if str(k).lower() == naam.lower():
+                return str(v)
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def _pcs_antwoord_diag(url: str) -> str:
+    """Wat procyclingstats werkelijk terugstuurt als het misgaat.
+
+    Het pakket gooit dezelfde fout bij een JS-uitdaging ("Just a moment")
+    en bij een kale 403, en dat zijn twee heel verschillende dingen: het
+    eerste is een uitdaging die een client kan proberen te doorlopen, het
+    tweede is een weigering (IP-reputatie, of beleid van de site) waar aan
+    onze kant niets tegen helpt. Zolang dat verschil niet vaststaat is elke
+    volgende bypass een gok.
+
+    Eén verzoek, met dezelfde sessie die het pakket zelf gebruikt, zodat we
+    meten wat procyclingstats ervaart en niet iets anders. Draait in de
+    executor en wordt alleen aangeroepen als het al misgegaan is.
+    """
+    try:
+        from procyclingstats.scraper import Scraper
+
+        resp = Scraper._get_session().get(url, timeout=30)
+    except Exception as err:  # noqa: BLE001
+        return f"proefverzoek mislukt ({type(err).__name__}: {err})"
+
+    tekst = getattr(resp, "text", "") or ""
+    headers = getattr(resp, "headers", {}) or {}
+    delen = [f"status {getattr(resp, 'status_code', '?')}",
+             f"{len(tekst)} tekens"]
+
+    # Cloudflare nummert zijn eigen weigeringen; 1020 = Access Denied
+    # (firewallregel), 1015 = rate limit. Staat er een nummer, dan is het
+    # een weigering en geen uitdaging.
+    code = re.search(r"Error\s*(\d{4})", tekst)
+    if code:
+        delen.append(f"Cloudflare-fout {code.group(1)}")
+    uitdaging = [m for m in ("Just a moment", "challenge-platform",
+                             "cf-browser-verification", "Enable JavaScript")
+                 if m.lower() in tekst.lower()]
+    delen.append("uitdagingspagina (%s)" % ", ".join(uitdaging)
+                 if uitdaging else "geen uitdagingstekst")
+    for naam in ("cf-mitigated", "cf-ray", "server"):
+        waarde = _kop(headers, naam)
+        if waarde:
+            delen.append(f"{naam}={waarde}")
+    # de eerste regel tekst zegt vaak genoeg; opgeschoond en kort gehouden
+    kaal = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", tekst)).strip()
+    if kaal:
+        delen.append(f"begin: {kaal[:160]!r}")
+    return "; ".join(delen)
 
 
 def _bypass_diag() -> str:
@@ -433,20 +511,22 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
     races = []
     telling = {}
     fouten = []
+    proef_pad = ""
     for niveau in niveaus or []:
         info = NIVEAUS.get(str(niveau))
         if info is None:
             _LOGGER.warning("Onbekend niveau %s, overgeslagen", niveau)
             continue
         gevonden = 0
+        pad = f"races.php?year={year}&circuit={niveau}&class=&filter=Filter"
         try:
-            cal = RacesCalendar(
-                f"races.php?year={year}&circuit={niveau}&class=&filter=Filter")
+            cal = RacesCalendar(pad)
             rijen = cal.races()
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Kalender van %s ophalen mislukt: %s", info["naam"], err)
             telling[info["naam"]] = 0
             fouten.append(str(err))
+            proef_pad = proef_pad or pad
             continue
         for r in rijen:
             m = re.findall(r"(\d{2})\.(\d{2})", r["date"])
@@ -487,6 +567,11 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
         diag = _bypass_diag()
         _LOGGER.warning("Cloudflare bij procyclingstats — %s", diag)
         fouten.append(diag)
+        # en wat de bron werkelijk terugstuurt: een uitdaging of een
+        # weigering. Eén extra verzoek, alleen als het toch al misging.
+        antwoord = _pcs_antwoord_diag(_pcs_url(proef_pad))
+        _LOGGER.warning("Antwoord van procyclingstats — %s", antwoord)
+        fouten.append(antwoord)
     _LOGGER.debug("Kalender: %s koersen (%s)", len(uniek),
                   ", ".join(f"{n}: {a}" for n, a in telling.items()))
     return uniek, telling, fouten

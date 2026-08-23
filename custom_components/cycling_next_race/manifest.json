@@ -9,5 +9,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/vossov/cycling-next-race/issues",
   "requirements": ["procyclingstats==0.2.8", "cloudscraper==1.2.71", "curl_cffi==0.16.1"],
-  "version": "0.16.0"
+  "version": "0.16.1"
 }

@@ -623,3 +623,91 @@ def test_diagnose_noemt_beide_bypasses(wt, monkeypatch):
 
     uit = wt._bypass_diag()
     assert "1.2.71" in uit and "curl_cffi actief" in uit
+
+
+# ── wat de bron werkelijk terugstuurt ───────────────────────────────
+
+def _sessie_die_antwoordt(monkeypatch, status, tekst, koppen=None):
+    import sys
+    import types
+
+    kop_dict = koppen or {}
+
+    class Resp:
+        # let op: in een klasse-body verwijst een naam naar het
+        # klasse-attribuut in wording, niet naar de buitenste variabele
+        status_code = status
+        text = tekst
+        headers = kop_dict
+
+    class Scraper:
+        BASE_URL = "https://www.procyclingstats.com/"
+
+        @classmethod
+        def _get_session(cls):
+            class S:
+                def get(self, url, timeout=None):
+                    Resp.gevraagd = url
+                    return Resp()
+            return S()
+
+    scraper = types.ModuleType("procyclingstats.scraper")
+    scraper.Scraper = Scraper
+    pakket = types.ModuleType("procyclingstats")
+    pakket.scraper = scraper
+    monkeypatch.setitem(sys.modules, "procyclingstats", pakket)
+    monkeypatch.setitem(sys.modules, "procyclingstats.scraper", scraper)
+    return Resp
+
+
+def test_uitdagingspagina_wordt_als_zodanig_herkend(wt, monkeypatch):
+    _sessie_die_antwoordt(
+        monkeypatch, 403,
+        "<html><title>Just a moment...</title><body>Enable JavaScript and "
+        "cookies to continue</body></html>",
+        {"cf-mitigated": "challenge", "cf-ray": "9abc123", "server": "cloudflare"})
+
+    uit = wt._pcs_antwoord_diag("https://www.procyclingstats.com/races.php")
+
+    assert "status 403" in uit
+    assert "uitdagingspagina" in uit and "Just a moment" in uit
+    assert "cf-mitigated=challenge" in uit and "cf-ray=9abc123" in uit
+
+
+def test_kale_weigering_is_geen_uitdaging(wt, monkeypatch):
+    """Error 1020 is een firewallregel; daar helpt geen enkele bypass tegen."""
+    _sessie_die_antwoordt(
+        monkeypatch, 403,
+        "<html><h1>Access denied</h1><p>Error 1020</p></html>",
+        {"server": "cloudflare"})
+
+    uit = wt._pcs_antwoord_diag("https://www.procyclingstats.com/races.php")
+
+    assert "Cloudflare-fout 1020" in uit
+    assert "geen uitdagingstekst" in uit
+
+
+def test_proefverzoek_dat_zelf_stukloopt_meldt_dat(wt, monkeypatch):
+    import sys
+    import types
+
+    class Scraper:
+        @classmethod
+        def _get_session(cls):
+            raise RuntimeError("geen sessie")
+
+    scraper = types.ModuleType("procyclingstats.scraper")
+    scraper.Scraper = Scraper
+    pakket = types.ModuleType("procyclingstats")
+    pakket.scraper = scraper
+    monkeypatch.setitem(sys.modules, "procyclingstats", pakket)
+    monkeypatch.setitem(sys.modules, "procyclingstats.scraper", scraper)
+
+    uit = wt._pcs_antwoord_diag("https://x/")
+    assert "proefverzoek mislukt" in uit and "RuntimeError" in uit
+
+
+def test_pcs_url_gebruikt_het_adres_van_het_pakket(wt, monkeypatch):
+    _sessie_die_antwoordt(monkeypatch, 200, "")
+    assert wt._pcs_url("races.php?year=2026") == (
+        "https://www.procyclingstats.com/races.php?year=2026")
