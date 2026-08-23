@@ -258,9 +258,21 @@ het vanzelf als het er is (nagekeken in de wheel van pypi, `scraper.py`).
 Het staat niet in `requires_dist` van het pakket, dus zonder onze regel komt
 het er niet.
 
-Of `cloudscraper` 1.2.71 — de laatste, uit april 2023 — de bescherming van
-vandaag ook echt passeert, is van hieruit **niet na te gaan**: de proxy laat
-procyclingstats niet door. Blijft de melding staan, dan is dat het spoor.
+**De melding van procyclingstats zegt niet of cloudscraper actief is.**
+`_make_request` kijkt alleen of het antwoord een uitdagingspagina is of een
+403, en plakt daar onvoorwaardelijk `Install 'cloudscraper'` achter — ook
+wanneer cloudscraper wél draait. Uit het log alleen is dus niet te zien of
+de bypass ontbreekt of dat hij er niet langs komt, en dat is het verschil
+tussen "herstart Home Assistant" en "dit pakket helpt hier niet meer".
+Daarom hangt `_fetch_calendar` bij een Cloudflare-fout `_cloudscraper_diag()`
+achter de melding: die probeert de import en zegt welke van de twee het is.
+
+Op 23 augustus 2026 bleef de melding staan ná het toevoegen van
+cloudscraper. Dat is te verwachten: 1.2.71 is van april 2023 en Cloudflare
+is sindsdien doorontwikkeld. Helpt het niet, dan is dit niet in deze
+integratie op te lossen — het hangt van het `procyclingstats`-pakket af, of
+van een zwaardere bypass (TLS-impersonatie zoals `curl_cffi`), en dat laatste
+is een monkeypatch op een extern pakket die van hieruit niet te beproeven is.
 
 
 - Kalender: `races.php?year={y}&circuit={c}&class=&filter=Filter`

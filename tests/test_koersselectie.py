@@ -417,7 +417,35 @@ def test_fout_van_de_bron_reist_mee(wt, monkeypatch):
     koersen, telling, fouten = wt._fetch_calendar(2026, ["1", "24"])
     assert koersen == []
     assert telling == {"WorldTour mannen": 0, "WorldTour vrouwen": 0}
-    assert fouten and all("Cloudflare" in f for f in fouten)
+    assert any("Cloudflare" in f for f in fouten)
+    # en erachteraan of de bypass er wel of niet is; de melding van
+    # procyclingstats zegt daar niets over
+    assert any("cloudscraper" in f for f in fouten)
+
+
+def test_cloudscraper_diag_zegt_of_het_pakket_er_is(wt, monkeypatch):
+    """Twee heel verschillende situaties, één melding van procyclingstats."""
+    import builtins
+
+    echt = builtins.__import__
+
+    def _zonder(naam, *a, **kw):
+        if naam == "cloudscraper":
+            raise ImportError("No module named 'cloudscraper'")
+        return echt(naam, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", _zonder)
+    uit = wt._cloudscraper_diag()
+    assert "NIET geladen" in uit and "herstart" in uit.lower()
+
+    import sys
+    import types
+    monkeypatch.setattr(builtins, "__import__", echt)
+    nep = types.ModuleType("cloudscraper")
+    nep.__version__ = "1.2.71"
+    monkeypatch.setitem(sys.modules, "cloudscraper", nep)
+    uit = wt._cloudscraper_diag()
+    assert "1.2.71" in uit and "wél geladen" in uit
 
 
 def _zet_vandaag(wt, monkeypatch):
