@@ -11,7 +11,7 @@ NAME = "Cycling Next Race"
 # Gelijk aan "version" in manifest.json; hangt achter de kaart-URL zodat de
 # browser na een update de nieuwe versie ophaalt. tests/test_repo.py bewaakt
 # dat de twee niet uiteenlopen.
-VERSION = "0.21.0"
+VERSION = "0.22.0"
 
 # De meegeleverde Lovelace-kaart, door de integratie zelf geregistreerd.
 KAART_BESTAND = "cycling-next-race-card.js"
@@ -24,6 +24,7 @@ CONF_GC_N = "gc_n"
 # uitslag heeft.
 CONF_START_N = "start_n"
 CONF_UPCOMING_N = "upcoming_n"
+CONF_PAST_N = "past_n"
 CONF_UPCOMING_DAYS = "upcoming_days"
 CONF_SCAN_MINUTES = "scan_minutes"
 CONF_LIVE_SCAN_MINUTES = "live_scan_minutes"
@@ -68,6 +69,14 @@ DEFAULT_RESULT_N = 10
 DEFAULT_GC_N = 10
 DEFAULT_START_N = 10
 DEFAULT_UPCOMING_N = 10
+# Hoeveel gereden etappes je in de pop-up terug kunt bladeren. Elke etappe
+# kost een verzoek (eenmalig — een gereden uitslag verandert niet meer) en
+# ruim 400 bytes in de attributen, en die zitten al tegen de grens van de
+# recorder aan. Vandaar bescheiden; 0 zet het uit.
+DEFAULT_PAST_N = 3
+# Hoeveel renners per teruggebladerde etappe. Korter dan de gewone uitslag:
+# wie derde werd in etappe 7 wil je nog weten, wie negende niet.
+PAST_RESULT_N = 5
 DEFAULT_UPCOMING_DAYS = 7
 DEFAULT_SCAN_MINUTES = 30
 DEFAULT_LIVE_SCAN_MINUTES = 5
@@ -101,6 +110,7 @@ OPTION_DEFAULTS: dict[str, object] = {
     CONF_GC_N: DEFAULT_GC_N,
     CONF_START_N: DEFAULT_START_N,
     CONF_UPCOMING_N: DEFAULT_UPCOMING_N,
+    CONF_PAST_N: DEFAULT_PAST_N,
     CONF_UPCOMING_DAYS: DEFAULT_UPCOMING_DAYS,
     CONF_SCAN_MINUTES: DEFAULT_SCAN_MINUTES,
     CONF_LIVE_SCAN_MINUTES: DEFAULT_LIVE_SCAN_MINUTES,

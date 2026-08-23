@@ -42,6 +42,7 @@ from .const import (
     CONF_START_N,
     CONF_UPCOMING_DAYS,
     CONF_UPCOMING_N,
+    CONF_PAST_N,
     DEFAULT_GC_N,
     DEFAULT_LIVE_SCAN_MINUTES,
     DEFAULT_MAX_OTHER,
@@ -55,6 +56,7 @@ from .const import (
     NIVEAUS,
     OUDE_NIVEAUS,
     OPTION_DEFAULTS,
+    PAST_RESULT_N,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -1879,6 +1881,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # alleen bij een nieuwe kalenderdag opnieuw; een mislukte poging
         # staat als "" in de cache en wordt dan morgen weer geprobeerd.
         self._abbr_cache: dict[str, str] = {}
+        # uitslag van een gereden etappe om in terug te bladeren, op
+        # stage_url. Deze wordt bewust *niet* bij een nieuwe dag geleegd: een
+        # etappe die gereden is verandert niet meer, en juist gisteren is de
+        # etappe waar het meest in wordt teruggekeken. Het scheelt elke
+        # ochtend een verzoek per etappe.
+        self._past_cache: dict[str, dict] = {}
         self._names_diag: list = []
 
     def _opt(self, sleutel: str) -> int:
@@ -2439,6 +2447,63 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 e["sprints"] = sprints
         return e
 
+    async def _build_past(self, finished: list[dict], overslaan: str,
+                          today: date) -> list[dict]:
+        """De laatst gereden etappes om in terug te bladeren.
+
+        Alleen van de koers op de tegel. Het zou per koersblok kunnen — elke
+        rij draagt `race_key`, dus de kaart kan het uit elkaar houden — maar
+        dat vermenigvuldigt zowel de verzoeken als de bytes, en de attributen
+        zitten al boven de grens van de recorder. Wie het breder wil, begint
+        daar.
+
+        De etappe die al als `last_result` in de attributen staat wordt
+        overgeslagen; die zou anders dubbel staan.
+
+        Elke uitslag komt uit `_past_cache` zodra hij een keer is opgehaald.
+        Alleen een uitslag die er ook echt is komt in die cache: een pagina
+        die nog leeg was moet morgen opnieuw geprobeerd worden.
+        """
+        aantal = self._opt(CONF_PAST_N)
+        if aantal <= 0:
+            return []
+        out = []
+        # van achteren naar voren: de meest recente etappe eerst
+        for s in reversed(finished):
+            if len(out) >= aantal:
+                break
+            url = s["stage_url"]
+            if url == overslaan:
+                continue
+            rij = self._past_cache.get(url)
+            if rij is None:
+                try:
+                    d = await self._job(_fetch_stage, s, PAST_RESULT_N, 0)
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug("Uitslag terugblik mislukt voor %s: %s", url, err)
+                    continue
+                if not d.get("results"):
+                    continue
+                rij = {
+                    "date": s["date"].isoformat(),
+                    "race_key": _race_slug(s["race_url"]),
+                    "level": str(s.get("level", "")),
+                    "departure": d.get("departure") or "",
+                    "arrival": d.get("arrival") or "",
+                    "distance_km": d.get("distance"),
+                    "results": d["results"],
+                }
+                if s.get("one_day"):
+                    rij["eyebrow"] = _short_race(s["race_name"], 26)
+                else:
+                    rij["eyebrow"] = (f"Etappe {s['idx']} \u00b7 "
+                                      f"{_short_race(s['race_name'])}")
+                if s.get("women") and not _noemt_dames(s["race_name"]):
+                    rij["eyebrow"] += " \u00b7 Dames"
+                self._past_cache[url] = rij
+            out.append(rij)
+        return out
+
     async def _build_upcoming(self, cur_idx: int, shown: dict,
                               future: list[dict], today: date,
                               getoond: set | None = None) -> list[dict]:
@@ -2808,6 +2873,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
             cur_idx, shown, future, today,
             {r.get("key") for r in ander.get("races", [])})
 
+        # Terugbladeren door de uitslagen van deze koers. `last_fin` staat al
+        # als `last_result` in de attributen, dus die slaan we hier over.
+        past = await self._build_past(
+            finished, (last_fin or {}).get("stage_url", ""), today)
+
         # Live-positie (alleen als de kop echt onderweg is) + links
         from urllib.parse import quote
         live_dist = svg_stage["distance_km"]
@@ -2862,6 +2932,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 "levels_diag": self._levels_diag,
                 # ── spoiler (alleen tonen in de pop-up!) ──
                 "last_result": last_result,
+                # eerder gereden etappes om in terug te bladeren
+                "past": past,
                 "gc_top": gc_top,
                 "points_leader": last_fin_data.get("points_leader") if last_fin_data else "",
                 "kom_leader": last_fin_data.get("kom_leader") if last_fin_data else "",

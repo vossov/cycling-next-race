@@ -204,6 +204,33 @@ Zo'n blok geeft hetzelfde beeld als de tegelkoers:
 - Het profiel komt uit `upcoming` (zie hieronder), inclusief `start_time`,
   `finish_est` en de tussensprint.
 
+### Terugbladeren door de uitslagen
+
+`_build_past` levert het attribuut `past`: de laatst gereden etappes van de
+koers op de tegel, van nieuw naar oud, met hoogstens `PAST_RESULT_N` (5)
+renners per uitslag. De etappe die al als `last_result` in de attributen
+staat wordt overgeslagen; anders stond die dubbel.
+
+**Alleen voor de tegelkoers.** Elke rij draagt `race_key`, dus de kaart kan
+het per koersblok uit elkaar houden en het zou per koers kunnen — maar dat
+vermenigvuldigt zowel de verzoeken bij cyclingstage als de bytes, en die
+zitten al boven de grens van de recorder. Wie het breder wil, begint daar.
+
+`_past_cache` wordt als enige cache **niet** bij een dagwissel geleegd: een
+etappe die gereden is verandert niet meer, en juist gisteren is de etappe
+waarin het meest wordt teruggekeken. Alleen een uitslag die er ook echt is
+komt erin — een pagina die nog leeg was wordt morgen opnieuw geprobeerd.
+
+In de kaart is het één sectie. `uitslagenblok` zet `last_result` als eerste
+bladzijde en de rijen uit `past` daarachter; bij één bladzijde tekent het
+precies wat `tijdlijst` ook zou tekenen, dus zonder pijlen. Alle bladzijden
+staan in de HTML en worden verborgen — de sensor stuurt ze al mee en een
+klik hoort niet op het netwerk te wachten. `_bladerknoppen` handelt elke
+`.uitslagen` los af, want elk koersblok kan er een hebben.
+
+`past` in `sections` zet alleen de pijlen aan of uit; `result` blijft de
+schakelaar voor de uitslag zelf.
+
 ### Startlijst als er nog geen uitslag is
 
 Een koers die nog moet beginnen heeft niets te tonen: geen uitslag, geen
@@ -594,6 +621,10 @@ attributen gaan wel over de websocket naar de kaart), maar de recorder
 bewaart ze niet, dus er is geen historie van. Wie dat wil oplossen zal
 `upcoming` of `max_other` moeten inperken; beide kosten iets zichtbaars.
 
+`past` kost zo'n 400 bytes per etappe: vijf renners zonder ploeg, plus de
+kop en de plaatsnamen. Met de standaard van drie is dat ruim een kilobyte,
+en `past_n` op 0 haalt het er helemaal af.
+
 De startlijst komt er niet bovenop maar staat in de plaats van de uitslag:
 tien renners is zo'n 600 bytes per koers, en een koers zonder uitslag heeft
 juist geen `last_result`, `gc_top` en de rest. Per saldo scheelt het.
@@ -742,6 +773,8 @@ koers die de sénsor uitkoos en kan dus van een uitgezet niveau zijn. De
 voorwaarde telt daarom de koersen vóór het filteren (`koersen(a).length < 2`),
 niet erna — op `meerdere` afgaan liet zo'n koers alsnog binnen zodra het
 filter er één overhield.
+
+Een onderdeel erbij raakt twee plekken: `SECTIES` in de kaart en de opsomming onder "Onderdelen van het detailvenster" in de README; `tests/test_kaart.py` faalt als er één achterblijft.
 
 `sections` bepaalt welke onderdelen in het detailvenster staan (`SECTIES`);
 de volgorde ligt in de code vast en niet in de configuratie. Leeg of onzin

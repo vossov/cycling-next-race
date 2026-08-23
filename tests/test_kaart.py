@@ -187,6 +187,24 @@ def test_readme_beschrijft_dezelfde_opties():
         f"kaart en README lopen uiteen: {opties ^ beschreven}")
 
 
+def test_readme_noemt_dezelfde_secties():
+    """Een onderdeel dat de kaart kent maar de README niet noemt.
+
+    `sections` is de enige optie waarvan de waarden ook uitgeschreven staan,
+    en een onderdeel dat nergens gedocumenteerd is vindt niemand.
+    """
+    kaart = _kaart()
+    blok = kaart[kaart.index("const SECTIES = ["):kaart.index("const SECTIE_SLEUTELS")]
+    secties = set(re.findall(r"key:\s*'(\w+)'", blok))
+
+    readme = (WORTEL / "README.md").read_text(encoding="utf-8")
+    stuk = readme[readme.index("### Onderdelen van het detailvenster"):]
+    stuk = stuk[:stuk.index("###", 5)]
+    genoemd = set(re.findall(r"`(\w+)`", stuk)) - {"sections", "details"}
+
+    assert secties == genoemd, f"kaart en README lopen uiteen: {secties ^ genoemd}"
+
+
 def test_stempel_verandert_mee_met_het_bestand(wt, const):
     """De cache-buster mag niet afhangen van het ophogen van VERSION.
 

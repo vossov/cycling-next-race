@@ -27,6 +27,7 @@ from .const import (
     CONF_SCAN_MINUTES,
     CONF_START_N,
     CONF_UPCOMING_DAYS,
+    CONF_PAST_N,
     CONF_UPCOMING_N,
     DOMAIN,
     MAX_LIVE_SCAN_MINUTES,
@@ -121,6 +122,11 @@ class CyclingNextRaceOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_UPCOMING_DAYS, default=huidig[CONF_UPCOMING_DAYS]
                 ): _aantal(MIN_UPCOMING_DAYS, MAX_UPCOMING_DAYS),
+                # 0 zet het terugbladeren uit; elke etappe kost ruimte in de
+                # attributen, en die zitten al tegen de grens van de recorder
+                vol.Optional(
+                    CONF_PAST_N, default=huidig[CONF_PAST_N]
+                ): _aantal(0, 10),
                 vol.Optional(
                     CONF_SCAN_MINUTES, default=huidig[CONF_SCAN_MINUTES]
                 ): _aantal(MIN_SCAN_MINUTES, MAX_SCAN_MINUTES),

@@ -77,6 +77,7 @@ Achter **Configureren** bij de integratie stel je in:
 | Aantal renners in de startlijst | 10 |
 | Maximaal aantal komende etappes | 10 |
 | Komende etappes tonen tot (dagen vooruit) | 7 |
+| Aantal etappes om terug te bladeren | 3 |
 | Verversen elke (minuten) | 30 |
 | Verversen tijdens een koers (minuten) | 5 |
 | Niveaus op het dashboard | mannen + vrouwen |
@@ -172,11 +173,25 @@ blijven; kleuren die het thema volgen zouden die twee uit elkaar laten lopen.
 
 `sections` bepaalt wat er in het venster staat, in deze vaste volgorde:
 `profile` (hoogteprofiel), `tv` (tv-zenders), `upcoming` (komende dagen),
-`start` (startlijst), `result` (uitslag), `gc` (algemeen klassement),
-`points` (punten), `kom` (berg), `youth` (jongeren).
+`start` (startlijst), `result` (uitslag), `past` (terugbladeren door de
+uitslagen), `gc` (algemeen klassement), `points` (punten), `kom` (berg),
+`youth` (jongeren).
 
 Niets aangevinkt betekent alles — wil je helemaal geen venster, zet dan
 `details` uit.
+
+### Terugbladeren door de uitslagen
+
+Boven de uitslag staan twee pijltjes zodra er meer dan één etappe gereden is:
+daarmee blader je terug naar de uitslag van gisteren en eergisteren. Hoe ver
+terug bepaal je bij **Aantal etappes om terug te bladeren** (standaard 3, `0`
+zet het uit); `past` in `sections` haalt de pijltjes van deze kaart af zonder
+de uitslag zelf weg te halen.
+
+Het geldt voor de koers op de tegel. Elke uitslag kost een verzoek bij
+cyclingstage en ruimte in de attributen, en die zitten al aan de grens van de
+recorder; bij de andere koersen in de pop-up staat daarom alleen de laatste
+uitslag.
 
 ### Startlijst
 
@@ -240,16 +255,16 @@ sections:                          # alles; laat weg voor hetzelfde effect
   - profile
   - tv
   - upcoming
+  - start
   - result
+  - past
   - gc
   - points
   - kom
   - youth
 levels:                            # alles; laat weg voor hetzelfde effect
-  - '1'
-  - '24'
-  - '26'
-  - '27'
+  - m
+  - v
 ```
 
 **In de stijl van je thema**, zodat de kaart niet uit de toon valt:
