@@ -330,6 +330,12 @@ def _pcs_url(pad: str) -> str:
 # patch zit op de klasse en hoeft maar één keer.
 _PCS_SESSIE = ""
 
+# De laatste kalenderfout, om herhaling te dempen. Een blokkade bij de bron
+# kan weken duren; vier waarschuwingen per ronde, elke 30 minuten, maken het
+# logboek dan onbruikbaar voor al het andere. De eerste keer is nieuws, de
+# tweeënnegentigste niet.
+_LAATSTE_KALENDERFOUT = ""
+
 
 def _zet_pcs_sessie() -> str:
     """Laat procyclingstats via curl_cffi praten in plaats van requests.
@@ -504,6 +510,8 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
                 })
             return out
 
+    global _LAATSTE_KALENDERFOUT
+
     # vóór de eerste aanroep van het pakket; idempotent, dus dit is na de
     # eerste ronde een woordenboek-opzoeking
     _zet_pcs_sessie()
@@ -523,10 +531,17 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
             cal = RacesCalendar(pad)
             rijen = cal.races()
         except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("Kalender van %s ophalen mislukt: %s", info["naam"], err)
+            # dezelfde fout als de vorige keer? Dan op debug. Dat dempt ook
+            # binnen één ronde: vier niveaus die op hetzelfde stuklopen
+            # leveren één waarschuwing op in plaats van vier.
+            nieuw = str(err) != _LAATSTE_KALENDERFOUT
+            (_LOGGER.warning if nieuw else _LOGGER.debug)(
+                "Kalender van %s ophalen mislukt: %s", info["naam"], err)
+            _LAATSTE_KALENDERFOUT = str(err)
             telling[info["naam"]] = 0
             fouten.append(str(err))
-            proef_pad = proef_pad or pad
+            if nieuw:
+                proef_pad = proef_pad or pad
             continue
         for r in rijen:
             m = re.findall(r"(\d{2})\.(\d{2})", r["date"])
@@ -565,13 +580,21 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
         # zeggen wélke van de twee het is; de melding van procyclingstats
         # zelf maakt dat onderscheid niet
         diag = _bypass_diag()
-        _LOGGER.warning("Cloudflare bij procyclingstats — %s", diag)
         fouten.append(diag)
-        # en wat de bron werkelijk terugstuurt: een uitdaging of een
-        # weigering. Eén extra verzoek, alleen als het toch al misging.
-        antwoord = _pcs_antwoord_diag(_pcs_url(proef_pad))
-        _LOGGER.warning("Antwoord van procyclingstats — %s", antwoord)
-        fouten.append(antwoord)
+        if proef_pad:
+            _LOGGER.warning("Cloudflare bij procyclingstats — %s", diag)
+            # en wat de bron werkelijk terugstuurt: een uitdaging of een
+            # weigering. Alleen bij een fout die we nog niet gezien hadden:
+            # een site die ons weigert hoort niet elk half uur een extra
+            # verzoek te krijgen omdat wij willen weten waaróm.
+            antwoord = _pcs_antwoord_diag(_pcs_url(proef_pad))
+            _LOGGER.warning("Antwoord van procyclingstats — %s", antwoord)
+            fouten.append(antwoord)
+        else:
+            _LOGGER.debug("Cloudflare bij procyclingstats — %s", diag)
+    if uniek:
+        # weer contact; de volgende storing is weer nieuws
+        _LAATSTE_KALENDERFOUT = ""
     _LOGGER.debug("Kalender: %s koersen (%s)", len(uniek),
                   ", ".join(f"{n}: {a}" for n, a in telling.items()))
     return uniek, telling, fouten

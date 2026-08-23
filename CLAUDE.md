@@ -323,6 +323,34 @@ alles werkt.
 Dit is diagnose en geen oplossing: het bepaalt of er nog een weg is, en
 zonder dat antwoord is elke volgende stap gokwerk.
 
+**Op 23 augustus 2026 gaf dat antwoord uitsluitsel:**
+
+```
+status 403; 5846 tekens; uitdagingspagina (challenge-platform);
+cf-ray=a2fa61797ce3d4ca-AMS; server=cloudflare;
+begin: "Attention Required! | Cloudflare ... navigator.cookieEnabled ..."
+```
+
+Een interstitiële uitdagingspagina met het `cdn-cgi/challenge-platform`-script.
+Die deelt pas een clearance-cookie uit nadat er JavaScript is uitgevoerd, dus
+geen enkele HTTP-client komt erlangs — ook niet met een perfecte
+TLS-vingerafdruk. Alleen een echte browser zou het kunnen, en dat is voor
+een dashboardintegratie geen begaanbare weg. **Hiermee is de weg binnen deze
+integratie uitgeput**; het hangt van het `procyclingstats`-pakket af, of van
+procyclingstats.com dat zijn instellingen versoepelt.
+
+### Niet blijven roepen
+
+Zo'n blokkade kan weken duren. Daarom dempt `_LAATSTE_KALENDERFOUT` de
+herhaling: dezelfde fout logt de eerste keer op waarschuwing en daarna op
+debug. Dat werkt ook binnen één ronde — vier niveaus die op hetzelfde
+stuklopen geven één waarschuwing in plaats van vier. Lukt de kalender weer,
+dan wordt de teller geleegd en is de volgende storing weer nieuws.
+
+Het proefverzoek van `_pcs_antwoord_diag` gaat om dezelfde reden alleen bij
+een fout die we nog niet gezien hadden: een site die ons weigert hoort niet
+elk half uur een extra verzoek te krijgen omdat wij willen weten waarom.
+
 
 - Kalender: `races.php?year={y}&circuit={c}&class=&filter=Filter`
   - `circuit=1` mannen-WorldTour, `circuit=24` Women's WorldTour (geverifieerd)
