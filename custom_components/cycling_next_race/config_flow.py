@@ -43,6 +43,7 @@ from .const import (
     NAME,
     NIVEAU_KEUZE,
     OPTION_DEFAULTS,
+    OUDE_NIVEAUS,
 )
 
 
@@ -52,15 +53,25 @@ def _aantal(minimum: int, maximum: int):
 
 
 def _lijst(waarde) -> list[str]:
-    """Opgeslagen niveaus als lijst met bekende nummers.
+    """Opgeslagen niveaus als lijst met bekende sleutels.
 
-    Wat er niet meer bestaat valt weg: een keuzelijst met een waarde die
+    Opslag van v\u00f3\u00f3r 0.19 bevat de circuitnummers van procyclingstats;
+    `OUDE_NIVEAUS` vertaalt die, net als in `sensor.py`. Zonder dat zou het
+    optiescherm van een bestaande installatie leeg opengaan en zou de
+    eerstvolgende keer opslaan de keuze wissen.
+
+    Wat daarna nog niet bestaat valt weg: een keuzelijst met een waarde die
     niet in de opties staat weigert Home Assistant, en dan is het scherm
     niet meer te openen.
     """
     if not isinstance(waarde, (list, tuple)):
         waarde = [waarde] if waarde else []
-    return [str(v) for v in waarde if str(v) in NIVEAU_KEUZE]
+    uit: list[str] = []
+    for v in waarde:
+        n = OUDE_NIVEAUS.get(str(v), str(v))
+        if n in NIVEAU_KEUZE and n not in uit:
+            uit.append(n)
+    return uit
 
 
 class CyclingNextRaceConfigFlow(ConfigFlow, domain=DOMAIN):

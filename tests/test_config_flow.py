@@ -58,9 +58,9 @@ def _standaard(schema, sleutel):
 
 
 def test_gekozen_niveaus_staan_voorgevinkt(flow_mod, const):
-    schema = _optieschema(flow_mod, {const.CONF_LEVELS_POPUP: ["26"]})
+    schema = _optieschema(flow_mod, {const.CONF_LEVELS_POPUP: ["v"]})
     assert _standaard(schema, const.CONF_LEVELS) == const.DEFAULT_LEVELS
-    assert _standaard(schema, const.CONF_LEVELS_POPUP) == ["26"]
+    assert _standaard(schema, const.CONF_LEVELS_POPUP) == ["v"]
 
 
 def test_onbekend_opgeslagen_niveau_blokkeert_het_scherm_niet(flow_mod, const):
@@ -69,8 +69,22 @@ def test_onbekend_opgeslagen_niveau_blokkeert_het_scherm_niet(flow_mod, const):
     Verdwijnt er ooit een niveau uit NIVEAUS, dan zou het optiescherm van
     wie dat niveau had aangevinkt niet meer opengaan.
     """
-    schema = _optieschema(flow_mod, {const.CONF_LEVELS: ["1", "999"]})
-    assert _standaard(schema, const.CONF_LEVELS) == ["1"]
+    schema = _optieschema(flow_mod, {const.CONF_LEVELS: ["m", "999"]})
+    assert _standaard(schema, const.CONF_LEVELS) == ["m"]
+
+
+def test_circuitnummers_van_voor_0_19_worden_vertaald(flow_mod, const):
+    """Een bestaande installatie heeft `1`/`24`/`26`/`27` opgeslagen staan.
+
+    `sensor.py` vertaalt die met `OUDE_NIVEAUS`; deed het optiescherm dat
+    niet, dan ging het leeg open en wiste het bij de eerstvolgende keer
+    opslaan een keuze die de sensor wél nog gebruikte.
+    """
+    schema = _optieschema(flow_mod, {const.CONF_LEVELS: ["1", "26"],
+                                     const.CONF_LEVELS_POPUP: ["24", "27"]})
+    # 1 en 26 zijn allebei mannen: één vinkje, geen dubbele
+    assert _standaard(schema, const.CONF_LEVELS) == ["m"]
+    assert _standaard(schema, const.CONF_LEVELS_POPUP) == ["v"]
 
 
 def test_flow_is_single_instance(flow_mod, const):
