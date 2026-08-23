@@ -332,3 +332,132 @@ def times_url(slug: str, jaar: int, idx) -> list[str]:
         return []
     basis = f"{BASIS}/images/{slug}/{jaar}"
     return [f"{basis}/stage-{idx}-times.htm", f"{basis}/etappe-{idx}-times.htm"]
+
+
+# ── uitslagen en klassementen ───────────────────────────────────────
+
+# Cyclingstage zet de uitslag niet in een tabel maar als kop met een
+# alinea eronder, regels gescheiden door <br>:
+#
+#   <h2>Stage 2 Results – 2026 Vuelta</h2>
+#   <p>1. Matthew Brennan (gbr) 4:47:47<br>
+#      2. Pau Miquel (spa) s.t.<br>
+#      ...</p>
+#   <h2>GC after stage 1</h2>
+#
+# Let op wat er níét staat: de ploeg. Er is alleen een landcode, en een land
+# is geen ploeg — die gaat dus als `country` mee en niet als `team`. Niets
+# invullen wat de bron niet geeft.
+_KOP_BLOK = re.compile(r"<h([23])[^>]*>(.*?)</h\1>(.*?)(?=<h[23][^>]*>|\Z)",
+                       re.S | re.I)
+_REGEL = re.compile(
+    r"^(\d{1,3})\.\s*(.+?)\s*\(([a-z]{2,3})\)\s*(.*)$", re.I)
+
+
+def parse_blokken(html: str) -> list[tuple]:
+    """Alle "kop + genummerde regels"-blokken van een pagina.
+
+    Geeft `[(kop, rijen), ...]`. Wat welk klassement is, bepaalt de
+    aanroeper aan de hand van de kop — dat verschilt per pagina en per
+    koers, en hier raden zou dat verschil verstoppen.
+    """
+    uit = []
+    for _, kop, romp in _KOP_BLOK.findall(html or ""):
+        rijen = _regels(romp)
+        if rijen:
+            uit.append((_kaal(kop), rijen))
+    return uit
+
+
+def _regels(romp: str) -> list[dict]:
+    """De genummerde rennerregels uit één alinea."""
+    rijen = []
+    # <br> is de regelscheiding; alles daarbuiten telt als één regel
+    for stuk in re.split(r"<br\s*/?>|</p>", romp or "", flags=re.I):
+        m = _REGEL.match(_kaal(stuk))
+        if not m:
+            continue
+        rijen.append({
+            "rank": int(m.group(1)),
+            "rider": m.group(2).strip(),
+            "country": m.group(3).lower(),
+            "time": _tijd(m.group(4)),
+        })
+    # oplopend en zonder gaten, anders is het geen uitslag maar tekst die
+    # toevallig met een nummer begint
+    if [r["rank"] for r in rijen] != list(range(1, len(rijen) + 1)):
+        return []
+    return rijen
+
+
+def _tijd(tekst: str) -> str:
+    """De tijdkolom opschonen.
+
+    "s.t." (same time) blijft heel: die punt hoort erbij en zegt iets. Alleen
+    witruimte en scheidingstekens eromheen gaan eraf.
+    """
+    t = re.sub(r"\s+", " ", (tekst or "").strip()).strip(" ,;-")
+    return re.sub(r"^\+\s*", "+", t)
+
+
+def parse_uitslag(html: str) -> dict:
+    """Etappe-uitslag en algemeen klassement van een resultatenpagina.
+
+    De koppen luiden "Stage N Results – 2026 Vuelta" en "GC after stage N".
+    Dat laatste nummer klopt niet altijd met de etappe waar de pagina over
+    gaat — cyclingstage schrijft bij etappe 2 "GC after stage 1" terwijl het
+    klassement ná die etappe wordt bedoeld. Daarom telt de kop alleen om te
+    zien wélk klassement het is, nooit om te bepalen bij welke etappe het
+    hoort.
+    """
+    uit = {"results": [], "gc": []}
+    for kop, rijen in parse_blokken(html):
+        laag = kop.lower()
+        if not uit["results"] and "result" in laag:
+            uit["results"] = rijen
+        elif not uit["gc"] and ("gc" in laag or "general classification" in laag):
+            uit["gc"] = rijen
+    return uit
+
+
+def uitslag_url(stage_url: str) -> str:
+    """Het resultatenadres dat bij een etappeadres hoort.
+
+    `/vuelta-2026-route/stage-2-spain-2026/`
+      -> `/vuelta-2026-results/stage-2-spain-results-2026/`
+
+    Cyclingstage zet "results" op twee plekken in het pad: in de map van de
+    koers en vlak vóór het jaartal in de bestandsnaam. Dat is een afleiding
+    en geen bron, dus wie hier niets terugkrijgt kan altijd nog de
+    resultatenpagina van de koers lezen (`uitslag_index_url`), waar ze
+    allemaal op staan.
+    """
+    if not stage_url or "-route/" not in stage_url:
+        return ""
+    kaal = stage_url.rstrip("/")
+    kop, _, staart = kaal.rpartition("/")
+    kop = kop.replace("-route", "-results")
+    m = re.match(r"(.*?)-(\d{4})$", staart)
+    if not m:
+        return ""
+    return f"{kop}/{m.group(1)}-results-{m.group(2)}/"
+
+
+def uitslag_index_url(slug: str, jaar: int) -> str:
+    """De pagina met alle etappe-uitslagen van een koers."""
+    return f"{BASIS}/{slug}-{jaar}-results/" if slug and jaar else ""
+
+
+def klassement_urls(slug: str, jaar: int) -> dict:
+    """Het punten- en bergklassement staan op hun eigen pagina.
+
+    Nagekeken in het menu van de resultatenpagina: `/vuelta-2026-points-
+    classification` en `/vuelta-2026-kom-classification`. Er is geen
+    jongerenklassement bij cyclingstage.
+    """
+    if not slug or not jaar:
+        return {}
+    return {
+        "points": f"{BASIS}/{slug}-{jaar}-points-classification/",
+        "kom": f"{BASIS}/{slug}-{jaar}-kom-classification/",
+    }

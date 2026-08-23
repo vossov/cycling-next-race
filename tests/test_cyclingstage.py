@@ -355,3 +355,105 @@ def test_eendaagse_koers_krijgt_een_etappe(wt, monkeypatch):
     # eendaags: geen etappenummer in het GPX-adres, geen tijdschema
     assert wt._gpx_urls(etappes[0])[0].endswith("paris-roubaix/2026/route.gpx")
     assert wt._times_urls(etappes[0]) == []
+
+
+# ── uitslag en klassement ───────────────────────────────────────────
+
+UITSLAG2 = (Path(__file__).parent / "fixtures"
+            / "cyclingstage_vuelta_2026_stage2_results.html")
+
+
+@pytest.fixture(scope="module")
+def uitslag(cs):
+    return cs.parse_uitslag(UITSLAG2.read_text())
+
+
+def test_etappe_uitslag(uitslag):
+    """Cyclingstage zet de uitslag als tekst onder een kop, niet in een tabel."""
+    res = uitslag["results"]
+    assert len(res) == 10
+    assert res[0] == {"rank": 1, "rider": "Matthew Brennan",
+                      "country": "gbr", "time": "4:47:47"}
+    # "s.t." blijft heel; die punt hoort erbij
+    assert res[1]["time"] == "s.t."
+    assert res[-1]["rank"] == 10
+
+
+def test_algemeen_klassement(uitslag):
+    gc = uitslag["gc"]
+    assert len(gc) == 10
+    assert gc[0]["rider"] == "Tadej Pogacar" and gc[0]["time"] == ""
+    assert gc[1] == {"rank": 2, "rider": "Wout van Aert",
+                     "country": "bel", "time": "+0:09"}
+    assert gc[-1]["time"] == "+0:27"
+
+
+def test_landcode_is_geen_ploeg(uitslag):
+    """Cyclingstage geeft het land, niet de ploeg.
+
+    Een land in het ploegveld zetten zou precies het verzinnen zijn dat dit
+    project niet doet, dus het gaat als `country` mee.
+    """
+    for rij in uitslag["results"] + uitslag["gc"]:
+        assert "team" not in rij
+        assert len(rij["country"]) in (2, 3)
+
+
+def test_namen_met_accenten_en_streepjes(uitslag):
+    namen = [r["rider"] for r in uitslag["gc"]]
+    assert "Léo Bisiaux" in namen
+    assert "Stefan Küng" in namen
+    assert "Finn Fisher-Black" in namen
+
+
+def test_blokken_dragen_hun_kop(cs):
+    koppen = [k for k, _ in cs.parse_blokken(UITSLAG2.read_text())]
+    assert koppen == ["Stage 2 Results – 2026 Vuelta", "GC after stage 1"]
+
+
+def test_kop_bepaalt_niet_bij_welke_etappe_het_hoort(uitslag):
+    """De pagina van etappe 2 zet "GC after stage 1" boven het klassement
+    ná etappe 2. Dat nummer is dus onbruikbaar om mee te rekenen; het telt
+    alleen om te zien wélk klassement het is."""
+    assert uitslag["gc"][0]["rider"] == "Tadej Pogacar"
+
+
+def test_tekst_die_toevallig_genummerd_is_telt_niet(cs):
+    """Een alinea die met "1." begint is nog geen uitslag."""
+    html = ("<h2>Race report</h2><p>1. Dit is gewoon tekst zonder land<br>"
+            "2. En nog een regel</p>")
+    assert cs.parse_blokken(html) == []
+
+
+def test_gaten_in_de_nummering_maken_het_ongeldig(cs):
+    html = ("<h2>Results</h2><p>1. Eerste Renner (ned) 1:00<br>"
+            "3. Derde Renner (bel) s.t.</p>")
+    assert cs.parse_uitslag(html)["results"] == []
+
+
+def test_lege_pagina(cs):
+    assert cs.parse_uitslag("") == {"results": [], "gc": []}
+    assert cs.parse_blokken("") == []
+
+
+def test_uitslagadres_uit_het_etappeadres(cs):
+    """Nagekeken tegen de echte pagina: het adres hieronder is precies waar
+    de opgeslagen uitslag van etappe 2 vandaan komt."""
+    assert cs.uitslag_url(
+        "https://www.cyclingstage.com/vuelta-2026-route/stage-2-spain-2026/"
+    ) == "https://www.cyclingstage.com/vuelta-2026-results/stage-2-spain-results-2026/"
+    assert cs.uitslag_url(
+        "https://www.cyclingstage.com/tour-de-france-2026-route/stage-3-tdf-2026/"
+    ).endswith("/tour-de-france-2026-results/stage-3-tdf-results-2026/")
+    # een eendaagse koers heeft geen -route/ in het pad
+    assert cs.uitslag_url("https://www.cyclingstage.com/paris-roubaix-2026/") == ""
+    assert cs.uitslag_url("") == ""
+
+
+def test_overzicht_en_klassementsadressen(cs):
+    assert cs.uitslag_index_url("vuelta", 2026) == (
+        "https://www.cyclingstage.com/vuelta-2026-results/")
+    urls = cs.klassement_urls("vuelta", 2026)
+    assert urls["points"].endswith("/vuelta-2026-points-classification/")
+    assert urls["kom"].endswith("/vuelta-2026-kom-classification/")
+    assert cs.klassement_urls("", 2026) == {}
