@@ -243,7 +243,7 @@ ze dubbel staan met het eigen blok van die koers.
 
 ## Bronnen en URL-patronen
 
-### procyclingstats (pakket `procyclingstats==0.2.8` + `cloudscraper`)
+### procyclingstats (pakket `procyclingstats==0.2.8` + `cloudscraper` + `curl_cffi`)
 
 **procyclingstats.com staat sinds 23 augustus 2026 achter Cloudflare.** In
 het log van die dag: `Kalender van WorldTour mannen ophalen mislukt:
@@ -264,15 +264,39 @@ het er niet.
 wanneer cloudscraper wél draait. Uit het log alleen is dus niet te zien of
 de bypass ontbreekt of dat hij er niet langs komt, en dat is het verschil
 tussen "herstart Home Assistant" en "dit pakket helpt hier niet meer".
-Daarom hangt `_fetch_calendar` bij een Cloudflare-fout `_cloudscraper_diag()`
+Daarom hangt `_fetch_calendar` bij een Cloudflare-fout `_bypass_diag()`
 achter de melding: die probeert de import en zegt welke van de twee het is.
 
 Op 23 augustus 2026 bleef de melding staan ná het toevoegen van
-cloudscraper. Dat is te verwachten: 1.2.71 is van april 2023 en Cloudflare
-is sindsdien doorontwikkeld. Helpt het niet, dan is dit niet in deze
-integratie op te lossen — het hangt van het `procyclingstats`-pakket af, of
-van een zwaardere bypass (TLS-impersonatie zoals `curl_cffi`), en dat laatste
-is een monkeypatch op een extern pakket die van hieruit niet te beproeven is.
+cloudscraper, en `_bypass_diag()` bevestigde dat het pakket wél geladen was.
+Dat is te verwachten: 1.2.71 is van april 2023 en doet alleen de **headers**
+van een browser na, niet de TLS-handdruk. Cloudflare herkent die
+vingerafdruk.
+
+### curl_cffi als tweede bypass
+
+`_zet_pcs_sessie()` vervangt daarom `Scraper._get_session()` door een
+`curl_cffi`-sessie met `impersonate="chrome"`: die bootst de TLS-handdruk
+van Chrome zélf na. Het gebeurt één keer per proces, lui, bovenin
+`_fetch_calendar` — de eerste PCS-aanroep van elke ronde.
+
+Dit is een **monkeypatch op andermans pakket**. `_get_session` is interne
+code van procyclingstats en kan bij een update verdwijnen; daarom wordt
+alles afgevangen en blijft bij twijfel de eigen sessie van het pakket staan.
+Ontbreekt `curl_cffi`, dan verandert er niets. `_PCS_SESSIE` bewaart wat er
+gebeurd is en komt in `_bypass_diag()` terecht, zodat het log zegt wélke
+bypasses er draaiden toen het alsnog misging.
+
+Wat hiervan geverifieerd is: dat het échte `_make_request` van
+procyclingstats door de curl_cffi-sessie loopt en HTML teruggeeft (hier
+beproefd tegen een bereikbare site). Wat **niet** geverifieerd is: of
+Cloudflare de vingerafdruk van curl_cffi doorlaat — daarvoor is
+procyclingstats nodig en die laat de proxy niet door. Werkt ook dit niet,
+dan is het niet in deze integratie op te lossen en hangt het van het
+`procyclingstats`-pakket af.
+
+Verdwijnt de Cloudflare-bescherming weer, dan kan deze patch eruit; hij doet
+verder geen kwaad, maar is onderhoud dat we liever niet hebben.
 
 
 - Kalender: `races.php?year={y}&circuit={c}&class=&filter=Filter`

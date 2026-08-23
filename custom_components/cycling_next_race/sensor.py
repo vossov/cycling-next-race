@@ -305,8 +305,65 @@ def _parse_start_hhmm(start_time: str | None):
 # Blocking scrape-functies — draaien via async_add_executor_job
 # ──────────────────────────────────────────────────────────────
 
-def _cloudscraper_diag() -> str:
-    """Of `cloudscraper` daadwerkelijk geladen kan worden.
+# Welke browser curl_cffi nadoet. "chrome" volgt de nieuwste die de
+# geïnstalleerde versie kent; een vast nummer zou verouderen zonder dat
+# iemand het merkt, en juist een oude vingerafdruk valt op.
+PCS_IMPERSONATE = "chrome"
+
+# Of de sessie van procyclingstats al vervangen is. Modulewijd, want de
+# patch zit op de klasse en hoeft maar één keer.
+_PCS_SESSIE = ""
+
+
+def _zet_pcs_sessie() -> str:
+    """Laat procyclingstats via curl_cffi praten in plaats van requests.
+
+    cloudscraper doet de héaders van een browser na, maar niet de
+    TLS-handdruk. Cloudflare herkent die vingerafdruk en blokkeert alsnog —
+    op 23 augustus 2026 stond in het log dat cloudscraper 1.2.71 geladen was
+    en er tóch niet langs kwam. curl_cffi bootst de handdruk van Chrome zelf
+    na en komt daar vaak wel doorheen.
+
+    Dit is een monkeypatch op andermans pakket: `Scraper._get_session()` is
+    interne code van procyclingstats en kan bij een update verdwijnen of van
+    vorm veranderen. Daarom wordt hier alles afgevangen — lukt het niet, dan
+    blijft de eigen sessie van het pakket gewoon staan en is er niets
+    slechter geworden dan het al was.
+
+    Eén gedeelde sessie, net als procyclingstats zelf doet: Cloudflare deelt
+    cookies uit die je juist wilt bewaren.
+
+    Geeft een korte melding terug voor in het log. Draait in de executor,
+    want `import` en het opzetten van een sessie zijn blokkerend.
+    """
+    global _PCS_SESSIE
+    if _PCS_SESSIE:
+        return _PCS_SESSIE
+    try:
+        from curl_cffi import requests as curl_requests
+    except Exception as err:  # noqa: BLE001
+        _PCS_SESSIE = f"curl_cffi niet beschikbaar ({type(err).__name__}: {err})"
+        return _PCS_SESSIE
+    try:
+        from procyclingstats.scraper import Scraper
+
+        if not hasattr(Scraper, "_get_session"):
+            # het pakket is van vorm veranderd; niets aanraken
+            _PCS_SESSIE = ("procyclingstats kent geen _get_session meer, "
+                           "curl_cffi niet aangesloten")
+            return _PCS_SESSIE
+        sessie = curl_requests.Session(impersonate=PCS_IMPERSONATE)
+        Scraper._get_session = classmethod(lambda cls: sessie)
+    except Exception as err:  # noqa: BLE001
+        _PCS_SESSIE = f"curl_cffi aansluiten mislukt ({type(err).__name__}: {err})"
+        return _PCS_SESSIE
+    _PCS_SESSIE = f"curl_cffi actief (impersonate={PCS_IMPERSONATE})"
+    _LOGGER.debug("procyclingstats praat nu via %s", _PCS_SESSIE)
+    return _PCS_SESSIE
+
+
+def _bypass_diag() -> str:
+    """Welke bypasses er draaien op het moment dat Cloudflare toch blokkeert.
 
     Nodig omdat de melding van procyclingstats hierover niets zegt. Die
     luidt altijd "Cloudflare protection detected. Install 'cloudscraper'",
@@ -326,7 +383,8 @@ def _cloudscraper_diag() -> str:
                 "herstart Home Assistant zodat de afhankelijkheid uit de "
                 "manifest geïnstalleerd wordt")
     return (f"cloudscraper {getattr(cloudscraper, '__version__', '?')} is wél "
-            "geladen, dus procyclingstats komt er ondanks die bypass niet langs")
+            f"geladen en {_PCS_SESSIE or 'curl_cffi is niet geprobeerd'}; "
+            "procyclingstats komt er ondanks die bypass(es) niet langs")
 
 
 def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, list]:
@@ -367,6 +425,10 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
                     "name": link.text().strip(),
                 })
             return out
+
+    # vóór de eerste aanroep van het pakket; idempotent, dus dit is na de
+    # eerste ronde een woordenboek-opzoeking
+    _zet_pcs_sessie()
 
     races = []
     telling = {}
@@ -422,7 +484,7 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
     if any("cloudflare" in f.lower() for f in fouten):
         # zeggen wélke van de twee het is; de melding van procyclingstats
         # zelf maakt dat onderscheid niet
-        diag = _cloudscraper_diag()
+        diag = _bypass_diag()
         _LOGGER.warning("Cloudflare bij procyclingstats — %s", diag)
         fouten.append(diag)
     _LOGGER.debug("Kalender: %s koersen (%s)", len(uniek),

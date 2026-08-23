@@ -423,7 +423,7 @@ def test_fout_van_de_bron_reist_mee(wt, monkeypatch):
     assert any("cloudscraper" in f for f in fouten)
 
 
-def test_cloudscraper_diag_zegt_of_het_pakket_er_is(wt, monkeypatch):
+def test_bypass_diag_zegt_of_het_pakket_er_is(wt, monkeypatch):
     """Twee heel verschillende situaties, één melding van procyclingstats."""
     import builtins
 
@@ -435,7 +435,7 @@ def test_cloudscraper_diag_zegt_of_het_pakket_er_is(wt, monkeypatch):
         return echt(naam, *a, **kw)
 
     monkeypatch.setattr(builtins, "__import__", _zonder)
-    uit = wt._cloudscraper_diag()
+    uit = wt._bypass_diag()
     assert "NIET geladen" in uit and "herstart" in uit.lower()
 
     import sys
@@ -444,7 +444,7 @@ def test_cloudscraper_diag_zegt_of_het_pakket_er_is(wt, monkeypatch):
     nep = types.ModuleType("cloudscraper")
     nep.__version__ = "1.2.71"
     monkeypatch.setitem(sys.modules, "cloudscraper", nep)
-    uit = wt._cloudscraper_diag()
+    uit = wt._bypass_diag()
     assert "1.2.71" in uit and "wél geladen" in uit
 
 
@@ -492,3 +492,134 @@ def test_lege_kalender_zonder_fout_blijft_de_oude_melding(wt, coordinator,
     with pytest.raises(wt.UpdateFailed) as fout:
         asyncio.run(co._async_update_data())
     assert "structuur gewijzigd" in str(fout.value)
+
+
+# ── curl_cffi aansluiten op procyclingstats ─────────────────────────
+
+def _nep_pcs(monkeypatch):
+    """Een `procyclingstats.scraper.Scraper` zoals het pakket hem heeft."""
+    import sys
+    import types
+
+    class Scraper:
+        _session = "de eigen sessie"
+
+        @classmethod
+        def _get_session(cls):
+            return cls._session
+
+    scraper = types.ModuleType("procyclingstats.scraper")
+    scraper.Scraper = Scraper
+    pakket = types.ModuleType("procyclingstats")
+    pakket.scraper = scraper
+    monkeypatch.setitem(sys.modules, "procyclingstats", pakket)
+    monkeypatch.setitem(sys.modules, "procyclingstats.scraper", scraper)
+    return Scraper
+
+
+def _nep_curl(monkeypatch, sessie="curl-sessie"):
+    import sys
+    import types
+
+    gemaakt = {}
+
+    class Session:
+        def __init__(self, impersonate=None):
+            gemaakt["impersonate"] = impersonate
+
+        def __repr__(self):
+            return sessie
+
+    requests_mod = types.ModuleType("curl_cffi.requests")
+    requests_mod.Session = Session
+    pakket = types.ModuleType("curl_cffi")
+    pakket.requests = requests_mod
+    monkeypatch.setitem(sys.modules, "curl_cffi", pakket)
+    monkeypatch.setitem(sys.modules, "curl_cffi.requests", requests_mod)
+    return gemaakt
+
+
+@pytest.fixture(autouse=True)
+def _sessie_vergeten(wt):
+    """De patch staat modulewijd; elke test begint schoon."""
+    wt._PCS_SESSIE = ""
+    yield
+    wt._PCS_SESSIE = ""
+
+
+def test_curl_cffi_wordt_de_sessie_van_procyclingstats(wt, monkeypatch):
+    Scraper = _nep_pcs(monkeypatch)
+    gemaakt = _nep_curl(monkeypatch)
+
+    uit = wt._zet_pcs_sessie()
+
+    assert "curl_cffi actief" in uit
+    assert gemaakt["impersonate"] == wt.PCS_IMPERSONATE
+    # en het pakket praat er nu echt doorheen
+    assert repr(Scraper._get_session()) == "curl-sessie"
+
+
+def test_tweede_aanroep_patcht_niet_opnieuw(wt, monkeypatch):
+    _nep_pcs(monkeypatch)
+    gemaakt = _nep_curl(monkeypatch)
+
+    eerst = wt._zet_pcs_sessie()
+    gemaakt.clear()
+    daarna = wt._zet_pcs_sessie()
+
+    assert eerst == daarna
+    assert gemaakt == {}, "er is een tweede sessie gemaakt"
+
+
+def test_zonder_curl_cffi_blijft_de_eigen_sessie_staan(wt, monkeypatch):
+    """Ontbreekt het pakket, dan mag er niets kapotgaan."""
+    import builtins
+
+    Scraper = _nep_pcs(monkeypatch)
+    echt = builtins.__import__
+
+    def _zonder(naam, *a, **kw):
+        if naam.startswith("curl_cffi"):
+            raise ImportError("No module named 'curl_cffi'")
+        return echt(naam, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", _zonder)
+    uit = wt._zet_pcs_sessie()
+
+    assert "niet beschikbaar" in uit
+    assert Scraper._get_session() == "de eigen sessie"
+
+
+def test_pakket_zonder_get_session_wordt_met_rust_gelaten(wt, monkeypatch):
+    """procyclingstats mag zijn interne opzet wijzigen zonder ons te breken."""
+    import sys
+    import types
+
+    class Scraper:
+        pass
+
+    scraper = types.ModuleType("procyclingstats.scraper")
+    scraper.Scraper = Scraper
+    pakket = types.ModuleType("procyclingstats")
+    pakket.scraper = scraper
+    monkeypatch.setitem(sys.modules, "procyclingstats", pakket)
+    monkeypatch.setitem(sys.modules, "procyclingstats.scraper", scraper)
+    _nep_curl(monkeypatch)
+
+    uit = wt._zet_pcs_sessie()
+
+    assert "geen _get_session meer" in uit
+    assert not hasattr(Scraper, "_get_session")
+
+
+def test_diagnose_noemt_beide_bypasses(wt, monkeypatch):
+    import sys
+    import types
+
+    nep = types.ModuleType("cloudscraper")
+    nep.__version__ = "1.2.71"
+    monkeypatch.setitem(sys.modules, "cloudscraper", nep)
+    wt._PCS_SESSIE = "curl_cffi actief (impersonate=chrome)"
+
+    uit = wt._bypass_diag()
+    assert "1.2.71" in uit and "curl_cffi actief" in uit
