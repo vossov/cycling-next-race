@@ -1392,37 +1392,19 @@ def _name_summit(climbs, arrival):
         last["name"] = arrival
 
 
-def _fetch_live(stage_url):
-    """KM-to-go + status van de PCS live-pagina (spoilervrij: alleen de kop van de koers).
-
-    Let op: PCS werkt deze waarden mogelijk via JavaScript bij; dan bevat de kale HTML
-    de pre-race stand. De aanroeper toont daarom alleen iets als km-to-go < afstand.
-    """
-    if not stage_url:
-        return {}
-    import urllib.request
-    url = f"https://www.procyclingstats.com/{stage_url}/live"
-    try:
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            doc = resp.read().decode("utf-8", "replace")
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Live ophalen mislukt %s: %s", url, err)
-        return {}
-    text = re.sub(r"[ \t\r\n\u00a0]+", " ", re.sub(r"<[^>]+>", " ", doc))
-    out = {}
-    for key, pat in (("km_to_go", r"KM to go\s+([\d.]+)"),
-                     ("km_done", r"km done\s+([\d.]+)"),
-                     ("avg_speed", r"Avg\.\s+([\d.]+)")):
-        m = re.search(pat, text)
-        if m:
-            out[key] = float(m.group(1))
-    m = re.search(r"Status\s+([A-Za-z]+)", text)
-    if m:
-        out["status"] = m.group(1).lower()
-    _LOGGER.debug("Live %s: %s", url, out)
-    return out
+# _fetch_live is weg. Het bouwde `procyclingstats.com/{stage_url}/live` en
+# las daar "KM to go" uit. Sinds 0.19 is `stage_url` een cyclingstage-adres,
+# dus dat werd letterlijk
+# `procyclingstats.com/https://www.cyclingstage.com/...//live` — een verzoek
+# dat nergens op sloeg en elke vijf minuten opnieuw ging tijdens een etappe.
+# En zelfs met het juiste adres komt er niets terug: procyclingstats zit
+# achter een Cloudflare-uitdagingspagina (zie "Bronnen" in CLAUDE.md).
+#
+# Cyclingstage heeft geen vervanger: het woord "live" komt op de etappepagina
+# nul keer voor. De positie schatten uit starttijd en afstand zou precies het
+# verzinnen zijn dat dit project niet doet, dus `live_km_to_go` blijft leeg en
+# de kaart tekent de stip niet. Komt er ooit een bron met een échte km-to-go,
+# dan is dit de plek.
 
 
 def _match_names(detected, parsed, tol_len=2.5, tol_pct=2.2):
@@ -2798,9 +2780,6 @@ class CyclingCoordinator(DataUpdateCoordinator):
         else:
             show_state = f"{DAYS_NL[sd.weekday()]} {_fmt_nl(sd)}"
 
-        live = {}
-        if show_state == "LIVE":
-            live = await self._job(_fetch_live, shown["stage_url"])
 
         if shown.get("one_day"):
             stage_label = shown["race_name"]
@@ -2878,20 +2857,20 @@ class CyclingCoordinator(DataUpdateCoordinator):
         past = await self._build_past(
             finished, (last_fin or {}).get("stage_url", ""), today)
 
-        # Live-positie (alleen als de kop echt onderweg is) + links
+        # Links. De live-positie zelf heeft geen bron meer; zie de opmerking
+        # bij het verdwenen `_fetch_live`.
         from urllib.parse import quote
-        live_dist = svg_stage["distance_km"]
-        live_km = live.get("km_to_go")
-        if _type_tag(shown_data.get("stage_type")):   # tijdrit: geen peloton-stip
-            live_km = None
-        live_racing = bool(live_km is not None and live_dist and 0 < live_km < live_dist)
         _yr = re.search(r"/(20\d\d)(?:/|$)", shown.get("stage_url", ""))
         _yr = _yr.group(1) if _yr else ""
         _sm = re.search(r"Etappe (\d+)", last_stage_label or "")
         _q = (f"{cur['name']} {_yr} stage {_sm.group(1)} extended highlights"
               if _sm else f"{cur['name']} {_yr} highlights")
         highlights_url = "https://www.youtube.com/results?search_query=" + quote(_q)
-        live_url = f"https://www.procyclingstats.com/{shown['stage_url']}/live"
+        # Het live-adres bij procyclingstats kwam uit een PCS-etappeadres, en
+        # dat hebben we niet meer. Er een raden op grond van de
+        # cyclingstage-slug is precies wat ons het Vuelta-profiel kostte, dus
+        # het blijft leeg en de kaart laat de link weg.
+        live_url = ""
         # tijdens een live etappe vaker verversen zodat het live-stipje meebeweegt
         self.update_interval = (self._live_scan_interval if show_state == "LIVE"
                                 else self._scan_interval)
@@ -2979,9 +2958,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
                              for c in channels if c.get("name")],
                 "channels_detail": channels,
                 # ── live positie (spoilervrij) + links ──
-                "live_km_to_go": live_km if live_racing else None,
-                "live_avg_speed": live.get("avg_speed") if live_racing else None,
-                "live_status": live.get("status") or "",
+                # De sleutels blijven staan zodat een oudere kaart niet
+                # struikelt; ze zijn leeg omdat er geen bron voor is.
+                "live_km_to_go": None,
+                "live_avg_speed": None,
+                "live_status": "",
                 "live_url": live_url,
                 "highlights_url": highlights_url,
             },

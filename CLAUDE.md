@@ -415,6 +415,36 @@ elk half uur een extra verzoek te krijgen omdat wij willen weten waarom.
   voor de vrouwen `rankings/we/individual`. Zie `RANGLIJST` in `sensor.py`;
   het vrouwenadres is **niet geverifieerd**.
 
+### De live-stip heeft geen bron meer
+
+`_fetch_live` bouwde `procyclingstats.com/{stage_url}/live` en las daar "KM
+to go" uit. Sinds 0.19 is `stage_url` een cyclingstage-adres, dus dat werd
+letterlijk `procyclingstats.com/https://www.cyclingstage.com/...//live`: een
+verzoek dat nergens op sloeg en tijdens een etappe elke vijf minuten opnieuw
+ging. Met het juiste adres zou het trouwens ook niets opleveren — PCS zit
+achter de uitdagingspagina.
+
+Cyclingstage heeft geen vervanger: het woord "live" komt op de etappepagina
+nul keer voor. Sinds 0.22.2 is de aanroep dus weg en blijven
+`live_km_to_go`, `live_avg_speed`, `live_status` en `live_url` leeg; de
+sleutels staan er nog zodat een oudere kaart niet struikelt. De positie
+schatten uit starttijd en afstand zou precies het verzinnen zijn dat dit
+project niet doet.
+
+Het tijdschema (`stage-{n}-times.htm`) geeft wél per punt een verwachte
+passeertijd. Daar zou een stip "volgens schema" uit te tekenen zijn, maar dat
+is een voorspelling en geen meting; wie dat wil moet het als zodanig
+benoemen in de kaart.
+
+De status blijft wel op `LIVE` staan — die komt uit de starttijd, en die
+heeft cyclingstage.
+
+**Dezelfde fout zit nog in de col-namen.** `_fetch_race_climbs` en
+`_fetch_stage_climbs` geven een cyclingstage-adres door aan `RaceClimbs`
+en `Stage` van procyclingstats, die een PCS-pad verwachten. Ze vangen hun
+eigen fouten af, dus het valt niet op, maar het zijn verzoeken die niet
+kunnen slagen. Ze horen bij het opruimen van de laatste PCS-resten.
+
 ### cyclingstage.com wordt de hoofdbron
 
 Nu procyclingstats onbereikbaar is en die weg uitgeput, gaat de kalender —
