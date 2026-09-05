@@ -445,6 +445,41 @@ en `Stage` van procyclingstats, die een PCS-pad verwachten. Ze vangen hun
 eigen fouten af, dus het valt niet op, maar het zijn verzoeken die niet
 kunnen slagen. Ze horen bij het opruimen van de laatste PCS-resten.
 
+### FirstCycling is uitgesloten (robots.txt)
+
+Op 27 augustus 2026 nagekeken als kandidaat om cyclingstage te vervangen of
+aan te vullen: het is qua opzet de dichtste open tegenhanger van
+procyclingstats (`race.php?t={niveau}&y={jaar}` voor de kalender,
+`race.php?r={koers}&y={jaar}` voor een koers), het kent UCI-niveaus, het
+punten-, berg- en jongerenklassement, ploegen en profieltypes, en het heeft
+de héle UCI-kalender in plaats van een redactionele selectie. Precies alles
+wat we bij de overstap naar cyclingstage hebben ingeleverd.
+
+**Hun `robots.txt` verbiedt het:**
+
+```
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: *
+Disallow: /
+```
+
+De hele site, voor elke geautomatiseerde bezoeker, met ClaudeBot (en GPTBot,
+CCBot, Google-Extended) er apart bij naam in. Daarmee is het klaar. Niet
+omdat een scraper technisch zou falen — hij zou werken — maar omdat de
+eigenaar het zo duidelijk mogelijk heeft opgeschreven.
+
+Redeneer er niet omheen met "wij zijn geen crawler, wij halen één pagina per
+half uur op voor één dashboard". Die vraag is bij procyclingstats al gesteld
+en eerlijk beantwoord; het antwoord verandert niet doordat het ons nu
+slechter uitkomt.
+
+**Dezelfde maat geldt voor de bronnen die we wél gebruiken.** Wie hier langs
+komt en de `robots.txt` van cyclingstage, wielerflits of racecenter nog niet
+heeft nagekeken: doe dat. Staat daar hetzelfde, dan is dat een probleem dat
+we moeten weten, niet een probleem dat we moeten wegkijken.
+
 ### cyclingstage.com wordt de hoofdbron
 
 Nu procyclingstats onbereikbaar is en die weg uitgeput, gaat de kalender —
