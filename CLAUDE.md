@@ -415,6 +415,123 @@ elk half uur een extra verzoek te krijgen omdat wij willen weten waarom.
   voor de vrouwen `rankings/we/individual`. Zie `RANGLIJST` in `sensor.py`;
   het vrouwenadres is **niet geverifieerd**.
 
+### Als de kalender geen routeadres geeft (sinds 0.24)
+
+De kalenderpagina heeft per koers een routekolom en een resultatenkolom, en
+die zijn **niet altijd gevuld**. In 2026 staan er zes koersen met lege
+cellen: Tour of Britain, GP Québec, GP Montréal, het WK, Lombardije en
+Parijs-Tours. `_fetch_calendar` valt dan terug op de koerspagina
+(`route_url or url`), en dat is een ánder soort pagina.
+
+Dat leverde twee fouten op die geen fout léken:
+
+- **Alleen de etappe van vandaag.** `parse_etappes` las de **eerste** tabel
+  op de pagina. Op een routepagina is dat de etappetabel; op een koerspagina
+  staat er iets anders vooraan, en één bruikbare rij daarin werd de hele
+  etappelijst. Geen uitzondering, geen leeg veld — een koers met precies één
+  etappe. Sinds 0.24 worden álle tabellen geprobeerd en wint de rijkste.
+- **Geen etappelijst waar er wel een is.** De etappetabel staat een niveau
+  dieper, op een adres dat niet af te leiden is: `route-gb-2026` bij de Tour
+  of Britain, `route-tdu-2026` bij de Tour Down Under, `spain-route-2026`
+  bij de Vuelta. Die afkorting kan niemand raden. **De koerspagina linkt er
+  zelf naar**, dus `route_kandidaten` leest de links eruit die onder
+  diezelfde koersmap hangen, met "route" vooraan. Hoogstens
+  `MAX_ROUTE_KANDIDATEN` (3) worden er echt opgehaald — de menubalk van
+  cyclingstage noemt élke koers van de site (268 links op de
+  Vuelta-routepagina), dus zonder die padeis is dit een verzoekenregen.
+
+### Uitslagen buiten de grote rondes (sinds 0.24)
+
+`uitslag_url` eiste `-route/` in het etappeadres. Dat hébben alleen de Giro,
+de Tour en de Vuelta: `/vuelta-2026-route/stage-2-spain-2026/`. De andere 46
+koersen van de kalender staan als `/tour-down-under-2026/stage-3-tdu-2026/`
+en kregen dus **stil nooit een uitslag** — geen fout in het log, gewoon een
+lege uitslag.
+
+Nu zijn er twee wegen, in deze volgorde (`_uitslagpagina` in `sensor.py`):
+
+1. **Afleiden uit het etappeadres.** De `-route`-vorm is nagekeken op de
+   echte Vuelta-pagina; voor de rest wordt `-results` achter de koersmap
+   geplakt, wat gelijk is aan `uitslag_index_url`. Dat is een afleiding en
+   geen bron, maar hij kost niets: geen extra verzoek.
+2. **Opzoeken op de resultatenpagina van de koers.** Levert weg 1 niets op,
+   dan leest `parse_uitslag_index` daar het échte adres per etappenummer.
+   Eén verzoek per koers per dag (`_UITSLAGINDEX`, module-breed omdat
+   `_cs_fetch_stage` het bron-contract volgt en alleen de etappe meekrijgt);
+   `{}` in die cache betekent "vandaag al geprobeerd".
+
+Een **eendaagse** koers heeft geen `stage-N`-pagina en dus geen weg 1; zijn
+uitslag staat op zijn resultatenpagina zelf en die wordt direct gelezen.
+Vandaar ook de eis dat er `stage-N` in de bestandsnaam staat voordat er iets
+wordt afgeleid: zonder die eis leverde `/paris-roubaix-2026/route-pr-2026/`
+elke ronde een verzoek op naar een adres dat niet kan bestaan.
+
+**Wat hiervan niet geverifieerd is:** de opmaak van de resultatenindexpagina
+zelf — de proxy laat cyclingstage niet door. Wat wél vaststaat is de vórm van
+zo'n link: `/vuelta-2026-results/stage-2-spain-results-2026/` staat letterlijk
+in de opgeslagen Vuelta-routepagina, en `parse_uitslag_index` vindt hem daar.
+De herkenning is daarom zo ruim mogelijk gehouden (elk adres onder de
+resultatenmap van déze koers met `stage-N` in het pad). Werkt het niet, zoek
+dan in het debuglogboek op "Uitslagoverzicht".
+
+### Terugbladeren: hoe ver, en wat het kost
+
+`past_n` mag sinds 0.24 tot 21 — een hele grote ronde. Het was 10, en de
+standaard blijft 3. Wie op etappe 14 van de Vuelta zit en `past_n` op 5 heeft
+staan komt tot etappe 8 en niet verder; dat is geen storing maar de
+instelling, en het was uit het dashboard niet te zien.
+
+**Verhogen is een ruil.** De attributen zitten in de praktijk al boven de
+16 kB van de recorder (zie "Omvang van de attributen"); elke etappe erbij is
+ruim 400 bytes en duwt daar verder overheen. De sensor en de kaart blijven
+werken — de attributen gaan over de websocket — maar de recorder bewaart ze
+dan niet en er is geen historie meer. De verzoeken vallen wél mee: een
+gereden uitslag verandert niet meer en `_past_cache` wordt als enige cache
+niet bij een dagwissel geleegd.
+
+### Live: welke bron, en waarom dat per organisator is
+
+Nagekeken op 5 september 2026, met een belangrijke beperking: **de proxy in
+de ontwikkelomgeving laat geen van deze sites door**, dus dit is
+bureauonderzoek op zoekresultaten en op wat er al in `tests/fixtures/` ligt,
+niet op opgehaalde pagina's. Elke regel hieronder moet opnieuw worden
+nagekeken voordat er code op gebouwd wordt — te beginnen met de `robots.txt`,
+zoals bij FirstCycling.
+
+**Er is geen enkele bron die alle koersen live dekt en open is.** Dat is de
+kern van het antwoord. Wat er is:
+
+| bron | dekt | vorm | wat we weten |
+|---|---|---|---|
+| ASO Race Center | Tour, Vuelta, Dauphiné, Parijs-Nice, Parijs-Roubaix, Luik, Flèche, TdF Femmes | `racecenter.{koers}.{tld}/api/{bind}-{jaar}`, JSON, geen sleutel | de etappelijst is bewezen: `racecenter_vuelta_2026_stages.json` is een echte respons. Of de **live**-feed (km-to-go, positie) er ook zo uitziet is **niet** vastgesteld — daar is `/live-stream` of `/api/telemetryCompetitor-{jaar}` voor nodig |
+| RCS Sport | Giro, Sanremo, Strade, Tirreno, Lombardije | eigen live-platform | niet onderzocht |
+| Flanders Classics | Ronde, Omloop, Dwars, Gent-Wevelgem | eigen live | niet onderzocht |
+| Velon | ~25 koersen incl. Tour of Britain 2026 | telemetrie (snelheid, vermogen, cadans, positie) | **B2B**: het gaat naar broadcasters en naar hun eigen app, niet naar een open eindpunt. Geen begaanbare weg voor deze integratie |
+| procyclingstats | alles | — | onbereikbaar, zie hierboven |
+| FirstCycling | alles | — | `Disallow: /`, klaar |
+
+Dus: **ja, per organisator los, en nee, niet in één klap.** Dat is precies
+waar `bronnen.py` voor gemaakt is — een bron per platform, de koers wijst hem
+aan. ASO is de meest lonende eerste stap: één parser bedient acht koersen,
+waaronder twee grote rondes, en de vorm van het eindpunt staat al vast.
+
+Drie dingen om vooraf te wegen, want ze maken live iets anders dan de rest
+van deze integratie:
+
+- **Het verzoekpatroon is een ander.** De kalender is één pagina per dag; een
+  live-positie die iets toevoegt wil elke minuut ververst worden. Dat is
+  honderden keren zoveel verkeer bij een site die daar niets voor terugkrijgt.
+  `live_scan_minutes` staat op 5 en dat is voor een stip aan de lage kant —
+  wie dat omlaag wil moet zich afvragen of de bron dat mag merken.
+- **Een organisatorfeed ligt eruit op het slechtste moment.** Precies tijdens
+  de etappe staat er de meeste druk op. Degraderen moet dus: geen stip is
+  goed, een verkeerde stip niet.
+- **Niets schatten.** De positie afleiden uit starttijd en afstand is
+  verleidelijk en verboden. Het tijdschema (`stage-{n}-times.htm`) geeft wél
+  een verwachte passeertijd per punt; daar valt een stip "volgens schema" uit
+  te tekenen, maar dan moet de kaart er ook bij zetten dat het een
+  voorspelling is en geen meting.
+
 ### De live-stip heeft geen bron meer
 
 `_fetch_live` bouwde `procyclingstats.com/{stage_url}/live` en las daar "KM
@@ -1019,6 +1136,21 @@ vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/c
 
 ## Openstaande punten
 
+- **De resultatenindexpagina van cyclingstage is niet in het echt gelezen.**
+  `parse_uitslag_index` draait op de links die in de opgeslagen
+  Vuelta-routepagina staan; de indexpagina zelf kon van hieruit niet worden
+  opgehaald. Werkt de terugval niet, kijk in het debuglogboek op
+  "Uitslagoverzicht": daar staat of de pagina binnenkwam en hoeveel etappes
+  eruit kwamen.
+- **De etappelijst van de zes koersen zonder routeadres is niet in het echt
+  gecontroleerd.** Dat `/tour-of-britain-2026/route-gb-2026/` bestaat komt
+  uit een zoekresultaat, niet uit de pagina zelf. Als de Tour of Britain nog
+  steeds één etappe toont, kijk dan op "Etappelijst van ... gevonden op" en
+  op "Routepagina zonder etappetabel" in het debuglogboek.
+- **Live: geen bron aangesloten, wel in kaart gebracht.** Zie "Live: welke
+  bron" hierboven. ASO Race Center is de meest lonende eerste stap; de
+  live-feed zelf is nog niet vastgesteld en de `robots.txt` van ASO is nog
+  niet nagekeken.
 - Categorieën van cols ontbreken vaak vóór de koers (PCS publiceert ze pas na
   afloop via het bergklassement). Uitzoeken of het elders vooraf beschikbaar is.
 - Een aantal cyclingstage-namen voor vrouwenklassiekers is een educated guess

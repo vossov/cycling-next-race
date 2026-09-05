@@ -157,13 +157,32 @@ def parse_etappes(html: str, jaar: int) -> list[dict]:
     over drie kolommen. Ze worden overgeslagen: een rustdag is geen etappe,
     en de nummering in de eerste kolom loopt gewoon door, dus er valt niets
     mis te tellen.
+
+    **Alle tabellen op de pagina worden geprobeerd, de rijkste wint.** Tot
+    0.23 werd alleen de eerste gelezen. Op de routepagina van een grote
+    ronde is dat de etappetabel en gaat dat goed, maar de kalender laat de
+    routekolom voor een aantal koersen leeg (Tour of Britain, WK,
+    Lombardije, Parijs-Tours, beide Canadese eendaagse) en dan komt de
+    kóérspagina hier binnen. Daar staat de etappetabel niet vooraan, en één
+    tabel eerder met één bruikbare rij erin leverde een koers met precies
+    één etappe op — geen fout, geen leeg veld, gewoon een verkeerd beeld.
     """
+    beste: list[dict] = []
+    for tabel in _TABEL.findall(html or ""):
+        rijen = _etapperijen(tabel, jaar)
+        if len(rijen) > len(beste):
+            beste = rijen
+    if not beste:
+        _LOGGER.debug("Routepagina zonder etappetabel")
+    else:
+        _LOGGER.debug("Routepagina: %s etappes", len(beste))
+    return beste
+
+
+def _etapperijen(tabel: str, jaar: int) -> list[dict]:
+    """De etappes uit één tabel; leeg als het de etappetabel niet is."""
     uit: list[dict] = []
-    tabel = _TABEL.search(html or "")
-    if not tabel:
-        _LOGGER.debug("Routepagina zonder tabel")
-        return uit
-    for rij in _RIJ.findall(tabel.group(0)):
+    for rij in _RIJ.findall(tabel):
         if "<th" in rij.lower():
             continue
         cellen = _CEL.findall(rij)
@@ -189,7 +208,6 @@ def parse_etappes(html: str, jaar: int) -> list[dict]:
             "stage_type": _TYPES.get(_kaal(cellen[4]).lower(), ""),
             "url": _adres(cellen[2]),
         })
-    _LOGGER.debug("Routepagina: %s etappes", len(uit))
     return uit
 
 
@@ -440,6 +458,12 @@ _KLASSEMENTEN = [
 ]
 
 
+# `/vuelta-2026-results/stage-2-spain-results-2026/` — het nummer komt uit
+# het pad en niet uit de linktekst: die is opgemaakt en verschilt per koers,
+# het pad niet. Dezelfde keuze als bij de GPX-overzichtspagina.
+_STAGE_IN_PAD = re.compile(r"(?:^|/)stage-(\d{1,2})\b", re.I)
+
+
 def uitslag_url(stage_url: str) -> str:
     """Het resultatenadres dat bij een etappeadres hoort.
 
@@ -452,13 +476,27 @@ def uitslag_url(stage_url: str) -> str:
     resultatenpagina van de koers lezen (`uitslag_index_url`), waar ze
     allemaal op staan.
     """
-    if not stage_url or "-route/" not in stage_url:
-        return ""
-    kaal = stage_url.rstrip("/")
+    kaal = (stage_url or "").rstrip("/")
     kop, _, staart = kaal.rpartition("/")
-    kop = kop.replace("-route", "-results")
     m = re.match(r"(.*?)-(\d{4})$", staart)
-    if not m:
+    # Alleen een etappepagina heeft een etappe-uitslag. Zonder deze eis zou
+    # de routepagina van een eendaagse koers (`/paris-roubaix-2026/route-pr-
+    # 2026/`) een `route-pr-results-2026`-adres opleveren dat niet bestaat:
+    # elke ronde een verzoek dat nooit iets kan opleveren. De uitslag van een
+    # eendaagse koers staat op zijn resultatenpagina zelf, zie
+    # `uitslag_index_url`.
+    if not m or not kop or not _STAGE_IN_PAD.search(staart):
+        return ""
+    if kop.endswith("-route"):
+        # de vorm van de grote rondes, nagekeken op de echte pagina
+        kop = kop[:-len("-route")] + "-results"
+    elif re.search(r"-\d{4}$", kop):
+        # `/tour-of-britain-2026/stage-1-gb-2026/` -> de resultatenmap heet
+        # `/tour-of-britain-2026-results/`, gelijk aan `uitslag_index_url`.
+        # Dit is een afleiding en geen bron; komt er niets binnen, dan leest
+        # `parse_uitslag_index` het echte adres van de resultatenpagina.
+        kop = kop + "-results"
+    else:
         return ""
     return f"{kop}/{m.group(1)}-results-{m.group(2)}/"
 
@@ -481,3 +519,102 @@ def klassement_urls(slug: str, jaar: int) -> dict:
         "points": f"{BASIS}/{slug}-{jaar}-points-classification/",
         "kom": f"{BASIS}/{slug}-{jaar}-kom-classification/",
     }
+
+
+# ── de weg naar de etappelijst als de kalender hem niet geeft ────────
+
+# Één extra segment onder de koersmap: `/tour-of-britain-2026/route-gb-2026/`.
+# Etappepagina's vallen af — die dragen de etappetabel niet en elke kandidaat
+# die we proberen is een verzoek.
+_ETAPPEPAGINA = re.compile(r"^stage-\d", re.I)
+
+
+def route_kandidaten(html: str, koers_url: str) -> list[str]:
+    """Subpagina's van een koers die zijn etappetabel kunnen dragen.
+
+    De kalender laat de routekolom voor een aantal koersen leeg — Tour of
+    Britain, het WK, Lombardije, Parijs-Tours en de twee Canadese eendaagse
+    stonden in 2026 met lege cellen. Dan wijst de kalender naar de
+    koerspagina (`/tour-of-britain-2026/`) en zit de etappetabel een niveau
+    dieper (`/tour-of-britain-2026/route-gb-2026/`).
+
+    Dat adres valt niet af te leiden: het is `route-gb-2026` bij de Tour of
+    Britain, `route-tdu-2026` bij de Tour Down Under en `spain-route-2026`
+    bij de Vuelta. Die afkorting kan niemand raden — precies het raden dat
+    dit project niet doet. **De koerspagina linkt er zelf naar**, dus wordt
+    hij daar opgezocht.
+
+    Wat "route" in de naam heeft komt vooraan; de rest volgt, zodat een
+    koers met een afwijkende naam niet meteen vastloopt. De aanroeper
+    beperkt hoeveel kandidaten hij werkelijk ophaalt.
+    """
+    map_naam = _map_van(koers_url)
+    if not map_naam:
+        return []
+    voor, na = [], []
+    for u in _HREF.findall(html or ""):
+        pad = _pad_van(u.strip())
+        if not pad:
+            continue
+        delen = pad.strip("/").split("/")
+        if len(delen) != 2 or delen[0].lower() != map_naam.lower():
+            continue
+        if _ETAPPEPAGINA.match(delen[1]):
+            continue
+        adres = f"{BASIS}/{delen[0]}/{delen[1]}/"
+        rij = voor if "route" in delen[1].lower() else na
+        if adres not in voor and adres not in na:
+            rij.append(adres)
+    return voor + na
+
+
+def _map_van(url: str) -> str:
+    """Het eerste padsegment van een cyclingstage-adres."""
+    pad = _pad_van(url).strip("/")
+    return pad.split("/")[0] if pad else ""
+
+
+def _pad_van(url: str) -> str:
+    """Het pad van een cyclingstage-adres; "" voor alles daarbuiten."""
+    u = (url or "").strip()
+    if u.startswith("/"):
+        return u
+    m = re.match(r"https?://(?:www\.)?cyclingstage\.com(/.*)?$", u)
+    return (m.group(1) or "/") if m else ""
+
+
+# ── de weg naar de uitslag als de afleiding niet klopt ───────────────
+
+def parse_uitslag_index(html: str, slug: str, jaar: int) -> dict:
+    """`{etappenummer: adres}` uit de resultatenpagina van een koers.
+
+    `uitslag_url` leidt het resultatenadres af uit het etappeadres, en die
+    afleiding is alleen nagekeken op de drie grote rondes — daar heet de
+    koersmap `{slug}-{jaar}-route`. Bij de andere koersen heet hij anders
+    (`/tour-down-under-2026/`) en is de afleiding een aanname. Deze pagina
+    zet alle etappe-uitslagen zelf op een rij, dus wat hier uit komt is
+    nagekeken in plaats van geraden.
+
+    **Niet op de echte indexpagina beproefd** — de proxy in de
+    ontwikkelomgeving laat cyclingstage niet door. Wat wél vaststaat is de
+    vórm van zo'n link: `/vuelta-2026-results/stage-2-spain-results-2026/`
+    staat letterlijk in de opgeslagen Vuelta-routepagina. De herkenning is
+    daarom zo ruim mogelijk gehouden: elk adres onder de resultatenmap van
+    déze koers met `stage-N` in het pad. Adressen van een ander jaar vallen
+    af, want de pagina linkt ook naar eerdere jaargangen.
+    """
+    if not slug or not jaar:
+        return {}
+    map_naam = f"{slug}-{jaar}-results".lower()
+    uit: dict[int, str] = {}
+    for u in _HREF.findall(html or ""):
+        pad = _pad_van(u.strip())
+        delen = pad.strip("/").split("/") if pad else []
+        if len(delen) != 2 or delen[0].lower() != map_naam:
+            continue
+        m = _STAGE_IN_PAD.search(delen[1])
+        if not m:
+            continue
+        uit.setdefault(int(m.group(1)), f"{BASIS}/{delen[0]}/{delen[1]}/")
+    _LOGGER.debug("Uitslagoverzicht %s %s: %s etappes", slug, jaar, len(uit))
+    return uit

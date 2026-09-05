@@ -84,6 +84,12 @@ MAX_ANDERE_KOERSEN = DEFAULT_MAX_OTHER
 # alleen maar verzoeken: er staan er toch maar 1 + `max_other` in beeld.
 MAX_ACTIEVE_KOERSEN = 6
 
+# Hoeveel subpagina's van een koerspagina er hoogstens worden geprobeerd als
+# de kalender geen routeadres geeft. Een koerspagina linkt naar een handvol
+# eigen pagina's (route, favorieten, gpx, uitslagen); meer dan drie proberen
+# is verzoeken doen om het doen.
+MAX_ROUTE_KANDIDATEN = 3
+
 # Hoeveel ploegcodes er per ronde nieuw worden opgehaald. Een koers telt zo'n
 # twintig ploegen en elke code is een eigen pagina; die allemaal ineens halen
 # maakt de eerste update na een herstart onnodig lang. De rest volgt de
@@ -619,13 +625,29 @@ def _cs_event_stages(event: dict) -> list[dict]:
             "departure": "", "arrival": "",
         }]
 
+    laatste_html = ""
     for kandidaat in _etappelijst_urls(race_url):
-        rijen = cs.parse_etappes(_haal_html(kandidaat, "routepagina"), jaar)
+        laatste_html = _haal_html(kandidaat, "routepagina")
+        rijen = cs.parse_etappes(laatste_html, jaar)
         if rijen:
             break
     else:
-        _LOGGER.debug("Geen etappelijst gevonden voor %s", race_url)
-        return []
+        # De kalender laat de routekolom voor een aantal koersen leeg (Tour
+        # of Britain, het WK, Lombardije, Parijs-Tours) en wijst dan naar de
+        # koerspagina. De etappetabel staat een niveau dieper, op een adres
+        # dat niet af te leiden is (`route-gb-2026` tegenover
+        # `route-tdu-2026`) maar waar die koerspagina zelf naar linkt.
+        rijen = []
+        for kandidaat in cs.route_kandidaten(laatste_html,
+                                             race_url)[:MAX_ROUTE_KANDIDATEN]:
+            rijen = cs.parse_etappes(_haal_html(kandidaat, "routepagina"), jaar)
+            if rijen:
+                _LOGGER.debug("Etappelijst van %s gevonden op %s",
+                              race_url, kandidaat)
+                break
+        if not rijen:
+            _LOGGER.debug("Geen etappelijst gevonden voor %s", race_url)
+            return []
 
     return [{
         "date": r["date"],
@@ -1028,6 +1050,78 @@ def _repair_rows(rows, roster, name_key="rider", team_key="team"):
     return hersteld
 
 
+# De etappe-uitslagadressen per koers, gelezen van de resultatenpagina van
+# die koers. Module-breed en niet op de coordinator: `_cs_fetch_stage` volgt
+# het contract van een bron (`bronnen.py`) en krijgt alleen de etappe mee.
+# Per dag geleegd, want een overzicht dat vandaag nog leeg was kan er morgen
+# staan. `{}` in de cache betekent "vandaag al geprobeerd, niets gevonden" —
+# zonder dat zou elke etappe van zo'n koers elke ronde de pagina opnieuw
+# ophalen.
+_UITSLAGINDEX: dict[str, dict] = {}
+_UITSLAGINDEX_DAG = None
+
+
+def _uitslagindex(slug: str, jaar: int) -> dict:
+    """`{etappenummer: adres}` van een koers, hoogstens één verzoek per dag."""
+    global _UITSLAGINDEX_DAG
+
+    from . import cyclingstage as cs
+
+    vandaag = date.today()
+    if _UITSLAGINDEX_DAG != vandaag:
+        _UITSLAGINDEX.clear()
+        _UITSLAGINDEX_DAG = vandaag
+    sleutel = f"{slug}-{jaar}"
+    if sleutel not in _UITSLAGINDEX:
+        url = cs.uitslag_index_url(slug, jaar)
+        _UITSLAGINDEX[sleutel] = cs.parse_uitslag_index(
+            _haal_html(url, "uitslagoverzicht"), slug, jaar) if url else {}
+    return _UITSLAGINDEX[sleutel]
+
+
+def _uitslagpagina(stage: dict) -> tuple:
+    """`(adres, html)` van de uitslag van een etappe; `("", "")` als er niets is.
+
+    Twee wegen, in deze volgorde:
+
+    1. **Afleiden uit het etappeadres** (`uitslag_url`). Nagekeken op de
+       Vuelta en verder gratis: geen extra verzoek om het adres te vinden.
+    2. **Opzoeken op de resultatenpagina van de koers.** Die afleiding is
+       alleen op de grote rondes nagekeken; daar heet de koersmap
+       `{slug}-{jaar}-route`, bij de andere koersen heet hij anders. Levert
+       de afleiding niets op, dan wordt het echte adres opgezocht — één
+       verzoek per koers per dag, gedeeld door al zijn etappes.
+
+    Voor een **eendaagse** koers bestaat weg 1 niet: er is geen etappenummer
+    en dus geen `stage-N`-adres. Zijn uitslag staat op de resultatenpagina
+    van de koers zelf, en die wordt hier direct gelezen.
+    """
+    from . import cyclingstage as cs
+
+    slug = stage.get("race_slug") or ""
+    jaar = stage["date"].year if stage.get("date") else 0
+
+    if stage.get("one_day"):
+        url = cs.uitslag_index_url(slug, jaar)
+        return (url, _haal_html(url, "uitslag")) if url else ("", "")
+
+    url = cs.uitslag_url(stage.get("stage_url") or "")
+    if url:
+        html = _haal_html(url, "uitslag")
+        if html:
+            return url, html
+
+    idx = stage.get("idx")
+    if not idx or not slug or not jaar:
+        return "", ""
+    url = _uitslagindex(slug, jaar).get(int(idx), "")
+    if not url:
+        return "", ""
+    _LOGGER.debug("Uitslagadres van etappe %s (%s) via het overzicht: %s",
+                  idx, slug, url)
+    return url, _haal_html(url, "uitslag")
+
+
 def _cs_fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,
                  gc_n: int = DEFAULT_GC_N) -> dict:
     """Uitslag en klassementen van één etappe, van cyclingstage.
@@ -1049,10 +1143,7 @@ def _cs_fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,
     from . import cyclingstage as cs
 
     data = _lege_uitslag(stage)
-    url = cs.uitslag_url(stage.get("stage_url") or "")
-    if not url:
-        return data
-    html = _haal_html(url, "uitslag")
+    url, html = _uitslagpagina(stage)
     if not html:
         return data
     uit = cs.parse_uitslag(html)
