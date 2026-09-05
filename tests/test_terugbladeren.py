@@ -151,3 +151,37 @@ def test_past_staat_in_de_attributen(wt):
     bron = inspect.getsource(wt.CyclingCoordinator._async_update_data)
     spoiler = bron.split("spoiler (alleen tonen", 1)[1]
     assert '"past": past' in spoiler
+
+
+def test_geen_pcs_adres_meer_uit_een_etappe_url(wt):
+    """`stage_url` is sinds 0.19 een cyclingstage-adres.
+
+    Er een procyclingstats-adres uit bouwen levert
+    `procyclingstats.com/https://www.cyclingstage.com/...` op — precies wat
+    de live-stip stukmaakte. Deze test bewaakt dat het niet terugkomt.
+    """
+    import inspect
+    import io
+    import tokenize
+
+    bron = inspect.getsource(wt)
+    # commentaar eruit: de uitleg bij het verdwenen `_fetch_live` noemt het
+    # foute adres met zoveel woorden, en dat is juist de bedoeling
+    code = []
+    for tok in tokenize.generate_tokens(io.StringIO(bron).readline):
+        # alléén commentaar; de strings moeten blijven staan, want daar zou
+        # het foute adres juist in zitten
+        if tok.type != tokenize.COMMENT:
+            code.append(tok.string)
+    plat = "".join(code)
+    assert "procyclingstats.com/{stage" not in plat
+    assert "procyclingstats.com/{shown" not in plat
+
+
+def test_live_attributen_beloven_niets(wt):
+    """Zonder bron horen de live-velden leeg te blijven, niet geschat."""
+    import inspect
+    bron = inspect.getsource(wt.CyclingCoordinator._async_update_data)
+    assert '"live_km_to_go": None' in bron
+    assert '"live_url": live_url' in bron
+    assert 'live_url = ""' in bron

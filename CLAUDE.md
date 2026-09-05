@@ -415,6 +415,108 @@ elk half uur een extra verzoek te krijgen omdat wij willen weten waarom.
   voor de vrouwen `rankings/we/individual`. Zie `RANGLIJST` in `sensor.py`;
   het vrouwenadres is **niet geverifieerd**.
 
+### De live-stip heeft geen bron meer
+
+`_fetch_live` bouwde `procyclingstats.com/{stage_url}/live` en las daar "KM
+to go" uit. Sinds 0.19 is `stage_url` een cyclingstage-adres, dus dat werd
+letterlijk `procyclingstats.com/https://www.cyclingstage.com/...//live`: een
+verzoek dat nergens op sloeg en tijdens een etappe elke vijf minuten opnieuw
+ging. Met het juiste adres zou het trouwens ook niets opleveren — PCS zit
+achter de uitdagingspagina.
+
+Cyclingstage heeft geen vervanger: het woord "live" komt op de etappepagina
+nul keer voor. Sinds 0.22.2 is de aanroep dus weg en blijven
+`live_km_to_go`, `live_avg_speed`, `live_status` en `live_url` leeg; de
+sleutels staan er nog zodat een oudere kaart niet struikelt. De positie
+schatten uit starttijd en afstand zou precies het verzinnen zijn dat dit
+project niet doet.
+
+Het tijdschema (`stage-{n}-times.htm`) geeft wél per punt een verwachte
+passeertijd. Daar zou een stip "volgens schema" uit te tekenen zijn, maar dat
+is een voorspelling en geen meting; wie dat wil moet het als zodanig
+benoemen in de kaart.
+
+De status blijft wel op `LIVE` staan — die komt uit de starttijd, en die
+heeft cyclingstage.
+
+**Dezelfde fout zit nog in de col-namen.** `_fetch_race_climbs` en
+`_fetch_stage_climbs` geven een cyclingstage-adres door aan `RaceClimbs`
+en `Stage` van procyclingstats, die een PCS-pad verwachten. Ze vangen hun
+eigen fouten af, dus het valt niet op, maar het zijn verzoeken die niet
+kunnen slagen. Ze horen bij het opruimen van de laatste PCS-resten.
+
+### Bronnenregister: koers voor koers erbij
+
+`bronnen.py` is het scharnier voor koersen die cyclingstage niet heeft. Het
+bevat **geen parsers** — alleen het register en het contract.
+
+Een bron levert `etappes(koers)`, `uitslag(etappe, result_n, gc_n)` en
+optioneel `kalender(jaar)`. `sensor.py` meldt cyclingstage aan als
+`STANDAARD` en `_event_stages`/`_fetch_stage` zijn nog maar dispatchers: ze
+zoeken de bron op (`bron` op de koers of de etappe, anders de standaard) en
+vangen alles af wat eruit komt. Een organisatorsite die eruit ligt levert
+dus een lege lijst of `_lege_uitslag`, nooit een uitzondering naar boven.
+
+`_event_stages` zet `bron` op elke etappe die terugkomt, zodat `_fetch_stage`
+later niet hoeft te raden. Een bron die etappes van een ánder platform
+doorgeeft mag die sleutel zelf zetten; wat er al staat blijft staan.
+
+`EXTRA_KOERSEN` is voor koersen die in geen enkele kalender voorkomen. Die
+lijst is bewust **leeg**: een koers erin zetten zonder bron die hem kan
+bedienen levert een koers zonder etappes op, en die verdwijnt stil weer.
+
+Een koers toevoegen is dan:
+
+1. `robots.txt` van de organisator nalezen. `Disallow: /` betekent klaar.
+2. Een echte pagina opslaan, parser ernaast, HTML in `tests/fixtures/`.
+3. `registreer(Bron(...))`.
+4. De koers in `EXTRA_KOERSEN`, of `bron` op zijn kalenderregel als hij wél
+   in de kalender staat maar zijn etappes elders vandaan moeten komen.
+
+`tests/test_bronnen.py` mag met een verzonnen bron werken: dat test óns
+contract, niet het lezen van andermans pagina's. Voor een échte bron blijft
+gelden dat er opgeslagen HTML aan te pas komt.
+
+Let op de importnaam in tests: `cycling_next_race.bronnen` via de fixture
+`bronnen_mod`. Het pad `custom_components.cycling_next_race.bronnen` levert
+een tweede exemplaar met een eigen register op, en dan meldt een test een
+bron aan die `sensor.py` nooit ziet.
+
+### FirstCycling is uitgesloten (robots.txt)
+
+Op 27 augustus 2026 nagekeken als kandidaat om cyclingstage te vervangen of
+aan te vullen: het is qua opzet de dichtste open tegenhanger van
+procyclingstats (`race.php?t={niveau}&y={jaar}` voor de kalender,
+`race.php?r={koers}&y={jaar}` voor een koers), het kent UCI-niveaus, het
+punten-, berg- en jongerenklassement, ploegen en profieltypes, en het heeft
+de héle UCI-kalender in plaats van een redactionele selectie. Precies alles
+wat we bij de overstap naar cyclingstage hebben ingeleverd.
+
+**Hun `robots.txt` verbiedt het:**
+
+```
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: *
+Disallow: /
+```
+
+De hele site, voor elke geautomatiseerde bezoeker, met ClaudeBot (en GPTBot,
+CCBot, Google-Extended) er apart bij naam in. Daarmee is het klaar. Niet
+omdat een scraper technisch zou falen — hij zou werken — maar omdat de
+eigenaar het zo duidelijk mogelijk heeft opgeschreven.
+
+Redeneer er niet omheen met "wij zijn geen crawler, wij halen één pagina per
+half uur op voor één dashboard". Die vraag is bij procyclingstats al gesteld
+en eerlijk beantwoord; het antwoord verandert niet doordat het ons nu
+slechter uitkomt.
+
+**Dezelfde maat geldt voor de bronnen die we wél gebruiken.** Wie hier langs
+komt en de `robots.txt` van cyclingstage, wielerflits of racecenter nog niet
+heeft nagekeken: doe dat. Staat daar hetzelfde, dan is dat een probleem dat
+we moeten weten, niet een probleem dat we moeten wegkijken.
+
 ### cyclingstage.com wordt de hoofdbron
 
 Nu procyclingstats onbereikbaar is en die weg uitgeput, gaat de kalender —
