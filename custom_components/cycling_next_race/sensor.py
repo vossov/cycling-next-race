@@ -31,6 +31,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.util import dt as dt_util
 
+from . import bronnen
 from .const import (
     CONF_GC_N,
     CONF_LEVELS,
@@ -562,9 +563,19 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
             "end": k["end"],
             "women": k["women"],
             "level": niveau,
+            "bron": bronnen.STANDAARD,
         })
         if NIVEAUS[niveau]["naam"] in telling:
             telling[NIVEAUS[niveau]["naam"]] += 1
+
+    # Koersen die cyclingstage niet noemt en die met de hand zijn toegevoegd
+    # (zie EXTRA_KOERSEN in bronnen.py). Ze tellen mee in de diagnose, zodat
+    # `levels_diag` blijft kloppen met wat er werkelijk in beeld komt.
+    for k in bronnen.extra_koersen(year, gekozen):
+        koersen.append(k)
+        naam = NIVEAUS.get(str(k.get("level", "")), {}).get("naam")
+        if naam in telling:
+            telling[naam] += 1
 
     koersen.sort(key=lambda x: (x["start"], x["women"]))
     if koersen:
@@ -577,7 +588,7 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
     return koersen, telling, []
 
 
-def _event_stages(event: dict) -> list[dict]:
+def _cs_event_stages(event: dict) -> list[dict]:
     """Etappes van een koers met datum. Eendaagse koers = 1 'etappe'.
 
     De routepagina van cyclingstage geeft nummer, datum, start en finish,
@@ -1017,7 +1028,7 @@ def _repair_rows(rows, roster, name_key="rider", team_key="team"):
     return hersteld
 
 
-def _fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,
+def _cs_fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,
                  gc_n: int = DEFAULT_GC_N) -> dict:
     """Uitslag en klassementen van één etappe, van cyclingstage.
 
@@ -1037,17 +1048,7 @@ def _fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,
     """
     from . import cyclingstage as cs
 
-    data = {
-        "ok": False, "finished": False,
-        "departure": stage.get("departure") or "", "arrival": stage.get("arrival") or "",
-        "distance": stage.get("distance_km"), "vertical": None,
-        "profile_icon": "", "profile_score": None,
-        "stage_type": stage.get("stage_type") or "",
-        "start_time": "", "climbs_raw": [],
-        "results": [], "gc": [], "points_leader": "", "kom_leader": "",
-        "youth_leader": "", "points_top": [], "kom_top": [], "youth_top": [],
-        "startlist_quality": None,
-    }
+    data = _lege_uitslag(stage)
     url = cs.uitslag_url(stage.get("stage_url") or "")
     if not url:
         return data
@@ -1072,6 +1073,68 @@ def _fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,
     _LOGGER.debug("Uitslag %s: %s rijen, gc %s", url,
                   len(data["results"]), len(data["gc"]))
     return data
+
+
+# ── Bronnen ───────────────────────────────────────────────────────────
+#
+# Cyclingstage bedient alles wat in zijn kalender staat. Een koers die
+# elders vandaan komt draagt `bron`, en dan gaat de vraag naar dat platform.
+# Zie `bronnen.py` voor wat een bron moet kunnen en hoe je er een toevoegt.
+bronnen.registreer(bronnen.Bron(
+    naam="cyclingstage",
+    etappes=_cs_event_stages,
+    uitslag=_cs_fetch_stage,
+))
+
+
+def _event_stages(event: dict) -> list[dict]:
+    """De etappelijst van een koers, bij de bron die hem bedient."""
+    bron = bronnen.bron_van(event)
+    if bron is None:
+        return []
+    try:
+        etappes = bron.etappes(event)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Etappelijst mislukt bij %s voor %s: %s",
+                      bron.naam, event.get("name"), err)
+        return []
+    # elke etappe onthoudt waar hij vandaan komt, zodat `_fetch_stage` later
+    # niet hoeft te raden welke bron de uitslag heeft
+    for e in etappes:
+        e.setdefault("bron", bron.naam)
+    return etappes
+
+
+def _fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,
+                 gc_n: int = DEFAULT_GC_N) -> dict:
+    """Uitslag en klassementen van één etappe, bij de bron van die etappe."""
+    bron = bronnen.bron_van(stage)
+    if bron is None:
+        return _lege_uitslag(stage)
+    try:
+        return bron.uitslag(stage, result_n, gc_n)
+    except Exception as err:  # noqa: BLE001
+        # Een organisatorsite die eruit ligt mag de rest niet meenemen; de
+        # aanroepers rekenen op een dict en niet op een uitzondering.
+        _LOGGER.debug("Uitslag mislukt bij %s voor %s: %s",
+                      bron.naam, stage.get("stage_url"), err)
+        return _lege_uitslag(stage)
+
+
+def _lege_uitslag(stage: dict) -> dict:
+    """Wat een bron teruggeeft als er niets te halen viel."""
+    return {
+        "ok": False, "finished": False,
+        "departure": stage.get("departure") or "",
+        "arrival": stage.get("arrival") or "",
+        "distance": stage.get("distance_km"), "vertical": None,
+        "profile_icon": "", "profile_score": None,
+        "stage_type": stage.get("stage_type") or "",
+        "start_time": "", "climbs_raw": [],
+        "results": [], "gc": [], "points_leader": "", "kom_leader": "",
+        "youth_leader": "", "points_top": [], "kom_top": [], "youth_top": [],
+        "startlist_quality": None,
+    }
 
 
 def _show_state_for(sd: date, today: date) -> str:

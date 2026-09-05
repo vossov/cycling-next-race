@@ -445,6 +445,43 @@ en `Stage` van procyclingstats, die een PCS-pad verwachten. Ze vangen hun
 eigen fouten af, dus het valt niet op, maar het zijn verzoeken die niet
 kunnen slagen. Ze horen bij het opruimen van de laatste PCS-resten.
 
+### Bronnenregister: koers voor koers erbij
+
+`bronnen.py` is het scharnier voor koersen die cyclingstage niet heeft. Het
+bevat **geen parsers** — alleen het register en het contract.
+
+Een bron levert `etappes(koers)`, `uitslag(etappe, result_n, gc_n)` en
+optioneel `kalender(jaar)`. `sensor.py` meldt cyclingstage aan als
+`STANDAARD` en `_event_stages`/`_fetch_stage` zijn nog maar dispatchers: ze
+zoeken de bron op (`bron` op de koers of de etappe, anders de standaard) en
+vangen alles af wat eruit komt. Een organisatorsite die eruit ligt levert
+dus een lege lijst of `_lege_uitslag`, nooit een uitzondering naar boven.
+
+`_event_stages` zet `bron` op elke etappe die terugkomt, zodat `_fetch_stage`
+later niet hoeft te raden. Een bron die etappes van een ánder platform
+doorgeeft mag die sleutel zelf zetten; wat er al staat blijft staan.
+
+`EXTRA_KOERSEN` is voor koersen die in geen enkele kalender voorkomen. Die
+lijst is bewust **leeg**: een koers erin zetten zonder bron die hem kan
+bedienen levert een koers zonder etappes op, en die verdwijnt stil weer.
+
+Een koers toevoegen is dan:
+
+1. `robots.txt` van de organisator nalezen. `Disallow: /` betekent klaar.
+2. Een echte pagina opslaan, parser ernaast, HTML in `tests/fixtures/`.
+3. `registreer(Bron(...))`.
+4. De koers in `EXTRA_KOERSEN`, of `bron` op zijn kalenderregel als hij wél
+   in de kalender staat maar zijn etappes elders vandaan moeten komen.
+
+`tests/test_bronnen.py` mag met een verzonnen bron werken: dat test óns
+contract, niet het lezen van andermans pagina's. Voor een échte bron blijft
+gelden dat er opgeslagen HTML aan te pas komt.
+
+Let op de importnaam in tests: `cycling_next_race.bronnen` via de fixture
+`bronnen_mod`. Het pad `custom_components.cycling_next_race.bronnen` levert
+een tweede exemplaar met een eigen register op, en dan meldt een test een
+bron aan die `sensor.py` nooit ziet.
+
 ### FirstCycling is uitgesloten (robots.txt)
 
 Op 27 augustus 2026 nagekeken als kandidaat om cyclingstage te vervangen of

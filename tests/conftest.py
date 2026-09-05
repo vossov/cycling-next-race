@@ -85,6 +85,21 @@ def wt():
 
 
 @pytest.fixture(scope="session")
+def bronnen_mod():
+    """Het bronnenregister, dezelfde module-instantie als sensor.py gebruikt.
+
+    Let op de importnaam: `cycling_next_race.bronnen`, niet
+    `custom_components.cycling_next_race.bronnen`. Dat tweede pad levert een
+    tweede exemplaar op met een eigen register, en dan meldt een test een
+    bron aan die sensor.py nooit ziet.
+    """
+    _installeer_stubs()
+    if str(COMPONENTS) not in sys.path:
+        sys.path.insert(0, str(COMPONENTS))
+    return importlib.import_module("cycling_next_race.bronnen")
+
+
+@pytest.fixture(scope="session")
 def cs():
     """De cyclingstage-module.
 
