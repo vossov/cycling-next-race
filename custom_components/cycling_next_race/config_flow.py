@@ -32,6 +32,7 @@ from .const import (
     DOMAIN,
     MAX_LIVE_SCAN_MINUTES,
     MAX_OTHER_LIMIT,
+    MAX_PAST_N,
     MAX_RIDERS,
     MAX_SCAN_MINUTES,
     MAX_UPCOMING_DAYS,
@@ -134,10 +135,12 @@ class CyclingNextRaceOptionsFlow(OptionsFlow):
                     CONF_UPCOMING_DAYS, default=huidig[CONF_UPCOMING_DAYS]
                 ): _aantal(MIN_UPCOMING_DAYS, MAX_UPCOMING_DAYS),
                 # 0 zet het terugbladeren uit; elke etappe kost ruimte in de
-                # attributen, en die zitten al tegen de grens van de recorder
+                # attributen, en die zitten al tegen de grens van de recorder.
+                # Het maximum is een hele grote ronde: wie de Vuelta van
+                # etappe 1 af wil kunnen nalezen heeft er 21 nodig.
                 vol.Optional(
                     CONF_PAST_N, default=huidig[CONF_PAST_N]
-                ): _aantal(0, 10),
+                ): _aantal(0, MAX_PAST_N),
                 vol.Optional(
                     CONF_SCAN_MINUTES, default=huidig[CONF_SCAN_MINUTES]
                 ): _aantal(MIN_SCAN_MINUTES, MAX_SCAN_MINUTES),

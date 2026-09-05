@@ -11,7 +11,7 @@ NAME = "Cycling Next Race"
 # Gelijk aan "version" in manifest.json; hangt achter de kaart-URL zodat de
 # browser na een update de nieuwe versie ophaalt. tests/test_repo.py bewaakt
 # dat de twee niet uiteenlopen.
-VERSION = "0.23.0"
+VERSION = "0.24.0"
 
 # De meegeleverde Lovelace-kaart, door de integratie zelf geregistreerd.
 KAART_BESTAND = "cycling-next-race-card.js"
@@ -72,7 +72,8 @@ DEFAULT_UPCOMING_N = 10
 # Hoeveel gereden etappes je in de pop-up terug kunt bladeren. Elke etappe
 # kost een verzoek (eenmalig — een gereden uitslag verandert niet meer) en
 # ruim 400 bytes in de attributen, en die zitten al tegen de grens van de
-# recorder aan. Vandaar bescheiden; 0 zet het uit.
+# recorder aan. Vandaar bescheiden; 0 zet het uit en `MAX_PAST_N` is het
+# maximum voor wie een hele grote ronde wil kunnen terugbladeren.
 DEFAULT_PAST_N = 3
 # Hoeveel renners per teruggebladerde etappe. Korter dan de gewone uitslag:
 # wie derde werd in etappe 7 wil je nog weten, wie negende niet.
@@ -101,6 +102,14 @@ MAX_UPCOMING_DAYS = 21
 # in de attributen.
 MIN_OTHER = 0
 MAX_OTHER_LIMIT = 4
+# Hoe ver je hoogstens kunt terugbladeren. 21 = een hele grote ronde, want
+# dat is wat je bij de Vuelta of de Tour wilt kunnen. Het is bewust geen
+# standaard: elke etappe kost ruim 400 bytes in de attributen en die zitten
+# in de praktijk al boven de 16 kB van de recorder (zie "Omvang van de
+# attributen" in CLAUDE.md). Wie hem hoog zet ruilt de historie van de
+# sensor in voor terugbladeren op het dashboard; de sensor zelf en de kaart
+# blijven het gewoon doen.
+MAX_PAST_N = 21
 
 # Niet alleen getallen: `levels` en `levels_popup` zijn lijstjes met
 # niveaus. De coordinator leest die met `_opt_niveaus()` in plaats van

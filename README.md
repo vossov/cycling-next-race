@@ -77,7 +77,7 @@ Achter **Configureren** bij de integratie stel je in:
 | Aantal renners in de startlijst | 10 |
 | Maximaal aantal komende etappes | 10 |
 | Komende etappes tonen tot (dagen vooruit) | 7 |
-| Aantal etappes om terug te bladeren | 3 |
+| Aantal etappes om terug te bladeren | 3 (maximaal 21) |
 | Verversen elke (minuten) | 30 |
 | Verversen tijdens een koers (minuten) | 5 |
 | Niveaus op het dashboard | mannen + vrouwen |
@@ -118,6 +118,14 @@ knoppen er naast de tegelkoers passen.
 > geen hoogteprofiel en geen tijdschema, dus die bleven op de tegel toch al
 > leeg. Het attribuut `levels_diag` op de sensor laat zien hoeveel koersen er
 > per niveau gevonden zijn.
+>
+> **De routekolom van de kalender is niet altijd gevuld.** Voor zes koersen
+> in 2026 (Tour of Britain, GP Québec, GP Montréal, het WK, Lombardije en
+> Parijs-Tours) staat er geen routeadres. De integratie zoekt de etappelijst
+> dan op via de koerspagina zelf. Ziet een koers er toch mager uit — één
+> etappe waar er meer horen te zijn, of geen uitslag — zet dan het
+> debuglogboek van `cycling_next_race` aan; daar staat welke pagina's zijn
+> geprobeerd.
 
 ## Dashboard
 
@@ -184,14 +192,21 @@ Niets aangevinkt betekent alles — wil je helemaal geen venster, zet dan
 
 Boven de uitslag staan twee pijltjes zodra er meer dan één etappe gereden is:
 daarmee blader je terug naar de uitslag van gisteren en eergisteren. Hoe ver
-terug bepaal je bij **Aantal etappes om terug te bladeren** (standaard 3, `0`
-zet het uit); `past` in `sections` haalt de pijltjes van deze kaart af zonder
-de uitslag zelf weg te halen.
+terug bepaal je bij **Aantal etappes om terug te bladeren** (standaard 3,
+maximaal 21, `0` zet het uit); `past` in `sections` haalt de pijltjes van
+deze kaart af zonder de uitslag zelf weg te halen.
 
-Het geldt voor de koers op de tegel. Elke uitslag kost een verzoek bij
-cyclingstage en ruimte in de attributen, en die zitten al aan de grens van de
-recorder; bij de andere koersen in de pop-up staat daarom alleen de laatste
-uitslag.
+Dat maximum is een hele grote ronde: op 21 kun je de Vuelta of de Tour vanaf
+etappe 1 nalezen. **Dat is een ruil en geen gratis knop.** Elke etappe kost
+ruim 400 bytes in de attributen, en die zitten in de praktijk al boven de
+16 kB die de recorder van Home Assistant bewaart — de sensor en de kaart
+blijven het gewoon doen, maar de recorder legt de attributen dan niet meer
+vast en er is dus geen historie van. Wie die historie wil houden zet hem
+juist laag. De verzoeken bij cyclingstage vallen mee: een gereden uitslag
+verandert niet meer en wordt maar één keer opgehaald.
+
+Het geldt voor de koers op de tegel; bij de andere koersen in de pop-up
+staat alleen de laatste uitslag.
 
 ### Startlijst
 

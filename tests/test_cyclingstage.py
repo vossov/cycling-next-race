@@ -546,3 +546,134 @@ def test_etappe_zonder_uitslagpagina(wt, monkeypatch):
     data = wt._fetch_stage(etappe)
     assert data["ok"] is False and data["finished"] is False
     assert data["results"] == []
+
+
+# ── de weg naar de etappelijst als de kalender hem niet geeft ────────
+#
+# De kalender van 2026 laat de routekolom leeg voor de Tour of Britain, het
+# WK, Lombardije, Parijs-Tours en de twee Canadese eendaagse. Die koersen
+# komen dus met hun kóérspagina binnen in plaats van met hun routepagina, en
+# daar staat de etappetabel niet vooraan.
+
+
+def test_kalender_koersen_zonder_routeadres(kalender):
+    """Vastleggen wélke koersen dit raakt; verandert dat, dan is de bron
+    veranderd en hoort de fixture ververst te worden."""
+    zonder = [k["name"] for k in kalender if not k["route_url"]]
+    assert zonder == ["Tour of Britain", "Grand Prix de Québec",
+                      "Grand Prix de Montréal", "World Championships",
+                      "Tour of Lombardy", "Paris - Tours"]
+    # de koerspagina staat er wél, en die linkt naar de rest
+    tob = _zoek(kalender, "Tour of Britain")
+    assert tob["url"] == "https://www.cyclingstage.com/tour-of-britain-2026/"
+    assert tob["start"] == date(2026, 9, 2) and tob["end"] == date(2026, 9, 6)
+
+
+def test_de_rijkste_tabel_wint(cs, etappes):
+    """Een tabel eerder op de pagina mag de etappetabel niet verdringen.
+
+    Dit is wat de Tour of Britain één etappe gaf: de eerste tabel van de
+    koerspagina werd gelezen en die had precies één bruikbare rij. Geen
+    fout, geen leeg veld — een verkeerd beeld.
+    """
+    stoorzender = ('<table><tr><td>1</td><td>2-9</td>'
+                   '<td>Lincoln - Lincoln</td><td>170</td><td>flat</td></tr>'
+                   '</table>')
+    gemengd = stoorzender + ROUTE.read_text()
+    assert len(cs.parse_etappes(gemengd, 2026)) == len(etappes) == 21
+    # staat er niets beters op de pagina, dan telt die ene rij gewoon mee
+    alleen = cs.parse_etappes(stoorzender, 2026)
+    assert len(alleen) == 1 and alleen[0]["departure"] == "Lincoln"
+
+
+def test_route_kandidaten_uit_de_koerspagina(cs):
+    """Op echte HTML: de Vuelta-routepagina linkt naar zijn eigen subpagina's."""
+    kandidaten = cs.route_kandidaten(
+        ROUTE.read_text(), "https://www.cyclingstage.com/vuelta-2026-route/")
+    assert kandidaten == [
+        "https://www.cyclingstage.com/vuelta-2026-route/spain-route-2026/"]
+
+
+def test_route_kandidaten_laten_de_rest_van_de_site_staan(cs):
+    """De menubalk noemt élke koers; alleen wat onder déze koers hangt telt.
+
+    Zonder die eis zou een koers zonder routeadres de hele navigatie als
+    kandidaat krijgen — 268 links op de echte pagina.
+    """
+    html = ROUTE.read_text()
+    for kandidaat in cs.route_kandidaten(html, "https://www.cyclingstage.com/vuelta-2026-route/"):
+        assert "/vuelta-2026-route/" in kandidaat
+    # een koerspagina die niet in deze HTML voorkomt levert niets op
+    assert cs.route_kandidaten(html, "https://www.cyclingstage.com/tour-of-britain-2026/") == []
+    assert cs.route_kandidaten("", "https://www.cyclingstage.com/x-2026/") == []
+    assert cs.route_kandidaten(html, "") == []
+
+
+def test_route_kandidaten_zetten_route_vooraan(cs):
+    """Wat "route" heet gaat voor; de rest blijft als terugval staan.
+
+    Synthetische HTML, en dat is hier te verantwoorden: het gaat om de
+    vólgorde van de kandidaten, niet om het lezen van andermans pagina. Dat
+    laatste staat hierboven op de echte Vuelta-pagina.
+    """
+    html = ('<a href="/tour-of-britain-2026/favourites-gb-2026/">Favourites</a>'
+            '<a href="/tour-of-britain-2026/route-gb-2026/">Route</a>'
+            '<a href="/tour-of-britain-2026/stage-1-gb-2026/">Stage 1</a>'
+            '<a href="/tour-of-britain-2025/route-gb-2025/">2025</a>')
+    assert cs.route_kandidaten(
+        html, "https://www.cyclingstage.com/tour-of-britain-2026/") == [
+        "https://www.cyclingstage.com/tour-of-britain-2026/route-gb-2026/",
+        "https://www.cyclingstage.com/tour-of-britain-2026/favourites-gb-2026/",
+    ]
+
+
+# ── de weg naar de uitslag ──────────────────────────────────────────
+
+
+def test_uitslagadres_van_een_grote_ronde(cs):
+    """De vorm die op de echte pagina is nagekeken."""
+    assert cs.uitslag_url(
+        "https://www.cyclingstage.com/vuelta-2026-route/stage-2-spain-2026/"
+    ) == ("https://www.cyclingstage.com/vuelta-2026-results/"
+          "stage-2-spain-results-2026/")
+
+
+def test_uitslagadres_van_een_koers_zonder_routemap(cs):
+    """Koersen buiten de grote rondes hebben geen `-route`-map.
+
+    Tot 0.23 gaf `uitslag_url` daar niets terug en had zo'n koers dus nooit
+    een uitslag — dat trof 46 van de 49 koersen in de kalender.
+    """
+    assert cs.uitslag_url(
+        "https://www.cyclingstage.com/tour-of-britain-2026/stage-1-gb-2026/"
+    ) == ("https://www.cyclingstage.com/tour-of-britain-2026-results/"
+          "stage-1-gb-results-2026/")
+
+
+def test_geen_uitslagadres_zonder_etappenummer(cs):
+    """Een eendaagse koers heeft geen `stage-N`-pagina.
+
+    Zijn uitslag staat op de resultatenpagina van de koers zelf; een
+    afgeleid adres zou elke ronde een verzoek zijn dat niets kan opleveren.
+    """
+    assert cs.uitslag_url(
+        "https://www.cyclingstage.com/paris-roubaix-2026/route-pr-2026/") == ""
+    assert cs.uitslag_url("") == ""
+    assert cs.uitslag_url("https://www.cyclingstage.com/los-2026/") == ""
+
+
+def test_uitslagoverzicht_op_echte_links(cs):
+    """De vórm van de link staat in de opgeslagen Vuelta-routepagina.
+
+    De indexpagina zelf is niet opgeslagen (de proxy laat cyclingstage niet
+    door), maar `/vuelta-2026-results/stage-2-spain-results-2026/` staat er
+    letterlijk in — precies het soort adres dat deze parser moet vinden.
+    """
+    index = cs.parse_uitslag_index(ROUTE.read_text(), "vuelta", 2026)
+    assert index[2] == ("https://www.cyclingstage.com/vuelta-2026-results/"
+                        "stage-2-spain-results-2026/")
+    # de routepagina van een ánder jaar of een andere koers telt niet mee
+    assert cs.parse_uitslag_index(ROUTE.read_text(), "vuelta", 2025) == {}
+    assert cs.parse_uitslag_index(ROUTE.read_text(), "giro", 2026) == {}
+    assert cs.parse_uitslag_index("", "vuelta", 2026) == {}
+    assert cs.parse_uitslag_index("<a href='/x/'>x</a>", "", 2026) == {}
