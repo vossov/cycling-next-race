@@ -110,7 +110,17 @@ def bouw(upcoming_n, upcoming_punten, max_other, past_n):
     }
     return a
 
-def omvang(o): return len(json.dumps(o, ensure_ascii=False, separators=(",", ":")))
+def omvang(o):
+    """UTF-8 BYTES, niet tekens.
+
+    De recorder vergelijkt `MAX_STATE_ATTRS_BYTES` met de lengte van de
+    geserialiseerde attributen in bytes. `len()` op de JSON-string telt
+    tekens, en dat onderschat zodra er een diakriet in staat — en die staan
+    er, want het zijn rennernamen (Raúl García Pierna, Iñigo, Jørgen,
+    Camprubí). Twee bytes per teken schelen bij honderden rijen honderden
+    bytes, precies aan de kant van "het past nog net".
+    """
+    return len(json.dumps(o, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 def rapport(naam, a):
     tot = omvang(a)
@@ -118,6 +128,50 @@ def rapport(naam, a):
     posten = sorted(((omvang(v), k) for k, v in a.items()), reverse=True)[:8]
     for n, k in posten:
         print(f"   {k:<16} {n:>6}")
+
+# ── de startlijst, met de échte namen uit de fixture ─────────────────
+#
+# Geen verzonnen rijen: dit leest de opgeslagen Vuelta-startlijst en meet wat
+# die werkelijk kost. Diakrieten tellen mee (Raúl García Pierna is 2 bytes
+# duurder dan hij lang is), en dat is precies waarom `omvang()` bytes telt.
+
+def _startlijst():
+    import importlib.util
+    import pathlib
+    hier = pathlib.Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location(
+        "cs", hier / "custom_components/cycling_next_race/cyclingstage.py")
+    cs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cs)
+    fixture = hier / "tests/fixtures/cyclingstage_vuelta_2026_riders.html"
+    if not fixture.exists():
+        return None, cs
+    return cs.parse_startlijst(fixture.read_text(encoding="utf-8")), cs
+
+
+def rapport_startlijst():
+    renners, cs = _startlijst()
+    if not renners:
+        print("\n(startlijst-fixture niet gevonden, overgeslagen)")
+        return
+    print(f"\n── startlijst ({len(renners)} renners, "
+          f"{len({r['team'] for r in renners})} ploegen) ──")
+    for n in (1, 2, 3, 8):
+        rijen = cs.startlijst_rijen(renners, n)
+        print(f"   {n} per ploeg ({len(rijen):>3} rijen): {omvang(rijen):>6} bytes")
+    print(f"   alleen de tellingen        : "
+          f"{omvang({'startlist_riders': 184, 'startlist_teams': 23, 'startlist_out': 34}):>6} bytes")
+    # netto: een koers zonder uitslag heeft ook geen uitslag en klassementen
+    leeg = bouw(10, 60, 2, 3)
+    for k in ("last_result", "gc_top", "points_top", "kom_top", "youth_top", "past"):
+        leeg[k] = []
+    zonder = omvang(leeg)
+    met = dict(leeg, startlist_top=cs.startlijst_rijen(renners, 1),
+               startlist_riders=184, startlist_teams=23, startlist_out=34)
+    print(f"\n   koers zonder uitslag, zonder startlijst: {zonder:>6} bytes")
+    print(f"   idem mét 1 renner per ploeg            : {omvang(met):>6} bytes"
+          f"  (+{omvang(met) - zonder})")
+
 
 # zoals de standaardinstellingen nu staan
 rapport("standaard (upcoming 10x60, max_other 2, past 3)",
@@ -162,4 +216,4 @@ rapport("  + zonder profieltjes in Komende dagen",
         zonder_legacy(krap(bouw(4, 0, 1, 2), gc_n=5, result_n=5)))
 rapport("  + max_other 0 (geen tweede koers in de pop-up)",
         zonder_legacy(krap(bouw(4, 0, 0, 2), gc_n=5, result_n=5)))
-
+rapport_startlijst()

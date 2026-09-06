@@ -13,6 +13,7 @@ De HTML die hier als "routepagina" achter een link hangt is de echte
 Vuelta-routepagina uit `tests/fixtures/`. Getest wordt de weg ernaartoe,
 niet het lezen van andermans opmaak — dat staat in `test_cyclingstage.py`.
 """
+import asyncio
 from datetime import date
 from pathlib import Path
 
@@ -141,3 +142,100 @@ def test_eendaagse_koers_leest_zijn_resultatenpagina(wt, monkeypatch):
     })
     assert url == index and html
     assert opgevraagd == [index]
+
+
+# ── startlijst ──────────────────────────────────────────────────────
+#
+# Twee verzoeken: eerst de koerspagina om het adres te vínden, dan de
+# startlijst zelf. Het adres is niet af te leiden — `spain-riders-2026` bij
+# de Vuelta tegenover `riders-gb-2026` bij de Tour of Britain.
+
+RIDERS = Path(__file__).parent / "fixtures" / "cyclingstage_vuelta_2026_riders.html"
+
+VUELTA = "https://www.cyclingstage.com/vuelta-2026-route/spain-route-2026/"
+VUELTA_RIDERS = "https://www.cyclingstage.com/vuelta-2026/spain-riders-2026/"
+
+
+@pytest.fixture
+def vuelta():
+    return {"url": VUELTA, "name": "Vuelta a España",
+            "start": date(2026, 8, 22), "end": date(2026, 9, 13),
+            "women": False, "level": "m"}
+
+
+def test_startlijst_via_de_link_op_de_koerspagina(wt, monkeypatch, vuelta):
+    opgevraagd = _pagina(wt, monkeypatch, {
+        VUELTA: ROUTE.read_text(),
+        VUELTA_RIDERS: RIDERS.read_text(),
+    })
+    rijen = wt._cs_fetch_startlijst(vuelta)
+    assert len(rijen) == 184
+    assert len({r["team"] for r in rijen}) == 23
+    # eerst de koerspagina, dan de startlijst die daarop stond
+    assert opgevraagd == [VUELTA, VUELTA_RIDERS]
+
+
+def test_startlijst_zonder_bruikbare_pagina_geeft_leeg(wt, monkeypatch, vuelta):
+    """Een koers waarvan de startlijst nog niet gepubliceerd is."""
+    _pagina(wt, monkeypatch, {VUELTA: ROUTE.read_text()})   # riders-pagina leeg
+    assert wt._cs_fetch_startlijst(vuelta) == []
+    _pagina(wt, monkeypatch, {})
+    assert wt._cs_fetch_startlijst(vuelta) == []
+    assert wt._cs_fetch_startlijst({"url": ""}) == []
+
+
+def test_startlijstblok_telt_alles_maar_toont_per_ploeg(wt, monkeypatch, vuelta):
+    co = wt.CyclingCoordinator(hass=None)
+
+    async def _job(fn, *a):
+        return fn(*a)
+
+    co._job = _job
+    _pagina(wt, monkeypatch, {VUELTA: ROUTE.read_text(),
+                              VUELTA_RIDERS: RIDERS.read_text()})
+    blok = asyncio.run(co._startlijst_blok(vuelta))
+    # de tellingen slaan op de hele lijst, niet op wat er getoond wordt
+    assert blok["startlist_riders"] == 184
+    assert blok["startlist_teams"] == 23
+    assert blok["startlist_out"] == 34
+    # standaard één renner per ploeg
+    assert len(blok["startlist_top"]) == 23
+    assert blok["startlist_top"][0]["bib"] == 1
+    # geen `rank`: dit is geen rangorde
+    assert all("rank" not in r for r in blok["startlist_top"])
+
+
+def test_startlijst_wordt_maar_een_keer_per_koers_opgehaald(wt, monkeypatch, vuelta):
+    """Twee verzoeken per koers is genoeg; ook een lege uitkomst blijft staan."""
+    co = wt.CyclingCoordinator(hass=None)
+
+    async def _job(fn, *a):
+        return fn(*a)
+
+    co._job = _job
+    opgevraagd = _pagina(wt, monkeypatch, {VUELTA: ROUTE.read_text(),
+                                           VUELTA_RIDERS: RIDERS.read_text()})
+    for _ in range(3):
+        asyncio.run(co._startlijst_blok(vuelta))
+    assert opgevraagd == [VUELTA, VUELTA_RIDERS]
+
+    # een koers zonder startlijst wordt evenmin elke ronde opnieuw geprobeerd
+    leeg = dict(vuelta, url="https://www.cyclingstage.com/nog-niets-2026/")
+    opgevraagd2 = _pagina(wt, monkeypatch, {})
+    for _ in range(3):
+        blok = asyncio.run(co._startlijst_blok(leeg))
+    assert blok["startlist_riders"] == 0 and blok["startlist_top"] == []
+    assert len(opgevraagd2) == 1
+
+
+def test_startlijstblok_slikt_zijn_eigen_fouten(wt, monkeypatch, vuelta):
+    """Een koers in de pop-up mag niet omvallen op een stukke startlijst."""
+    co = wt.CyclingCoordinator(hass=None)
+
+    async def _job(fn, *a):
+        raise RuntimeError("bron ligt eruit")
+
+    co._job = _job
+    blok = asyncio.run(co._startlijst_blok(vuelta))
+    assert blok == {"startlist_top": [], "startlist_riders": 0,
+                    "startlist_teams": 0, "startlist_out": 0}

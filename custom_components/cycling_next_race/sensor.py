@@ -46,6 +46,7 @@ from .const import (
     CONF_MAX_OTHER,
     CONF_RESULT_N,
     CONF_SCAN_MINUTES,
+    CONF_START_N,
     CONF_UPCOMING_DAYS,
     CONF_UPCOMING_N,
     CONF_PAST_N,
@@ -93,6 +94,11 @@ MAX_ACTIEVE_KOERSEN = 6
 # is verzoeken doen om het doen.
 MAX_ROUTE_KANDIDATEN = 3
 
+# Hoeveel startlijst-adressen er hoogstens worden geprobeerd. Een koerspagina
+# noemt er in de praktijk één; meer dan twee proberen is verzoeken doen om
+# het doen.
+MAX_STARTLIJST_KANDIDATEN = 2
+
 # Kleur van de leiderstrui, voor de knoppen bovenin de pop-up.
 #
 # Dit is een vaste lijst, geen bron: geen enkele bron geeft de kleur van een
@@ -117,8 +123,6 @@ LEIDERSTRUI = {
     "uae-tour": "#D0021B",                # rood
 }
 
-# De ranglijst waarop de startlijst wordt gesorteerd, per geslacht.
-#
 MONUMENTS = {
     "milano-sanremo",
     "ronde-van-vlaanderen",
@@ -1377,6 +1381,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # tussensprints en klassementsstanden per etappe. Allebei een dict en
         # niet één plek, want de koersen in de pop-up vragen ze ook op.
         self._sprints_cache: dict[str, list] = {}
+        # de startlijst per koers. Twee verzoeken om te vullen (het adres
+        # opzoeken en de pagina lezen), dus dit hoort niet elke ronde
+        # opnieuw; een dag oud is voor een startlijst ruim vers genoeg.
+        self._startlist_cache: dict[str, list] = {}
         # uitslag per etappe van de andere koersen, op stage_url; per dag geleegd
         self._other_cache: dict[str, dict] = {}
         self._names_cache: dict[str, list] = {}
@@ -1484,6 +1492,48 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._sprints_cache[url] = sprints
         return sprints
 
+    async def _startlijst_blok(self, event: dict) -> dict:
+        """Wie er aan de start staan, voor een koers zonder uitslag.
+
+        `startlist_top` is hoogstens `start_n` renners per ploeg, op
+        rugnummer — **geen rangorde**. Cyclingstage wijst nergens een kopman
+        aan, en het rugnummer is dat ook niet: binnen een ploeg staan de
+        nummers x2 tot en met x8 alfabetisch op achternaam (bij 22 van de 23
+        ploegen in de opgeslagen Vuelta-startlijst). Alleen het eerste
+        nummer is er meestal uit getild, en zelfs dat niet altijd —
+        Lidl-Trek gaf Mads Pedersen het láátste nummer van zijn blok. Zie
+        `startlijst_rijen` in cyclingstage.py.
+
+        `startlist_riders` en `startlist_teams` tellen de hele lijst, ook
+        wat niet in `startlist_top` past. Slikt zijn eigen fouten: dit wordt
+        ook voor de koersen in de pop-up opgevraagd.
+        """
+        leeg = {"startlist_top": [], "startlist_riders": 0,
+                "startlist_teams": 0, "startlist_out": 0}
+        url = event.get("url") or ""
+        if not url:
+            return leeg
+        if url not in self._startlist_cache:
+            try:
+                rijen = await self._job(_cs_fetch_startlijst, event)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Startlijst mislukt voor %s: %s", url, err)
+                return leeg
+            # ook een lege uitkomst onthouden: anders wordt een koers waarvan
+            # de startlijst nog niet gepubliceerd is elke ronde opnieuw
+            # opgehaald, twee verzoeken per keer. Morgen weer.
+            self._startlist_cache[url] = rijen
+        rijen = self._startlist_cache[url]
+        if not rijen:
+            return leeg
+        from . import cyclingstage as cs
+        return {
+            "startlist_top": cs.startlijst_rijen(rijen, self._opt(CONF_START_N)),
+            "startlist_riders": len(rijen),
+            "startlist_teams": len({r["team"] for r in rijen if r.get("team")}),
+            "startlist_out": sum(1 for r in rijen if r.get("out")),
+        }
+
     async def _stage_uitslag(self, s):
         """Uitslag + standen van \u00e9\u00e9n etappe van een andere koers.
 
@@ -1543,6 +1593,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             "startlist_top": [],
             "startlist_riders": 0,
             "startlist_teams": 0,
+            "startlist_out": 0,
         }
 
         vandaag = next((s for s in stages if s["date"] == today), None)
@@ -1583,10 +1634,14 @@ class CyclingCoordinator(DataUpdateCoordinator):
             entry["points_top"] = data.get("points_top") or []
             entry["kom_top"] = data.get("kom_top") or []
             entry["youth_top"] = data.get("youth_top") or []
-        # Hier stond de dagwinst (uit de kolom "Prev" bij procyclingstats) en
-        # de startlijst voor een koers die nog geen uitslag heeft. Allebei
-        # zonder bron sinds de overstap naar cyclingstage; zie het blok
-        # daarover bovenin dit bestand.
+        # Hier stond ook de dagwinst uit de kolom "Prev" bij procyclingstats;
+        # die heeft sinds de overstap naar cyclingstage geen bron meer.
+        #
+        # Nog niets gereden: dan is wie er meedoet het enige dat er te melden
+        # valt. Zodra er een uitslag is blijft de startlijst weg — die zegt
+        # meer en de attributen zijn krap.
+        if not entry["last_result"] and toon is not None:
+            entry.update(await self._startlijst_blok(ev))
         return entry
 
     async def _races_block(self, primair, andere, today):
@@ -1937,6 +1992,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._gpx_gebruikt.clear()
                 self._tv_cache = None
                 self._sprints_cache.clear()
+                self._startlist_cache.clear()
                 self._other_cache.clear()
                 self._names_cache.clear()
                 self._prose_cache.clear()
@@ -2126,12 +2182,13 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # ── Spoiler-blok (alleen pop-up) ──────────────────────
         last_result = last_fin_data.get("results", []) if last_fin_data else []
         gc_top = last_fin_data.get("gc", []) if last_fin_data else []
-        # De startlijst vulde het gat van een koers die nog geen uitslag
-        # heeft. Hij kwam van procyclingstats en cyclingstage heeft er geen;
-        # de sleutels blijven leeg staan zodat een oudere kaart niet
-        # struikelt, en de meegeleverde kaart laat het onderdeel weg.
+        # Nog niets gereden in deze koers: dan is de startlijst wat er te
+        # melden valt. Met een uitslag erbij blijft hij weg — die zegt meer en
+        # de attributen zijn al krap.
         startlijst = {"startlist_top": [], "startlist_riders": 0,
-                      "startlist_teams": 0}
+                      "startlist_teams": 0, "startlist_out": 0}
+        if not last_result:
+            startlijst = await self._startlijst_blok(cur)
         if last_fin is None:
             last_stage_label = ""
         elif last_fin.get("one_day"):
@@ -2356,3 +2413,35 @@ class CyclingNextRaceSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         return (self.coordinator.data or {}).get("attributes", {})
+
+
+def _cs_fetch_startlijst(event: dict) -> list[dict]:
+    """De renners aan de start van een koers, van cyclingstage.
+
+    Twee verzoeken per koers per dag: eerst de pagina die de kalender voor
+    deze koers geeft, om het adres van de startlijst te vínden, dan die
+    startlijst zelf. Raden kan niet — het adres is `spain-riders-2026` bij de
+    Vuelta, `riders-rt-2026` bij de Renewi Tour en `riders-gb-2026` bij de
+    Tour of Britain, en die afkorting staat nergens af te leiden.
+
+    Geeft leeg terug als er niets te halen viel; de aanroeper laat het
+    onderdeel dan weg. Nooit een uitzondering naar boven: dit wordt ook voor
+    de koersen in de pop-up gedaan en een koers zonder startlijst hoort geen
+    heel blok te kosten.
+    """
+    from . import cyclingstage as cs
+
+    race_url = event.get("url") or ""
+    if not race_url:
+        return []
+    kandidaten = cs.startlijst_kandidaten(
+        _haal_html(race_url, "koerspagina"), race_url)
+    for adres in kandidaten[:MAX_STARTLIJST_KANDIDATEN]:
+        rijen = cs.parse_startlijst(_haal_html(adres, "startlijst"))
+        if rijen:
+            _LOGGER.debug("Startlijst van %s gevonden op %s (%s renners)",
+                          race_url, adres, len(rijen))
+            return rijen
+    _LOGGER.debug("Geen startlijst gevonden voor %s (%s kandidaten)",
+                  race_url, len(kandidaten))
+    return []

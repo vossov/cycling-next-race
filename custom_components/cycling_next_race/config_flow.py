@@ -27,17 +27,20 @@ from .const import (
     CONF_SCAN_MINUTES,
     CONF_UPCOMING_DAYS,
     CONF_PAST_N,
+    CONF_START_N,
     CONF_UPCOMING_N,
     DOMAIN,
     MAX_LIVE_SCAN_MINUTES,
     MAX_OTHER_LIMIT,
     MAX_PAST_N,
     MAX_RIDERS,
+    MAX_START_N,
     MAX_SCAN_MINUTES,
     MAX_UPCOMING_DAYS,
     MIN_LIVE_SCAN_MINUTES,
     MIN_OTHER,
     MIN_RIDERS,
+    MIN_START_N,
     MIN_SCAN_MINUTES,
     MIN_UPCOMING_DAYS,
     NAME,
@@ -124,6 +127,11 @@ class CyclingNextRaceOptionsFlow(OptionsFlow):
                 vol.Optional(CONF_GC_N, default=huidig[CONF_GC_N]): _aantal(
                     MIN_RIDERS, MAX_RIDERS
                 ),
+                # per ploeg, niet in totaal: cyclingstage geeft de startlijst
+                # per ploeg en zegt niets over wie de kopman is
+                vol.Optional(
+                    CONF_START_N, default=huidig[CONF_START_N]
+                ): _aantal(MIN_START_N, MAX_START_N),
                 vol.Optional(
                     CONF_UPCOMING_N, default=huidig[CONF_UPCOMING_N]
                 ): _aantal(1, 30),

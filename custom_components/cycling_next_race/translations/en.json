@@ -17,6 +17,7 @@
         "data": {
           "result_n": "Riders shown in the stage result",
           "gc_n": "Riders shown in the classification",
+          "start_n": "Riders per team in the startlist",
           "upcoming_n": "Maximum number of upcoming stages",
           "past_n": "Number of past stages to browse",
           "upcoming_days": "Show upcoming stages up to (days ahead)",
@@ -27,6 +28,7 @@
           "max_other": "Races next to the shown one in the pop-up"
         },
         "data_description": {
+          "start_n": "While a race has no result yet, the pop-up shows who is at the start, per team by race number. Cyclingstage does not mark a team leader, so this is not a ranking.",
           "scan_minutes": "How often cyclingstage is queried outside of races.",
           "live_scan_minutes": "During a live stage, so the result appears sooner.",
           "past_n": "How far back you can page through the results in the pop-up. 21 is a full grand tour; every stage costs room in the attributes, which are already over the recorder's limit.",

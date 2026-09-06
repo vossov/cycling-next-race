@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.25.0';
+const VERSIE = '0.26.0';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -286,18 +286,25 @@ function puntenlijst(titel, rijen) {
  * vermelding leest het lijstje als een voorspelling, en dat is het niet.
  * Renners die niet op die ranglijst staan komen er niet in voor.
  */
-function startlijst(rijen, renners, ploegen) {
+function startlijst(rijen, renners, ploegen, opgegeven) {
   if (!rijen || !rijen.length) return '';
   const regels = rijen
     .map((x) => {
-      const punten = x.points == null ? '' : `${esc(x.points)} ptn`;
-      return `<li><span class="pos">${esc(x.rank)}</span>${rennerMetPloeg(x)}<span class="wrd">${punten}</span></li>`;
+      const nr = x.bib == null ? '' : String(x.bib);
+      const uit = x.out ? '<span class="wrd">opgegeven</span>' : '';
+      return `<li><span class="pos">${esc(nr)}</span>${rennerMetPloeg(x)}${uit}</li>`;
     })
     .join('');
+  // "per ploeg op rugnummer" en niet "op volgorde van" — dit is géén
+  // rangorde. Cyclingstage wijst nergens een kopman aan en het rugnummer is
+  // dat ook niet: binnen een ploeg staan de nummers na de eerste gewoon
+  // alfabetisch. Wie hier "1, 2, 3" leest zou een ranglijst zien die niet
+  // bestaat, en dat is precies wat deze integratie niet doet.
   const tel = [
     renners ? `${renners} renners` : '',
     ploegen ? `${ploegen} ploegen` : '',
-    'op volgorde van de PCS-ranglijst',
+    opgegeven ? `${opgegeven} opgegeven` : '',
+    'per ploeg op rugnummer',
   ].filter(Boolean).join(' · ');
   return `<section><h3>Aan de start</h3><div class="bijschrift">${esc(tel)}</div><ol>${regels}</ol></section>`;
 }
@@ -496,7 +503,8 @@ function koersblok(a, race, meerdere, gekozen, gekozenNiveaus) {
     // weg zodra er wél gereden is, dus hier hoeft niets extra's te worden
     // uitgezocht
     aan('start')
-      ? startlijst(u.startlist_top, u.startlist_riders, u.startlist_teams)
+      ? startlijst(u.startlist_top, u.startlist_riders, u.startlist_teams,
+          u.startlist_out)
       : '',
     aan('result')
       ? uitslagenblok(u.last_stage_label || 'Uitslag', u.last_result,

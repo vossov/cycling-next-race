@@ -832,8 +832,11 @@ bewaart ze niet, dus er is geen historie van.
 koersblok, in de praktijk zo'n 28 kB". Dat was te laag. `python3
 tools/meet_attributen.py` bouwt een attributenset met dezelfde vorm en
 realistische inhoud en meet hem per post; onderhoud dat bestand mee als de
-vorm van de attributen verandert. Gemeten op 6 september 2026, met de
-standaardinstellingen en de rijen zoals cyclingstage ze sinds 0.25 levert:
+vorm van de attributen verandert. **Het telt UTF-8 bytes en geen tekens** —
+de recorder doet dat ook, en met diakrieten in rennernamen (Raúl García
+Pierna, Iñigo, Jørgen) scheelt dat honderden bytes de verkeerde kant op.
+Gemeten op 6 september 2026, met de standaardinstellingen en de rijen zoals
+cyclingstage ze sinds 0.25 levert:
 
 | post | bytes | wat erin zit |
 |---|---:|---|
@@ -843,18 +846,18 @@ standaardinstellingen en de rijen zoals cyclingstage ze sinds 0.25 levert:
 | `past` | 1 681 | 3 etappes × 5 renners |
 | de vijf lijsten op de tegel | 3 845 | uitslag, algemeen, punten, berg, jongeren |
 | `other_result` + `other_gc` | 1 174 | herhaling van het eerste andere koersblok, voor kaarten van vóór 0.11 |
-| **totaal** | **33 263** | ruim het dubbele van de grens |
+| **totaal** | **33 327** | ruim het dubbele van de grens |
 
 **Onder de 16 kB komen kan, maar niet met één knop.** Ook gemeten:
 
 | opstelling | bytes |
 |---|---:|
-| standaard | 33 263 |
-| `past_n` op 21 (een hele grote ronde) | 43 343 |
-| `max_other` op 1 | 28 876 |
-| `upcoming_n` op 6 | 28 011 |
-| `upcoming_n` 6 + `max_other` 1 | 23 624 |
-| alle knoppen zuinig: `upcoming_n` 4, `max_other` 1, `past_n` 2, 5 renners overal | **15 918** |
+| standaard | 33 327 |
+| `past_n` op 21 (een hele grote ronde) | 43 443 |
+| `max_other` op 1 | 28 936 |
+| `upcoming_n` op 6 | 28 067 |
+| `upcoming_n` 6 + `max_other` 1 | 23 676 |
+| alle knoppen zuinig: `upcoming_n` 4, `max_other` 1, `past_n` 2, 5 renners overal | **15 964** |
 
 Die laatste past net, met weinig marge, en levert een merkbaar kaler
 dashboard op: vier komende dagen in plaats van tien, één koers naast de
@@ -889,7 +892,8 @@ jaar per dag, en een etappelijst per koers die in het venster valt.
 ## Wat er sinds 0.25 niet meer is
 
 Alles wat via procyclingstats liep is eruit: de startlijst en de ranglijst
-die hem ordende, de officiële ploegcodes, de dagwinst uit de kolom "Prev",
+die hem ordende (de startlijst is in 0.26 teruggekomen van cyclingstage, zie
+hieronder), de officiële ploegcodes, de dagwinst uit de kolom "Prev",
 het naamherstel, de colnamen en de colcategorie, en de Cloudflare-bypass
 (cloudscraper plus curl_cffi) die het nog probeerde. `requirements` in de
 manifest is daarmee **leeg**.
@@ -912,6 +916,120 @@ custom_components`. Maar de bron is niet procyclingstats — die weg is
 uitgeput. Een startlijst hoort van een bron te komen die wél opendoet, en
 dat is een parser met opgeslagen HTML in `tests/fixtures/`, zoals elke
 andere bron in dit project.
+
+## De startlijst komt van cyclingstage (sinds 0.26)
+
+**De aanname in 0.25 dat cyclingstage geen startlijst heeft, was fout.** Die
+klopte voor de resultatenpagina; de koers heeft er een eigen pagina voor, en
+die is rijker dan wat procyclingstats gaf. Zie
+`tests/fixtures/cyclingstage_vuelta_2026_riders.html` — de echte pagina, door
+de eigenaar in een browser opgeslagen omdat de proxy hier cyclingstage niet
+doorlaat.
+
+Per ploeg één `<div class="block">` met de ploegnaam in een `<i>` en daarna
+de renners met hun rugnummer, gescheiden door `<br>`:
+
+```
+<div class="block">
+<i>Visma | Lease a Bike</i><br>
+31. Wout van Aert<br>
+36. <del datetime="2026-09-05T14:43:03+00:00">Christophe Laporte</del><br>
+```
+
+Dus: **ploeg, rugnummer en wie er is uitgevallen** — dat laatste had PCS
+niet. Wat er níét staat: een renner-adres, een land, een ploegcode, en welke
+renner de kopman is.
+
+### Het rugnummer is geen rangorde
+
+Dit is de verleiding waar deze parser omheen moet. Roglic heeft 1, Pogacar
+11, Mas 21 — het ligt voor de hand daar "kopman" van te maken en de lijst zo
+te ordenen zonder externe ranglijst. Gemeten op de opgeslagen startlijst:
+
+- bij **22 van de 23 ploegen** staan de nummers x2 tot en met x8 strikt
+  alfabetisch op achternaam. Die zeven dragen dus nul informatie.
+- alleen het eerste nummer van een ploeg is er bij 18 van de 23 ploegen uit
+  getild. Dat is het enige signaal — en het dekt de lading niet: Lidl-Trek
+  gaf Mads Pedersen juist het láátste nummer van zijn blok (88), en Visma
+  heeft helemaal geen aangewezen kopman.
+- er is geen UCI-regel die zegt dat het eerste nummer naar de kopman gaat;
+  het is een gewoonte die per organisator verschilt.
+
+Vandaar dat het veld `bib` heet en niet `rank`, dat `startlijst_rijen` op
+rugnummer sorteert en dat zo benoemt, en dat de kaart er "per ploeg op
+rugnummer" bij zet. Een `rank` van 1 tot 23 zou een ranglijst suggereren die
+niemand heeft opgesteld.
+
+### Twee valkuilen die op de echte pagina zitten
+
+Allebei gevonden door de parser tegen de opgeslagen HTML te draaien, allebei
+met een test erbij:
+
+- **Een ploegnaam kan zelf een nummer bevatten.** "Pinarello Q36.5" laat een
+  regex die in de hele bloktekst naar `NN.` zoekt een 185e renner vinden:
+  rugnummer 36, naam "5". Dat nummer bestáát al (Laporte van Visma), dus het
+  valt niet eens op als dubbel. Daarom wordt de `<i>`-regel er eerst
+  afgeknipt.
+- **De opmaak van een rennerregel is niet constant.** Bij rugnummer 217 staat
+  `217.<del ...> Henri-François Haquin</del>`: geen spatie ná de punt maar
+  erbinnen, als enige van de 184. Met `\s` in plaats van `\s*` viel die
+  renner weg en telde Team Picnic PostNL zeven man — geen fout, geen leeg
+  veld, gewoon een renner minder.
+
+### Het adres is opnieuw niet af te leiden
+
+`spain-riders-2026` bij de Vuelta, `riders-rt-2026` bij de Renewi Tour,
+`riders-gb-2026` bij de Tour of Britain. Dezelfde onraadbare afkorting als
+bij de routepagina's, dus dezelfde oplossing: `startlijst_kandidaten` leest
+de link van de koerspagina.
+
+Met één verschil dat anders stil misgaat: **de startlijst hangt onder een
+ándere map dan de routepagina.** De kalender wijst voor de Vuelta naar
+`/vuelta-2026-route/spain-route-2026/`, de startlijst staat op
+`/vuelta-2026/spain-riders-2026/`. Filteren op de map van de meegegeven URL —
+wat `route_kandidaten` doet — zou hem nooit vinden. Daarom wordt `-route` er
+ook afgehaald; van de 49 koersen van 2026 hebben alleen de Giro, de Tour en
+de Vuelta een koersmap die daarop eindigt.
+
+Het kost twee verzoeken per koers per dag (`_startlist_cache`): één om het
+adres te vinden, één voor de pagina zelf. Ook een lege uitkomst blijft in de
+cache, anders wordt een koers waarvan de startlijst nog niet gepubliceerd is
+elke ronde opnieuw geprobeerd.
+
+### Wat het kost, gemeten
+
+`python3 tools/meet_attributen.py` leest de echte fixture:
+
+| selectie | rijen | bytes |
+|---|---:|---:|
+| 1 renner per ploeg (standaard) | 23 | 1 691 |
+| 2 per ploeg | 46 | 3 398 |
+| 3 per ploeg | 69 | 5 095 |
+| de hele lijst | 184 | 13 720 |
+| alleen de tellingen | — | 64 |
+
+Netto op een koers zonder uitslag: +1 711 bytes met de standaard. Dat is
+geen reden om het niet te doen — de attributen zitten toch al ruim boven de
+grens van de recorder — maar de hele lijst meesturen zou de zwaarste post
+van de sensor evenaren en dat is hij niet waard.
+
+### Wat hiervan niet geverifieerd is
+
+- **Of andere koersen dezelfde opmaak hebben.** Er is één fixture: de
+  Vuelta, mannen, grote ronde. Over een eendaagse koers, een vrouwenkoers of
+  een pagina die nog niet gevuld is zegt die niets, en de proxy laat
+  cyclingstage niet door.
+- **Of het adres altijd via de koerspagina te vinden is.** Voor drie koersen
+  is dat nagekeken in de opgeslagen HTML (Vuelta, Renewi Tour, Tour of
+  Britain); voor de andere 46 niet.
+- **Wat de `datetime` bij een doorgestreepte renner betekent.** Negen
+  renners bij acht verschillende ploegen dragen exact dezelfde tijdstempel
+  tot op de seconde, en alle stempels liggen ná de eerste koersweek terwijl
+  de koers eerder begon. Dat is dus géén uitvalmoment — vermoedelijk een
+  publicatiemoment. Daarom wordt alleen de vlag (`out`) gebruikt en de datum
+  niet: hij zou een precisie suggereren die er niet is.
+
+Werkt de startlijst niet, zoek dan in het debuglogboek op "Startlijst".
 
 ## Opzetten: de entiteit wacht niet op een geslaagde ronde
 
