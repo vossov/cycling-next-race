@@ -12,28 +12,28 @@ eerst de eerstvolgende etappe, dan de koers met een hoogteprofiel, en bij
 gelijke stand de mannen. De andere koers is in de pop-up aan te klikken:
 bovenin staat een knop per koers, in de kleur van de leiderstrui, en je
 krijgt er hetzelfde volledige beeld van — etappe met hoogteprofiel en
-starttijd, waar hij te zien is, komende dagen, uitslag en alle vier de
-klassementen met dagwinst. De koers van de tegel staat standaard open.
+starttijd, waar hij te zien is, komende dagen, uitslag en klassement. De
+koers van de tegel staat standaard open.
 
 ## Wat het laat zien
 
 - **Hoogteprofiel** uit de echte GPX (cyclingstage), met vormbehoudende
   reductie zodat toppen niet wegvallen
-- **Cols** met naam, categorie, lengte en stijgingspercentage
+- **Cols** met naam, lengte en stijgingspercentage, gelezen uit de
+  etappetekst
 - **Tussensprint(en)** uit het officiële tijdschema
 - **Start- en verwachte finishtijd**, gescrapet waar beschikbaar
-- **Uitslag en klassementen** (algemeen, punten, berg, jongeren) met
-  positieverandering, dagwinst en de ploegcode achter elke renner
-- **Live positie** van het peloton tijdens de koers
+- **Uitslag en algemeen klassement**, met de landcode achter elke renner
+- **Terugbladeren** door de uitslagen van eerder gereden etappes
 - **Tv-zenders** met uitzendtijden (wielerflits; alleen de Nederlandse
   uitzendingen worden getoond)
 - **Watchscore** 1–10: een inschatting van hoe de moeite waard een etappe is
 
 Is er geen data, dan toont de integratie niets in plaats van iets verzonnens.
 Geen GPX betekent geen hoogtelijn, en geen profielgegevens betekent geen
-watchscore. De ploegcode achter een renner komt van de ploegpagina bij
-procyclingstats en wordt niet uit de naam afgeleid; kent die pagina er geen,
-dan staat de volledige ploegnaam er. Zo ook de kleur van de leiderstrui op de koersknoppen: die staat
+watchscore. Zie [Wat deze integratie niet
+toont](#wat-deze-integratie-niet-toont) voor wat er sinds 0.25 bewust leeg
+blijft. Zo ook de kleur van de leiderstrui op de koersknoppen: die staat
 in een vaste lijst met koersen waarvan de kleur vaststaat (geel voor de Tour,
 roze voor de Giro, rood voor de Vuelta, en zo verder). Een koers die er niet
 in staat krijgt de gewone accentkleur — liever geen kleur dan een gegokte.
@@ -48,10 +48,11 @@ De kalender, de etappes, de hoogteprofielen en de tijdschema's komen van
 cyclingstage.com; de tv-zenders van wielerflits.nl. Beide zijn gewoon
 bereikbaar en vragen geen afhankelijkheden.
 
-De uitslagen en klassementen komen (nog) van procyclingstats, waarvoor Home
-Assistant `procyclingstats`, `cloudscraper` en `curl_cffi` automatisch
-installeert. Die site staat sinds 23 augustus 2026 achter een
-Cloudflare-uitdaging; tot dat verandert blijven de uitslagen leeg.
+**Sinds 0.25 zijn er geen Python-afhankelijkheden meer.** Tot en met 0.24
+installeerde Home Assistant bij elke start `procyclingstats`, `cloudscraper`
+en `curl_cffi` voor code die die site bevroeg; die staat sinds 23 augustus
+2026 achter een Cloudflare-uitdaging die geen enkele HTTP-client passeert.
+Zie [Wat deze integratie niet toont](#wat-deze-integratie-niet-toont).
 
 ## Handmatige installatie
 
@@ -74,7 +75,6 @@ Achter **Configureren** bij de integratie stel je in:
 |---|---|
 | Aantal renners in de uitslag | 10 |
 | Aantal renners in het klassement | 10 |
-| Aantal renners in de startlijst | 10 |
 | Maximaal aantal komende etappes | 10 |
 | Komende etappes tonen tot (dagen vooruit) | 7 |
 | Aantal etappes om terug te bladeren | 3 (maximaal 21) |
@@ -208,17 +208,60 @@ verandert niet meer en wordt maar één keer opgehaald.
 Het geldt voor de koers op de tegel; bij de andere koersen in de pop-up
 staat alleen de laatste uitslag.
 
-### Startlijst
+### Wat deze integratie niet toont
 
-Zolang een koers nog niet is begonnen valt er geen uitslag te tonen. In dat
-gat komt de startlijst: wie er meedoen, met de hoogst geklasseerde renners
-bovenaan. De volgorde is die van de **individuele ranglijst bij
-procyclingstats** — er wordt niets geschat, en een renner die daar niet op
-staat blijft uit het lijstje. Boven de lijst staat hoeveel renners en
-ploegen er aan de start staan.
+Cyclingstage is de enige bron. Wat daar niet staat, staat hier ook niet — er
+wordt niets bij verzonnen:
 
-Zodra de eerste etappe gereden is verdwijnt de startlijst en staat de uitslag
-er; dat scheelt ook ruimte in de attributen.
+| ontbreekt | waarom |
+|---|---|
+| de **startlijst** van een koers die nog moet beginnen | stond op procyclingstats; cyclingstage heeft er geen |
+| de **UCI-ploegcode** achter een renner | cyclingstage geeft alleen een landcode, en een land is geen ploeg |
+| **dagwinst en -verlies** in de klassementen | daarvoor is de vorige stand per rij nodig; die geeft cyclingstage niet |
+| de **categorie** van een col (HC, 1, 2 …) | cyclingstage publiceert geen bergklassement |
+| het **punten-, berg- en jongerenklassement** | staan (nog) niet op de resultatenpagina; de herkenning staat klaar voor als ze verschijnen |
+| de **live-positie** in de koers | zie hieronder |
+
+Tot en met 0.24 werd hiervoor nog procyclingstats bevraagd. Die site zit
+sinds 23 augustus 2026 achter een Cloudflare-uitdaging die geen enkele
+HTTP-client passeert; sinds 0.25 gaat er niets meer heen. Die onderdelen
+blijven nu leeg in plaats van stil te mislukken.
+
+### De waarschuwing over de attributen
+
+Staat je logboek vol met dit, bij elke update?
+
+```
+State attributes for sensor.cycling_next_race exceed maximum size of
+16384 bytes. This can cause database performance issues; Attributes will
+not be stored
+```
+
+Dat klopt en het is niet stuk. De attributen wegen met de
+standaardinstellingen ruim 33 kB — hoogteprofielen, komende etappes,
+uitslagen en klassementen van meerdere koersen. De sensor en de kaart werken
+gewoon: die krijgen de attributen over de websocket. Alleen de **recorder**
+slaat ze niet op, dus er is geen historie van.
+
+Twee wegen:
+
+1. **Laat het zo en haal de waarschuwing weg.** Dit zijn geen meetwaarden
+   waar je een grafiek van trekt, dus die historie mis je niet. In
+   `configuration.yaml`:
+
+   ```yaml
+   recorder:
+     exclude:
+       entities:
+         - sensor.cycling_next_race
+   ```
+
+2. **Knijp de attributen af.** Dat kan onder de 16 kB komen, maar niet met
+   één knop: er is een combinatie voor nodig van *Maximaal aantal komende
+   etappes* op 4, *Aantal koersen naast de getoonde* op 1, *Aantal etappes
+   om terug te bladeren* op 2 én de aantallen renners op 5. Dat is een
+   merkbaar kaler dashboard. `python3 tools/meet_attributen.py` in de
+   repository rekent elke combinatie voor je door.
 
 ### Niveaus per kaart
 
@@ -482,7 +525,7 @@ En in `const.py`:
 
 | Constante | Betekenis |
 |---|---|
-| `NIVEAUS` | de niveaus met hun circuitnummer bij procyclingstats |
+| `NIVEAUS` | de niveaus (mannen en vrouwen) met hun naam |
 
 ## Versies en updates
 
@@ -506,10 +549,9 @@ Assistant `0.4.0` rapporteert.
 
 ## Bronnen
 
-- [procyclingstats.com](https://www.procyclingstats.com) — kalender, uitslagen,
-  klassementen, cols, live-positie
-- [cyclingstage.com](https://www.cyclingstage.com) — GPX-routes, tijdschema's
-  met tussensprint, etappeteksten met colnamen en finishtijd
+- [cyclingstage.com](https://www.cyclingstage.com) — kalender, etappelijsten,
+  uitslagen en klassementen, GPX-routes, tijdschema's met tussensprint,
+  etappeteksten met colnamen en finishtijd
 - [wielerflits.nl](https://www.wielerflits.nl) — tv-gids
 
 Deze integratie schraapt publieke webpagina's. Verandert een van die sites zijn

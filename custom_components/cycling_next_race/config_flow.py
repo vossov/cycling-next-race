@@ -25,7 +25,6 @@ from .const import (
     CONF_MAX_OTHER,
     CONF_RESULT_N,
     CONF_SCAN_MINUTES,
-    CONF_START_N,
     CONF_UPCOMING_DAYS,
     CONF_PAST_N,
     CONF_UPCOMING_N,
@@ -125,9 +124,6 @@ class CyclingNextRaceOptionsFlow(OptionsFlow):
                 vol.Optional(CONF_GC_N, default=huidig[CONF_GC_N]): _aantal(
                     MIN_RIDERS, MAX_RIDERS
                 ),
-                vol.Optional(
-                    CONF_START_N, default=huidig[CONF_START_N]
-                ): _aantal(MIN_RIDERS, MAX_RIDERS),
                 vol.Optional(
                     CONF_UPCOMING_N, default=huidig[CONF_UPCOMING_N]
                 ): _aantal(1, 30),

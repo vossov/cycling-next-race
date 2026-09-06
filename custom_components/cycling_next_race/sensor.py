@@ -1,4 +1,4 @@
-"""Sensor: eerstvolgende of lopende UCI WorldTour wedstrijd via procyclingstats.com.
+"""Sensor: eerstvolgende of lopende WorldTour-koers, van cyclingstage.com.
 
 YAML-configuratie:
 
@@ -12,6 +12,12 @@ Uitgebreide versie:
   toont de tegel de eerstvolgende etappe. Een rustdag telt niet als etappe.
 
 De kalender wordt 1x per dag opgehaald; live wordt elk half uur ververst.
+
+Tot 0.24 kwam alles van procyclingstats. Die bron zit sinds 23 augustus 2026
+achter een Cloudflare-uitdaging die geen enkele HTTP-client passeert; in 0.25
+is het laatste dat er nog naartoe ging eruit. Wat cyclingstage niet heeft —
+de startlijst, de UCI-ploegcode, de dagwinst, de colcategorie — blijft leeg.
+Zie CLAUDE.md.
 """
 from __future__ import annotations
 
@@ -40,7 +46,6 @@ from .const import (
     CONF_MAX_OTHER,
     CONF_RESULT_N,
     CONF_SCAN_MINUTES,
-    CONF_START_N,
     CONF_UPCOMING_DAYS,
     CONF_UPCOMING_N,
     CONF_PAST_N,
@@ -49,7 +54,6 @@ from .const import (
     DEFAULT_MAX_OTHER,
     DEFAULT_RESULT_N,
     DEFAULT_SCAN_MINUTES,
-    DEFAULT_START_N,
     DEFAULT_UPCOMING_DAYS,
     DEFAULT_UPCOMING_N,
     DOMAIN,
@@ -69,12 +73,11 @@ LIVE_SCAN_INTERVAL = timedelta(minutes=DEFAULT_LIVE_SCAN_MINUTES)
 
 RESULT_N = DEFAULT_RESULT_N  # aantal renners in de uitslag (pop-up)
 GC_N = DEFAULT_GC_N          # aantal renners in het klassement (pop-up)
-START_N = DEFAULT_START_N    # aantal renners in de startlijst (pop-up)
 UPCOMING_N = DEFAULT_UPCOMING_N  # veiligheidscap op aantal komende etappes
 UPCOMING_DAYS = DEFAULT_UPCOMING_DAYS  # venster voor "Komende dagen"
 
 # Hoeveel koersen er naast de getoonde in de pop-up aanklikbaar zijn. Elke
-# koers erbij kost twee extra paginaverzoeken bij procyclingstats en ruimte
+# koers erbij kost twee extra paginaverzoeken bij cyclingstage en ruimte
 # in de attributen; in de praktijk lopen er mannen en vrouwen tegelijk.
 # In te stellen via `max_other`; dit is de standaard.
 MAX_ANDERE_KOERSEN = DEFAULT_MAX_OTHER
@@ -90,20 +93,14 @@ MAX_ACTIEVE_KOERSEN = 6
 # is verzoeken doen om het doen.
 MAX_ROUTE_KANDIDATEN = 3
 
-# Hoeveel ploegcodes er per ronde nieuw worden opgehaald. Een koers telt zo'n
-# twintig ploegen en elke code is een eigen pagina; die allemaal ineens halen
-# maakt de eerste update na een herstart onnodig lang. De rest volgt de
-# volgende ronde en houdt tot die tijd de volledige ploegnaam.
-MAX_PLOEGCODES_PER_RONDE = 12
-
 # Kleur van de leiderstrui, voor de knoppen bovenin de pop-up.
 #
-# Dit is een vaste lijst, geen bron: procyclingstats geeft de kleur van een
+# Dit is een vaste lijst, geen bron: geen enkele bron geeft de kleur van een
 # trui nergens terug. Er staan daarom alleen koersen in waarvan de truikleur
 # buiten kijf staat. Een koers die er niet in staat krijgt geen kleur en
 # houdt de gewone accentkleur van de kaart — liever geen kleur dan een
 # verzonnen kleur. Eendaagse koersen hebben geen klassement en horen hier
-# dus niet thuis. Sleutel: de procyclingstats-naam van de koers.
+# dus niet thuis. Sleutel: de cyclingstage-slug van de koers.
 LEIDERSTRUI = {
     "tour-de-france": "#F3C700",          # geel
     "tour-de-france-femmes": "#F3C700",   # geel
@@ -122,24 +119,6 @@ LEIDERSTRUI = {
 
 # De ranglijst waarop de startlijst wordt gesorteerd, per geslacht.
 #
-# Zolang een koers nog geen uitslag heeft valt er niets te tonen behalve wie
-# er meedoen. De startlijst zelf staat op volgorde van ploeg en zegt niets
-# over wie de kopmannen zijn; die volgorde komt daarom van de individuele
-# ranglijst bij procyclingstats — een bron, geen inschatting. Wie daar niet
-# op staat komt niet in het lijstje.
-#
-# Het mannenadres staat zo in de documentatie van het pakket. Het
-# vrouwenadres is de analogie daarvan en kon van hieruit niet worden
-# nagekeken (de sandbox komt niet bij procyclingstats), net als bij de
-# ProSeries-circuitnummers. Klopt het niet, dan blijft de startlijst leeg;
-# `_fetch_ranking` logt daar een waarschuwing bij en `startlist_diag` op de
-# sensor laat zien hoeveel renners er gekoppeld konden worden.
-RANGLIJST = {
-    False: "rankings/me/individual",
-    True: "rankings/we/individual",
-}
-RANGLIJST_ZEKER = {"rankings/me/individual"}
-
 MONUMENTS = {
     "milano-sanremo",
     "ronde-van-vlaanderen",
@@ -291,15 +270,6 @@ def _short_race(name: str, n: int = 20) -> str:
     return name if len(name) <= n else name[: n - 1] + "…"
 
 
-def _safe(fn, default=None):
-    """Roep een procyclingstats-parsemethode veilig aan."""
-    try:
-        v = fn()
-        return default if v is None else v
-    except Exception:  # noqa: BLE001  (parse mag falen)
-        return default
-
-
 def _num(x):
     """PCS-waarde (soms tekst als '172', '19,9', '-') -> float of None."""
     if x is None:
@@ -329,170 +299,11 @@ def _parse_start_hhmm(start_time: str | None):
 # Blocking scrape-functies — draaien via async_add_executor_job
 # ──────────────────────────────────────────────────────────────
 
-# Welke browser curl_cffi nadoet. "chrome" volgt de nieuwste die de
-# geïnstalleerde versie kent; een vast nummer zou verouderen zonder dat
-# iemand het merkt, en juist een oude vingerafdruk valt op.
-PCS_IMPERSONATE = "chrome"
-
-# Basisadres van procyclingstats; het pakket werkt met relatieve paden en
-# `_pcs_antwoord_diag` heeft een volledig adres nodig.
-PCS_BASE = "https://www.procyclingstats.com/"
-
-
-def _pcs_url(pad: str) -> str:
-    """Relatief pad -> volledig adres, met het adres van het pakket zelf
-    als dat er is (dan blijft het kloppen als procyclingstats verhuist)."""
-    try:
-        from procyclingstats.scraper import Scraper
-
-        basis = getattr(Scraper, "BASE_URL", "") or PCS_BASE
-    except Exception:  # noqa: BLE001
-        basis = PCS_BASE
-    return basis.rstrip("/") + "/" + (pad or "").lstrip("/")
-
-# Of de sessie van procyclingstats al vervangen is. Modulewijd, want de
-# patch zit op de klasse en hoeft maar één keer.
-_PCS_SESSIE = ""
-
 # De laatste kalenderfout, om herhaling te dempen. Een blokkade bij de bron
 # kan weken duren; vier waarschuwingen per ronde, elke 30 minuten, maken het
 # logboek dan onbruikbaar voor al het andere. De eerste keer is nieuws, de
 # tweeënnegentigste niet.
 _LAATSTE_KALENDERFOUT = ""
-
-
-def _zet_pcs_sessie() -> str:
-    """Laat procyclingstats via curl_cffi praten in plaats van requests.
-
-    cloudscraper doet de héaders van een browser na, maar niet de
-    TLS-handdruk. Cloudflare herkent die vingerafdruk en blokkeert alsnog —
-    op 23 augustus 2026 stond in het log dat cloudscraper 1.2.71 geladen was
-    en er tóch niet langs kwam. curl_cffi bootst de handdruk van Chrome zelf
-    na en komt daar vaak wel doorheen.
-
-    Dit is een monkeypatch op andermans pakket: `Scraper._get_session()` is
-    interne code van procyclingstats en kan bij een update verdwijnen of van
-    vorm veranderen. Daarom wordt hier alles afgevangen — lukt het niet, dan
-    blijft de eigen sessie van het pakket gewoon staan en is er niets
-    slechter geworden dan het al was.
-
-    Eén gedeelde sessie, net als procyclingstats zelf doet: Cloudflare deelt
-    cookies uit die je juist wilt bewaren.
-
-    Geeft een korte melding terug voor in het log. Draait in de executor,
-    want `import` en het opzetten van een sessie zijn blokkerend.
-    """
-    global _PCS_SESSIE
-    if _PCS_SESSIE:
-        return _PCS_SESSIE
-    try:
-        from curl_cffi import requests as curl_requests
-    except Exception as err:  # noqa: BLE001
-        _PCS_SESSIE = f"curl_cffi niet beschikbaar ({type(err).__name__}: {err})"
-        return _PCS_SESSIE
-    try:
-        from procyclingstats.scraper import Scraper
-
-        if not hasattr(Scraper, "_get_session"):
-            # het pakket is van vorm veranderd; niets aanraken
-            _PCS_SESSIE = ("procyclingstats kent geen _get_session meer, "
-                           "curl_cffi niet aangesloten")
-            return _PCS_SESSIE
-        sessie = curl_requests.Session(impersonate=PCS_IMPERSONATE)
-        Scraper._get_session = classmethod(lambda cls: sessie)
-    except Exception as err:  # noqa: BLE001
-        _PCS_SESSIE = f"curl_cffi aansluiten mislukt ({type(err).__name__}: {err})"
-        return _PCS_SESSIE
-    _PCS_SESSIE = f"curl_cffi actief (impersonate={PCS_IMPERSONATE})"
-    _LOGGER.debug("procyclingstats praat nu via %s", _PCS_SESSIE)
-    return _PCS_SESSIE
-
-
-def _kop(headers, naam: str) -> str:
-    """Eén header, ongeacht hoe de client hem schrijft."""
-    try:
-        waarde = headers.get(naam)
-        if waarde:
-            return str(waarde)
-        for k, v in dict(headers).items():
-            if str(k).lower() == naam.lower():
-                return str(v)
-    except Exception:  # noqa: BLE001
-        pass
-    return ""
-
-
-def _pcs_antwoord_diag(url: str) -> str:
-    """Wat procyclingstats werkelijk terugstuurt als het misgaat.
-
-    Het pakket gooit dezelfde fout bij een JS-uitdaging ("Just a moment")
-    en bij een kale 403, en dat zijn twee heel verschillende dingen: het
-    eerste is een uitdaging die een client kan proberen te doorlopen, het
-    tweede is een weigering (IP-reputatie, of beleid van de site) waar aan
-    onze kant niets tegen helpt. Zolang dat verschil niet vaststaat is elke
-    volgende bypass een gok.
-
-    Eén verzoek, met dezelfde sessie die het pakket zelf gebruikt, zodat we
-    meten wat procyclingstats ervaart en niet iets anders. Draait in de
-    executor en wordt alleen aangeroepen als het al misgegaan is.
-    """
-    try:
-        from procyclingstats.scraper import Scraper
-
-        resp = Scraper._get_session().get(url, timeout=30)
-    except Exception as err:  # noqa: BLE001
-        return f"proefverzoek mislukt ({type(err).__name__}: {err})"
-
-    tekst = getattr(resp, "text", "") or ""
-    headers = getattr(resp, "headers", {}) or {}
-    delen = [f"status {getattr(resp, 'status_code', '?')}",
-             f"{len(tekst)} tekens"]
-
-    # Cloudflare nummert zijn eigen weigeringen; 1020 = Access Denied
-    # (firewallregel), 1015 = rate limit. Staat er een nummer, dan is het
-    # een weigering en geen uitdaging.
-    code = re.search(r"Error\s*(\d{4})", tekst)
-    if code:
-        delen.append(f"Cloudflare-fout {code.group(1)}")
-    uitdaging = [m for m in ("Just a moment", "challenge-platform",
-                             "cf-browser-verification", "Enable JavaScript")
-                 if m.lower() in tekst.lower()]
-    delen.append("uitdagingspagina (%s)" % ", ".join(uitdaging)
-                 if uitdaging else "geen uitdagingstekst")
-    for naam in ("cf-mitigated", "cf-ray", "server"):
-        waarde = _kop(headers, naam)
-        if waarde:
-            delen.append(f"{naam}={waarde}")
-    # de eerste regel tekst zegt vaak genoeg; opgeschoond en kort gehouden
-    kaal = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", tekst)).strip()
-    if kaal:
-        delen.append(f"begin: {kaal[:160]!r}")
-    return "; ".join(delen)
-
-
-def _bypass_diag() -> str:
-    """Welke bypasses er draaien op het moment dat Cloudflare toch blokkeert.
-
-    Nodig omdat de melding van procyclingstats hierover niets zegt. Die
-    luidt altijd "Cloudflare protection detected. Install 'cloudscraper'",
-    ook als cloudscraper wél actief is: `_make_request` kijkt alleen of het
-    antwoord een uitdagingspagina is of een 403, en plakt daar
-    onvoorwaardelijk dat installatie-advies achter (nagekeken in de wheel,
-    `scraper.py`). Uit het log alleen is dus niet te zien of de bypass
-    ontbreekt of dat hij er niet langs komt — en dat is precies het verschil
-    tussen "herstart Home Assistant" en "hier helpt dit pakket niet meer".
-
-    Draait in de executor; `import` leest van schijf.
-    """
-    try:
-        import cloudscraper
-    except Exception as err:  # noqa: BLE001
-        return (f"cloudscraper is NIET geladen ({type(err).__name__}: {err}) — "
-                "herstart Home Assistant zodat de afhankelijkheid uit de "
-                "manifest geïnstalleerd wordt")
-    return (f"cloudscraper {getattr(cloudscraper, '__version__', '?')} is wél "
-            f"geladen en {_PCS_SESSIE or 'curl_cffi is niet geprobeerd'}; "
-            "procyclingstats komt er ondanks die bypass(es) niet langs")
 
 
 def _haal_html(url: str, wat: str = "pagina") -> str:
@@ -690,365 +501,21 @@ def _etappelijst_urls(race_url: str) -> list[str]:
     return uit
 
 
-def _fetch_race_climbs(race_url: str) -> dict:
-    """{climb_url: {length, steepness, top, km_before_finnish}} voor de hele koers."""
-    from procyclingstats import RaceClimbs
-    out = {}
-    try:
-        rc = RaceClimbs(f"{race_url}/route/climbs")
-        rows = rc.climbs("climb_url", "length", "steepness", "top", "km_before_finnish")
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("RaceClimbs mislukt voor %s: %s", race_url, err)
-        return out
-    for r in rows:
-        u = r.get("climb_url")
-        if u:
-            out[u] = r
-    return out
-
-
-def _stage_obj(stage_url, one_day=False):
-    """Stage-object; bij een EENDAAGSE koers staat de info op de /result-pagina."""
-    from procyclingstats import Stage
-    urls = [f"{stage_url}/result", stage_url] if one_day else [stage_url]
-    for u in urls:
-        try:
-            return Stage(u)
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Stage ophalen mislukt voor %s: %s", u, err)
-    return None
-
-
-def _secs(t):
-    """'H:MM:SS' / 'MM:SS' -> seconden (None als het geen tijd is)."""
-    s = str(t or "").strip().lstrip("+")
-    if ":" not in s:
-        return None
-    try:
-        p = [int(x) for x in s.split(":")]
-    except ValueError:
-        return None
-    if len(p) == 3:
-        return p[0] * 3600 + p[1] * 60 + p[2]
-    if len(p) == 2:
-        return p[0] * 60 + p[1]
-    return None
-
-
-def _move(prev, now):
-    """Positieverandering t.o.v. de vorige dag (+ = gestegen, - = gedaald)."""
-    p, n = _int(prev), _int(now)
-    return None if p is None or n is None else p - n
-
-
-def _row_names(st, table_key):
-    """Rennernamen per tabelrij uit de al opgehaalde pagina.
-
-    Het procyclingstats-pakket verzamelt alle rennerlinks van een tabel als
-    een platte lijst en plakt die positioneel op de rijen, terwijl tijd en
-    ploeg wel per rij worden gelezen. Bevat een rij een extra of ontbrekende
-    rennerlink, dan schuiven alle namen daarna op. Daarom lezen we ze hier
-    per rij. Dit kost geen extra verzoek: de HTML is al binnen.
-    """
-    try:
-        tbl = st._table_html(table_key)   # noqa: SLF001
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Tabel-HTML (%s) niet leesbaar: %s", table_key, err)
-        return []
-    if tbl is None:
-        return []
-    body = tbl.css_first("tbody") or tbl
-    names = []
-    for row in body.css("tr"):
-        found = []
-        for a_el in row.css("a"):
-            href = a_el.attributes.get("href") or ""
-            if "rider" in href.split("/"):
-                txt = " ".join(a_el.text().split())
-                if txt:
-                    found.append(txt)
-        # een rennernaam is "ACHTERNAAM Voornaam"; kortere links (icoon, "view")
-        # kunnen in dezelfde rij staan en mogen niet worden gekozen
-        full = [t for t in found if len(t.split()) >= 2]
-        names.append((full or found or [""])[0])
-    return names
-
-
-def _fix_names(rows, names, label=""):
-    """Zet de per-rij gelezen namen terug op de rijen van het pakket."""
-    if not rows or len(names) != len(rows):
-        if rows and names:
-            _LOGGER.debug("%s: %s namen voor %s rijen, niet gecorrigeerd",
-                          label, len(names), len(rows))
-        return
-    fixed = 0
-    for row, nm in zip(rows, names):
-        if nm and nm != (row.get("rider_name") or "").strip():
-            row["rider_name"] = nm
-            fixed += 1
-    if fixed:
-        _LOGGER.debug("%s: %s scheve naam/namen gecorrigeerd", label, fixed)
-
-
-def _delta_seconds(txt):
-    """'+1:12' / '-0:20' / '0:00' -> seconden (+ = tijd verloren)."""
-    t = (txt or "").strip().replace("\u2212", "-").replace("\u2013", "-")
-    t = t.replace(" ", "")
-    if not t or t in ("-", "--", "0", "..."):
-        return None
-    m = re.match(r"^([+-]?)(\d{1,2}):(\d{2})(?::(\d{2}))?$", t)
-    if not m:
-        return None
-    sec = (int(m.group(2)) * 3600 + int(m.group(3)) * 60 + int(m.group(4))
-           if m.group(4) else int(m.group(2)) * 60 + int(m.group(3)))
-    return -sec if m.group(1) == "-" else sec
-
-
-def _is_gain_header(h):
-    k = (h or "").strip().lower()
-    return (("won" in k and "lost" in k) or "\u03b4" in k
-            or k in ("today", "+/-", "gained", "diff"))
-
-
-def _delta_col(st, table_key):
-    """PCS' eigen kolom met dagwinst/-verlies, per rij gelezen.
-
-    Deze kolom wordt via de tabelkop per rij uitgelezen (zoals de ploegkolom)
-    en is daarmee betrouwbaar; er hoeft geen tweede etappe te worden opgehaald
-    en er hoeven geen renners op naam te worden gekoppeld.
-    """
-    try:
-        from procyclingstats.table_parser import TableParser
-        tbl = st._table_html(table_key)   # noqa: SLF001
-        if tbl is None:
-            return [], [], []
-        tp = TableParser(tbl)
-        heads = ([" ".join(h.text().split()) for h in tp.header.css("th")]
-                 if tp.header is not None else [])
-        for h in heads:
-            if _is_gain_header(h):
-                raw = tp.parse_extra_column(h, str)
-                return [_delta_seconds(v) for v in raw], heads, raw[:4]
-        return [], heads, []
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Dagwinst-kolom (%s) niet leesbaar: %s", table_key, err)
-        return [], [], []
-
-
-def _fetch_rank_maps(stage_url: str, one_day: bool = False) -> dict:
-    """Klassementen van een etappe als {positie: waarde}.
-
-    Positie, tijd en punten komen alle drie uit kolommen die per rij worden
-    gelezen. Door op positie te koppelen hoeven er geen renners op naam te
-    worden gematcht - precies de kolom die bij PCS kan verschuiven.
-    """
-    st = _stage_obj(stage_url, one_day)
-    if st is None:
-        return {}
-
-    def _m(fn, key):
-        rows = _safe(lambda: fn("rank", key), []) or []
-        out = {}
-        for r in rows:
-            rk = _int(r.get("rank"))
-            if rk is not None and r.get(key) not in (None, ""):
-                out[rk] = r.get(key)
-        return out
-
-    return {"gc": _m(st.gc, "time"), "youth": _m(st.youth, "time"),
-            "points": _m(st.points, "points"), "kom": _m(st.kom, "points")}
-
-
-def _gain_time_by_rank(rows, prev_map):
-    """Tijdwinst/-verlies van de laatste dag t.o.v. de leider (+ = verloren)."""
-    if not rows or not prev_map:
-        return 0
-    ln, lp = _secs(rows[0].get("time")), _secs(prev_map.get(rows[0].get("prev")))
-    if ln is None or lp is None:
-        return 0
-    n = 0
-    for row in rows:
-        if row.get("gain_s") is not None:
-            continue
-        now, pv = _secs(row.get("time")), _secs(prev_map.get(row.get("prev")))
-        if now is None or pv is None:
-            continue
-        row["gain_s"] = (now - ln) - (pv - lp)
-        n += 1
-    return n
-
-
-def _gain_pts_by_rank(rows, prev_map):
-    """Punten gepakt op de laatste dag."""
-    if not rows or not prev_map:
-        return 0
-    n = 0
-    for row in rows:
-        now, pv = _int(row.get("points")), _int(prev_map.get(row.get("prev")))
-        if now is not None and pv is not None:
-            row["gain"] = now - pv
-            n += 1
-    return n
-
-
-def _fetch_startlist(race_url):
-    """De startlijst van een koers: renner, ploeg en hun adressen.
-
-    De startlijst is per ploegblok opgebouwd (de ploegnaam komt uit de kop van
-    het blok), dus de koppeling renner→ploeg kan hier niet verschuiven zoals in
-    de klassementstabellen.
-
-    Levert de rijen zoals de pagina ze geeft; wie alleen renner→ploeg nodig
-    heeft gebruikt `_roster_van`.
-    """
-    from procyclingstats import RaceStartlist
-    try:
-        rows = RaceStartlist(f"{race_url}/startlist").startlist(
-            "rider_name", "rider_url", "team_name", "team_url")
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Startlijst ophalen mislukt: %s", err)
-        return []
-    out = []
-    for r in rows or []:
-        naam = (r.get("rider_name") or "").strip()
-        if not naam:
-            continue
-        out.append({
-            "rider": naam,
-            "rider_url": (r.get("rider_url") or "").strip(),
-            "team": (r.get("team_name") or "").strip(),
-            "team_url": (r.get("team_url") or "").strip(),
-        })
-    _LOGGER.debug("Startlijst %s: %s renners", race_url, len(out))
-    return out
-
-
-def _roster_van(rows):
-    """Renner -> ploeg uit de startlijstrijen, met een naamsleutel."""
-    out = {}
-    for r in rows or []:
-        nm, tm = _name_key(r.get("rider")), (r.get("team") or "").strip()
-        if nm and tm:
-            out[nm] = tm
-    return out
-
-
-def _fetch_ranking(url):
-    """De PCS-ranglijst als {renneradres: (positie, punten)}.
-
-    Het adres van een renner is een vaste sleutel; daarmee is de startlijst
-    aan de ranglijst te koppelen zonder namen te vergelijken — precies de
-    valkuil die elders in dit bestand al zoveel tijd heeft gekost.
-    """
-    from procyclingstats import Ranking
-    try:
-        rows = Ranking(url).individual_ranking(
-            "rank", "rider_url", "points")
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Ranglijst %s ophalen mislukt: %s", url, err)
-        return {}
-    out = {}
-    for r in rows or []:
-        adres = (r.get("rider_url") or "").strip()
-        positie = _int(r.get("rank"))
-        if adres and positie:
-            # de punten staan bij PCS als heel getal; afronden houdt ze uit
-            # de attributen als "2981.0"
-            out[adres] = (positie, _int(r.get("points")))
-    if not out:
-        _LOGGER.warning(
-            "Ranglijst %s levert geen renners op%s", url,
-            "" if url in RANGLIJST_ZEKER else " (adres niet geverifieerd)")
-    else:
-        _LOGGER.debug("Ranglijst %s: %s renners", url, len(out))
-    return out
-
-
-def _start_top(rows, ranking, n):
-    """De hoogst geklasseerde renners van een startlijst.
-
-    De volgorde komt van de PCS-ranglijst en nergens anders vandaan: een
-    renner die daar niet op staat krijgt geen plek naar schatting, hij valt
-    weg. Staat er niemand van de startlijst op de ranglijst, dan is de lijst
-    leeg en laat de kaart hem weg.
-    """
-    if not rows or not ranking:
-        return []
-    gevonden = []
-    for r in rows:
-        plek = ranking.get(r.get("rider_url"))
-        if plek:
-            gevonden.append((plek[0], plek[1], r))
-    gevonden.sort(key=lambda g: g[0])
-    return [{"rank": positie, "rider": r["rider"], "team": r["team"],
-             "points": punten}
-            for positie, punten, r in gevonden[:max(0, n)]]
-
-
-def _fetch_team_abbr(team_url):
-    """De officiële ploegcode van de ploegpagina bij procyclingstats.
-
-    Komt van de bron: er wordt niets uit de naam afgeleid. Een verzonnen
-    afkorting lijkt op een UCI-ploegcode zonder het te zijn, en dat is
-    precies wat dit project niet doet. Geeft "" als de pagina geen
-    bruikbare code noemt; dan blijft de volledige naam staan.
-    """
-    from procyclingstats import Team
-
-    try:
-        code = (_safe(Team(team_url).abbreviation, "") or "").strip().upper()
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Ploegcode ophalen mislukt voor %s: %s", team_url, err)
-        return ""
-    # een code is kort en bestaat uit letters/cijfers; alles daarbuiten is
-    # iets anders (de volledige naam, een leeg veld, HTML-ruis)
-    if not re.match(r"^[A-Z0-9]{2,4}$", code):
-        if code:
-            _LOGGER.debug("Ploegcode van %s onbruikbaar: %r", team_url, code)
-        return ""
-    return code
-
-
-def _name_key(s):
-    """Naamsleutel die niet afhangt van de volgorde van voor- en achternaam."""
-    parts = [p for p in (_slug_norm(w) for w in re.split(r"[\s,]+", s or "")) if p]
-    return "|".join(sorted(parts))
-
-
-def _repair_rows(rows, roster, name_key="rider", team_key="team"):
-    """Zet namen terug op de juiste rij aan de hand van de ploegkolom.
-
-    Ploeg en tijd worden per rij gelezen en zijn betrouwbaar; de namen komen
-    uit een tabelbrede lijst en kunnen verschoven staan. Hoort de ploeg van
-    een rij niet bij de genoemde renner, dan zoeken we welke renner er volgens
-    de startlijst wel bij die ploeg hoort.
-    """
-    if not rows or not roster:
-        return 0
-    verdacht = []
-    for i, row in enumerate(rows):
-        echt = roster.get(_name_key(row.get(name_key)))
-        if echt and _slug_norm(echt) != _slug_norm(row.get(team_key)):
-            verdacht.append(i)
-    if not verdacht:
-        return 0
-    namen = [rows[i].get(name_key) for i in verdacht]
-    gebruikt, hersteld = set(), 0
-    for i in verdacht:
-        wil = _slug_norm(rows[i].get(team_key))
-        for nm in namen:
-            if nm in gebruikt:
-                continue
-            if _slug_norm(roster.get(_name_key(nm), "")) == wil:
-                if nm != rows[i].get(name_key):
-                    _LOGGER.debug("Naam hersteld: %s -> %s (%s)",
-                                  rows[i].get(name_key), nm, rows[i].get(team_key))
-                    rows[i][name_key] = nm
-                    hersteld += 1
-                gebruikt.add(nm)
-                break
-    return hersteld
-
+# Hier stond tot 0.25 alles wat via procyclingstats liep: het Stage-object,
+# de startlijst en de individuele ranglijst die hem ordende, de officiële
+# ploegcodes, de dagwinst (uit de kolom "Prev") en het naamherstel dat de
+# verschuivende namenkolom van PCS rechttrok.
+#
+# Die bron is sinds 23 augustus 2026 onbereikbaar — een Cloudflare-uitdaging
+# die geen enkele HTTP-client passeert, zie CLAUDE.md. Elk van die functies
+# ving zijn eigen fouten af, dus er kwam niets in het log; het waren alleen
+# verzoeken die elke ronde op een 403 stuklopen. Cyclingstage heeft geen
+# vervanger voor deze gegevens: geen startlijst, geen ploegcode (alleen een
+# landcode) en geen vorige stand per rij.
+#
+# De attribuutsleutels blijven bestaan en blijven leeg, zodat een kaart van
+# vóór deze versie er niet over struikelt. Wie het terug wil zoekt in de
+# geschiedenis: `git log -S "_fetch_startlist" -- custom_components`.
 
 # De etappe-uitslagadressen per koers, gelezen van de resultatenpagina van
 # die koers. Module-breed en niet op de coordinator: `_cs_fetch_stage` volgt
@@ -1236,13 +703,6 @@ def _show_state_for(sd: date, today: date) -> str:
     return f"{DAYS_NL[sd.weekday()]} {_fmt_nl(sd)}"
 
 
-def _quality(st):
-    """Startlijstkwaliteit; PCS geeft (bij aanvang, na de huidige etappe)."""
-    v = _safe(st.race_startlist_quality_score)
-    if isinstance(v, (tuple, list)):
-        v = v[-1] if v else None
-    return _int(v)
-
 def _fetch_stage_meta(stage: dict) -> dict:
     """Wat er over een etappe bekend is, uit de etappelijst plus zijn pagina.
 
@@ -1276,86 +736,6 @@ def _fetch_stage_meta(stage: dict) -> dict:
     if meta.get("vertical_m") is not None:
         d["vertical"] = meta["vertical_m"]
     return d
-
-
-def _fetch_stage_climbs(stage_url: str, race_climbs: dict) -> list[dict]:
-    """Cols van een etappe uit de ROUTE (voor de rit beschikbaar)."""
-    from procyclingstats import RaceClimbs, Stage
-    rows = []
-    try:
-        rc = RaceClimbs(f"{stage_url}/route/climbs")
-        rows = rc.climbs("climb_name", "climb_url", "length",
-                         "steepness", "top", "km_before_finnish")
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Per-etappe climbs mislukt voor %s: %s", stage_url, err)
-        rows = []
-
-    if not rows:
-        lst = None
-        try:
-            st = Stage(stage_url)
-            lst = st._find_header_list("Climbs")  # noqa: SLF001
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Stage climbs-lijst mislukt voor %s: %s", stage_url, err)
-        if lst is not None:
-            for li in lst.css("li"):
-                a = li.css_first("a")
-                url = a.attributes.get("href") if a else None
-                det = race_climbs.get(url) if url else None
-                if det:
-                    rows.append({"climb_name": a.text(strip=True),
-                                 "climb_url": url, **det})
-
-    out = []
-    for r in rows:
-        top = _int(r.get("top"))
-        if not top or top <= 0:
-            continue  # ongeldige/ontbrekende hoogte (bv. kapotte aankomst-bergop-data)
-        out.append({
-            "name": (r.get("climb_name") or "").strip(),
-            "category": "",
-            "km_to_finish": _num(r.get("km_before_finnish")),
-            "top_m": top,
-            "length_km": _num(r.get("length")),
-            "steepness_pct": _num(r.get("steepness")),
-        })
-    out.sort(key=lambda c: (c["km_to_finish"] if c["km_to_finish"] is not None else -1),
-             reverse=True)
-    _LOGGER.debug("Cols voor %s: %d gevonden", stage_url, len(out))
-    return out
-
-
-def _merge_categories(climbs: list[dict], kom_raw: list[dict]) -> None:
-    """Vul categorie (HC/1/2/3/4) uit de KOM-uitslag zodra beschikbaar."""
-    kom = {}
-    for c in kom_raw or []:
-        nm = _norm(c.get("climb_name"))
-        cat = str(c.get("category") or "").upper()
-        if nm and cat:
-            kom[nm] = cat
-    for c in climbs:
-        cat = kom.get(_norm(c.get("name")))
-        if cat:
-            c["category"] = cat
-
-
-def _enrich_names(detected: list, named: list) -> None:
-    """Zet PCS-naam + officiele categorie op de dichtstbijzijnde gedetecteerde klim."""
-    for d in detected:
-        dk = d.get("km_to_finish") or 0
-        best, bestdiff = None, 6.0
-        for p in named or []:
-            pk = p.get("km_to_finish")
-            if pk is None:
-                continue
-            diff = abs(pk - dk)
-            if diff < bestdiff:
-                bestdiff, best = diff, p
-        if best:
-            if best.get("name"):
-                d["name"] = best["name"]
-            if best.get("category"):
-                d["category"] = best["category"]
 
 
 WIELERFLITS_TV_URL = "https://www.wielerflits.nl/nieuws/wielrennen-op-tv/"
@@ -1980,7 +1360,6 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # wat er in `UpdateFailed` komt als de kalender leeg blijft
         self._kalenderfouten: list = []
         self._stages_cache: dict[str, tuple[date, list[dict]]] = {}
-        self._climbs_cache: dict[str, dict] = {}
         self._upcoming_cache: dict[str, dict] = {}
         self._elev_cache: dict[tuple[str, int], tuple] = {}
         self._gpx_beschikbaar: dict[str, bool] = {}
@@ -1998,25 +1377,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # tussensprints en klassementsstanden per etappe. Allebei een dict en
         # niet één plek, want de koersen in de pop-up vragen ze ook op.
         self._sprints_cache: dict[str, list] = {}
-        # de startlijst per koers, zoals procyclingstats hem geeft. Dient twee
-        # doelen: renner→ploeg om scheve namen te herstellen (`_roster_van`),
-        # en de renners aan de start zolang er nog geen uitslag is.
-        self._startlist_cache: dict[str, list] = {}
-        # de individuele ranglijst per adres uit RANGLIJST; die verandert
-        # hoogstens één keer per dag en bedient alle koersen samen
-        self._ranking_cache: dict[str, dict] = {}
-        # wat er van de laatste startlijst terechtkwam; gaat als
-        # `startlist_diag` naar de attributen
-        self._startlist_diag: dict = {}
         # uitslag per etappe van de andere koersen, op stage_url; per dag geleegd
         self._other_cache: dict[str, dict] = {}
-        self._prevrank_cache: dict[str, dict] = {}
         self._names_cache: dict[str, list] = {}
         self._prose_cache: dict[str, list] = {}
-        # ploegnaam -> officiële code. Blijft een seizoen lang gelijk, dus
-        # alleen bij een nieuwe kalenderdag opnieuw; een mislukte poging
-        # staat als "" in de cache en wordt dan morgen weer geprobeerd.
-        self._abbr_cache: dict[str, str] = {}
         # uitslag van een gereden etappe om in terug te bladeren, op
         # stage_url. Deze wordt bewust *niet* bij een nieuwe dag geleegd: een
         # etappe die gereden is verandert niet meer, en juist gisteren is de
@@ -2120,135 +1484,6 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._sprints_cache[url] = sprints
         return sprints
 
-    async def _ploegcodes(self, data: dict, sleutels=(
-            "results", "gc", "points_top", "kom_top", "youth_top")) -> None:
-        """Zet de officiële ploegcode op elke rij, waar PCS hem geeft.
-
-        De code komt van de ploegpagina bij procyclingstats; er wordt niets
-        uit de naam afgeleid. Per ronde worden er hoogstens
-        `MAX_PLOEGCODES_PER_RONDE` nieuwe opgehaald — een koers telt zo'n
-        twintig ploegen en elke code is een eigen pagina. Wat nog niet
-        bekend is houdt de volledige ploegnaam en volgt de volgende ronde.
-
-        `sleutels` zegt welke lijsten in `data` rijen bevatten; de startlijst
-        gebruikt dezelfde weg met een eigen sleutel.
-        """
-        adressen = data.get("team_urls") or {}
-        nieuw = 0
-        for sleutel in sleutels:
-            for row in data.get(sleutel) or []:
-                naam = (row.get("team") or "").strip()
-                if not naam:
-                    continue
-                code = self._abbr_cache.get(naam)
-                if (code is None and naam in adressen
-                        and nieuw < MAX_PLOEGCODES_PER_RONDE):
-                    await asyncio.sleep(0.3)   # niet overspoelen
-                    code = await self._job(_fetch_team_abbr, adressen[naam])
-                    self._abbr_cache[naam] = code
-                    nieuw += 1
-                if code:
-                    row["team_code"] = code
-        if nieuw:
-            _LOGGER.debug("%s ploegcodes opgehaald (%s bekend)",
-                          nieuw, len(self._abbr_cache))
-
-    async def _startlijst(self, race_url: str) -> list:
-        """De startlijst van een koers, per koers bewaard.
-
-        Slikt zijn eigen fouten: hij wordt ook voor de koersen in de pop-up
-        opgevraagd, en daar zou een mislukte scrape anders het hele blok
-        kosten.
-        """
-        if race_url in self._startlist_cache:
-            return self._startlist_cache[race_url]
-        try:
-            rows = await self._job(_fetch_startlist, race_url)
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Startlijst mislukt voor %s: %s", race_url, err)
-            return []
-        if rows:
-            self._startlist_cache[race_url] = rows
-        return rows
-
-    async def _ranglijst(self, women: bool) -> dict:
-        """De individuele PCS-ranglijst, één keer per dag per geslacht.
-
-        Ook een mislukte poging blijft in de cache staan, net als bij de
-        ploegcodes: klopt het adres niet, dan zou hij anders elke ronde
-        opnieuw worden opgehaald en elke ronde dezelfde waarschuwing loggen.
-        Morgen wordt het weer geprobeerd; de startlijst is intussen het enige
-        dat mist.
-        """
-        url = RANGLIJST[bool(women)]
-        if url in self._ranking_cache:
-            return self._ranking_cache[url]
-        try:
-            ranking = await self._job(_fetch_ranking, url)
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Ranglijst %s mislukt: %s", url, err)
-            ranking = {}
-        self._ranking_cache[url] = ranking
-        return ranking
-
-    async def _startlijst_blok(self, race_url: str, women: bool) -> dict:
-        """Wie er aan de start staan, voor een koers zonder uitslag.
-
-        `startlist_top` is de kop van de startlijst volgens de PCS-ranglijst;
-        `startlist_riders` en `startlist_teams` zijn wat er geteld is. Levert
-        de startlijst niets op, dan blijft alles leeg en laat de kaart het
-        onderdeel weg.
-        """
-        leeg = {"startlist_top": [], "startlist_riders": 0, "startlist_teams": 0}
-        rows = await self._startlijst(race_url)
-        if not rows:
-            return leeg
-        ranking = await self._ranglijst(women)
-        top = _start_top(rows, ranking, self._opt(CONF_START_N))
-        if top:
-            # dezelfde ploegcodes als in de uitslag; de adressen staan op de
-            # startlijst zelf
-            adressen = {r["team"]: r["team_url"] for r in rows
-                        if r.get("team") and r.get("team_url")}
-            await self._ploegcodes({"team_urls": adressen,
-                                    "startlist_top": top}, ("startlist_top",))
-        self._startlist_diag = {
-            "koers": _race_slug(race_url),
-            "ranglijst": RANGLIJST[bool(women)],
-            "renners": len(rows),
-            "gerangschikt": len(top),
-        }
-        return {
-            "startlist_top": top,
-            "startlist_riders": len(rows),
-            "startlist_teams": len({r["team"] for r in rows if r.get("team")}),
-        }
-
-    async def _rank_maps(self, stage: dict) -> dict:
-        """Klassementen van een etappe als {positie: waarde}, per etappe bewaard.
-
-        Hiermee wordt de dagwinst berekend: koppelen op positie via de
-        kolom "Prev", nooit op naam.
-        """
-        url = stage["stage_url"]
-        if url in self._prevrank_cache:
-            return self._prevrank_cache[url]
-        try:
-            maps = await self._job(_fetch_rank_maps, url, stage.get("one_day"))
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Vorige stand mislukt voor %s: %s", url, err)
-            return {}
-        if maps:
-            self._prevrank_cache[url] = maps
-        return maps
-
-    async def _climbs_for(self, race_url: str) -> dict:
-        if race_url in self._climbs_cache:
-            return self._climbs_cache[race_url]
-        climbs = await self._job(_fetch_race_climbs, race_url)
-        self._climbs_cache[race_url] = climbs
-        return climbs
-
     async def _stage_uitslag(self, s):
         """Uitslag + standen van \u00e9\u00e9n etappe van een andere koers.
 
@@ -2257,24 +1492,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
         """
         url = s["stage_url"]
         if url in self._other_cache:
-            d = self._other_cache[url]
-            # de ploegcodes die vorige ronde nog niet aan de beurt waren
-            await self._ploegcodes(d)
-            return d
+            return self._other_cache[url]
         d = await self._job(_fetch_stage, s,
                             self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
         if not d.get("finished"):
-            await self._ploegcodes(d)
             return d
-        rkey = s["race_url"]
-        roster = ({} if s.get("one_day")
-                  else _roster_van(await self._startlijst(rkey)))
-        if roster:
-            for _k in ("results", "gc", "points_top", "kom_top", "youth_top"):
-                _repair_rows(d.get(_k), roster)
-        # ná het herstellen van de namen: `_repair_rows` vergelijkt de
-        # ploegkolom met de startlijst en die noemt de volledige naam
-        await self._ploegcodes(d)
         self._other_cache[url] = d
         return d
 
@@ -2294,7 +1516,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             "label": _short_race(naam, 24) + (" \u00b7 Dames" if dames else ""),
             "race_name": naam,
             "women": bool(ev.get("women")),
-            # het niveau (het circuitnummer van procyclingstats). De kaart
+            # het niveau (mannen of vrouwen; zie NIVEAUS). De kaart
             # laat zich per dashboardkaart op niveaus instellen en heeft
             # hiermee genoeg om zelf te kiezen wat hij toont.
             "level": str(ev.get("level", "")),
@@ -2361,21 +1583,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
             entry["points_top"] = data.get("points_top") or []
             entry["kom_top"] = data.get("kom_top") or []
             entry["youth_top"] = data.get("youth_top") or []
-            # dagwinst en -verlies, net als bij de tegelkoers: de stand van
-            # de vorige etappe op positie koppelen via de kolom "Prev"
-            eerder = [s for s in stages if s["date"] < laatst["date"]]
-            if eerder and not laatst.get("one_day"):
-                pmaps = await self._rank_maps(eerder[-1])
-                if pmaps:
-                    _gain_time_by_rank(entry["gc_top"], pmaps.get("gc"))
-                    _gain_time_by_rank(entry["youth_top"], pmaps.get("youth"))
-                    _gain_pts_by_rank(entry["points_top"], pmaps.get("points"))
-                    _gain_pts_by_rank(entry["kom_top"], pmaps.get("kom"))
-        # nog geen uitslag: dan is wie er meedoet het enige dat er te melden
-        # valt. Zodra er wel een uitslag is blijft de startlijst weg — die
-        # kost ruimte in de attributen en de uitslag zegt meer.
-        if not entry["last_result"] and toon is not None:
-            entry.update(await self._startlijst_blok(ev["url"], ev.get("women")))
+        # Hier stond de dagwinst (uit de kolom "Prev" bij procyclingstats) en
+        # de startlijst voor een koers die nog geen uitslag heeft. Allebei
+        # zonder bron sinds de overstap naar cyclingstage; zie het blok
+        # daarover bovenin dit bestand.
         return entry
 
     async def _races_block(self, primair, andere, today):
@@ -2520,15 +1731,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
                     (f"{c.get('name') or '?'} {c.get('length_km')}@{c.get('steepness_pct')}"
                      + (f" k2f={c['km_to_finish']}" if c.get('km_to_finish') is not None else ""))
                     for c in cs_names]
-            # geen colnamen uit de etappetekst (klassiekers, vrouwenkoersen,
-            # kleinere rittenkoersen) -> namen bij PCS ophalen
-            if gpx_climbs and not any((c.get("name") or "").strip() for c in gpx_climbs):
-                pcs = await self._job(_fetch_stage_climbs, s["stage_url"], {})
-                _enrich_names(gpx_climbs, pcs)
-            if not gpx_climbs:
-                # korte klimmen (bv. Montmartre, 1,1 km) ziet de GPX-detectie niet;
-                # PCS kent ze wel, inclusief hoe vaak ze worden verreden
-                gpx_climbs = await self._job(_fetch_stage_climbs, s["stage_url"], {})
+            # Hier stond tot 0.25 een terugval bij procyclingstats: colnamen
+            # als de etappetekst ze niet noemt, en korte klimmen die de
+            # GPX-detectie mist (Montmartre, 1,1 km). Die bron is
+            # onbereikbaar, dus die cols blijven nu weg. Niets invullen wat
+            # er niet staat.
             # De koersen in de pop-up tekenen hun profiel uit deze lijst, dus
             # de starttijd en de verwachte finish horen erbij — anders staat
             # er bij hen alleen een dag op de badge en bij de tegelkoers ook
@@ -2714,10 +1921,6 @@ class CyclingCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict:
         today = dt_util.now().date()
-        # diagnose van déze ronde; anders blijft die van een vorige koers
-        # staan zodra er nergens meer een startlijst wordt opgevraagd
-        self._startlist_diag = {}
-
         # Kalender: cache 24h, altijd verversen bij jaarwissel
         if (self._calendar is None or self._calendar_fetched is None
                 or (today - self._calendar_fetched) >= timedelta(days=1)):
@@ -2735,14 +1938,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._tv_cache = None
                 self._sprints_cache.clear()
                 self._other_cache.clear()
-                self._prevrank_cache.clear()
-                # renners vallen af en de ranglijst schuift; allebei een dag
-                # oud is precies zo vers als de rest
-                self._startlist_cache.clear()
-                self._ranking_cache.clear()
                 self._names_cache.clear()
                 self._prose_cache.clear()
-                self._abbr_cache.clear()
             except Exception as err:  # noqa: BLE001
                 if self._calendar is None:
                     raise UpdateFailed(f"Kalender ophalen mislukt: {err}") from err
@@ -2849,53 +2046,22 @@ class CyclingCoordinator(DataUpdateCoordinator):
             last_fin_data = await self._job(_fetch_stage, last_fin,
                                             self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
 
-        # namen in de klassementen kunnen bij de verkeerde rij staan; herstellen
-        # met de startlijst (renner -> ploeg) als betrouwbare referentie
-        roster, names_fixed = {}, 0
-        if last_fin is not None and not last_fin.get("one_day"):
-            roster = _roster_van(await self._startlijst(last_fin["race_url"]))
-        if roster and last_fin_data:
-            for _k in ("results", "gc", "points_top", "kom_top", "youth_top"):
-                names_fixed += _repair_rows(last_fin_data.get(_k), roster)
-            if names_fixed:
-                _LOGGER.debug("%s scheve naam/namen hersteld via de startlijst", names_fixed)
-        # ploegcodes ná het herstellen van de namen: `_repair_rows` vergelijkt
-        # de ploegkolom met de startlijst, en die noemt de volledige naam
-        if last_fin_data:
-            await self._ploegcodes(last_fin_data)
+        # Hier stond het naamherstel (de namenkolom van procyclingstats kon
+        # verschuiven), het ophalen van de officiële ploegcodes en de
+        # dagwinst uit de kolom "Prev". Cyclingstage leest namen per regel,
+        # dus dat eerste probleem bestaat niet meer; voor de andere twee is
+        # er geen bron. Zie het blok over procyclingstats bovenin.
 
-        # dag-winst/-verlies: koppel de vorige stand op POSITIE (kolom "Prev"),
-        # zodat er geen renners op naam gematcht hoeven te worden
-        gains_set = 0
-        prev_fin = None
-        if last_fin is not None and not last_fin.get("one_day"):
-            if today_finished:
-                prev_fin = finished[-1] if finished else None
-            elif len(finished) >= 2:
-                prev_fin = finished[-2]
-        if prev_fin is not None and last_fin_data:
-            pmaps = await self._rank_maps(prev_fin)
-            if pmaps:
-                gains_set += _gain_time_by_rank(last_fin_data.get("gc"), pmaps.get("gc"))
-                gains_set += _gain_time_by_rank(last_fin_data.get("youth_top"),
-                                                pmaps.get("youth"))
-                gains_set += _gain_pts_by_rank(last_fin_data.get("points_top"),
-                                               pmaps.get("points"))
-                gains_set += _gain_pts_by_rank(last_fin_data.get("kom_top"),
-                                               pmaps.get("kom"))
-
-        # PCS-cols alleen voor NAMEN + officiele categorie
-        race_climbs = await self._climbs_for(shown_event["url"])
-        pcs_climbs = await self._job(_fetch_stage_climbs, shown["stage_url"], race_climbs)
-        _merge_categories(pcs_climbs, shown_data.get("climbs_raw", []))
-
-        # Echt hoogteprofiel + gedetecteerde cols (GPX) voor de getoonde etappe
+        # Echt hoogteprofiel + gedetecteerde cols (GPX) voor de getoonde etappe.
+        # Tot 0.25 haalde procyclingstats hier de colnamen en de officiële
+        # categorie bij; die bron is onbereikbaar. De namen komen nu alleen
+        # uit de etappetekst van cyclingstage en de categorie blijft leeg —
+        # cyclingstage publiceert geen bergklassement.
         gpx_url = _gpx_urls(shown)
         elevation, gpx_climbs = await self._gpx_for(shown, 200)
         cs_route = {}
         elev_bron = "gpx" if elevation else ""
         if gpx_climbs:
-            _enrich_names(gpx_climbs, pcs_climbs)
             art = shown["stage_url"]
             cs_names, cs_route = await self._names_for(
                 shown["stage_url"], art, shown_data.get("distance"))
@@ -2903,7 +2069,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             _name_summit(gpx_climbs, shown_data.get("arrival") or cs_route.get("arrival"))
             climbs = gpx_climbs
         else:
-            climbs = pcs_climbs
+            climbs = []
         if shown_data.get("distance") is None and elevation:
             shown_data["distance"] = elevation[-1][0]
 
@@ -2960,14 +2126,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # ── Spoiler-blok (alleen pop-up) ──────────────────────
         last_result = last_fin_data.get("results", []) if last_fin_data else []
         gc_top = last_fin_data.get("gc", []) if last_fin_data else []
-        # Nog niets gereden in deze koers: dan is de startlijst wat er te
-        # melden valt. Met een uitslag erbij blijft hij weg — die zegt meer en
-        # de attributen zijn al krap.
+        # De startlijst vulde het gat van een koers die nog geen uitslag
+        # heeft. Hij kwam van procyclingstats en cyclingstage heeft er geen;
+        # de sleutels blijven leeg staan zodat een oudere kaart niet
+        # struikelt, en de meegeleverde kaart laat het onderdeel weg.
         startlijst = {"startlist_top": [], "startlist_riders": 0,
                       "startlist_teams": 0}
-        if not last_result:
-            startlijst = await self._startlijst_blok(shown["race_url"],
-                                                     shown.get("women"))
         if last_fin is None:
             last_stage_label = ""
         elif last_fin.get("one_day"):
@@ -3077,7 +2241,6 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 "last_stage_label": last_stage_label,
                 # ── startlijst (zolang er geen uitslag is) ──
                 **startlijst,
-                "startlist_diag": self._startlist_diag,
                 # ── backward-compat ──
                 "race_name": cur["name"],
                 "type": ("Monument" if is_monument else "Eendaagse koers"
@@ -3102,11 +2265,6 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 "elevation_source": elev_bron,
                 "sprints": sprints,
                 **ander,
-                "gain_headers": (last_fin_data or {}).get("gain_headers", []),
-                "gain_raw": (last_fin_data or {}).get("gain_raw", []),
-                "names_fixed": names_fixed,
-                "gains_set": gains_set,
-                "roster_size": len(roster),
                 "finish_est": finish_est,
                 "channels": [f"{c['name']} {c['time']}".strip()
                              for c in channels if c.get("name")],
@@ -3141,7 +2299,7 @@ async def async_setup_entry(
     attribuut — en daar valt niets aan af te lezen: niet dát het opzetten
     mislukte, en niet waaróm. De kaart tekende er een lege tegel mee.
 
-    Eén mislukte ronde bij procyclingstats hoort deze integratie ook niet te
+    Eén mislukte ronde bij cyclingstage hoort deze integratie ook niet te
     blokkeren: er hangt geen apparaat aan, de kalender komt uit een website
     die er weleens even uit ligt, en een half uur later is het meestal weer
     goed. De entiteit komt er daarom altijd; lukt de eerste ronde niet, dan

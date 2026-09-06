@@ -823,39 +823,59 @@ niet bereiken**. Verifieer daarom zo:
 ## Omvang van de attributen
 
 De recorder weigert attributen boven `MAX_STATE_ATTRS_BYTES` (16 kB) en logt
-daarbij een waarschuwing; de volledige state gaat bovendien bij elke update
-over de websocket naar élke verbonden client. De hoogteprofielen wegen het
-zwaarst: `elevation` van de getoonde etappe (200 punten) plus een profiel per
-komende etappe. Die laatste stonden op 150 punten, wat de state op ruim 34 kB
-bracht; met 60 punten is dat 24 kB en visueel niet te onderscheiden — de
-profieltjes in "Komende dagen" zijn maar een paar pixels hoog.
+daarbij bij **elke update** een waarschuwing; de volledige state gaat
+bovendien over de websocket naar élke verbonden client. De sensor en de kaart
+werken gewoon door — de attributen bereiken de kaart wel — maar de recorder
+bewaart ze niet, dus er is geen historie van.
 
-Onder de 16 kB komt alleen door `upcoming` verder in te perken: minder
-etappes, of de profieltjes eruit. Beide kosten iets zichtbaars, dus dat is
-een keuze en geen vanzelfsprekendheid.
+**Reken het na, schat het niet.** Hier stond jarenlang "ruwweg 4 kB per
+koersblok, in de praktijk zo'n 28 kB". Dat was te laag. `python3
+tools/meet_attributen.py` bouwt een attributenset met dezelfde vorm en
+realistische inhoud en meet hem per post; onderhoud dat bestand mee als de
+vorm van de attributen verandert. Gemeten op 6 september 2026, met de
+standaardinstellingen en de rijen zoals cyclingstage ze sinds 0.25 levert:
 
-`races` komt daar bovenop: een koersblok is ruwweg 4 kB (uitslag, algemeen,
-punten, berg, jongeren; de zenders erbij zijn een paar honderd bytes) en er
-passen er `max_other` naast de getoonde. In de
-praktijk is dat er één — mannen en vrouwen — dus zo'n 28 kB. Bewust géén
-hoogteprofiel in het blok; dat komt uit `upcoming` via `race_key`, anders was
-het een stuk meer. Wordt het te veel, dan is `max_other` verlagen de
-goedkoopste stap; dat is nu een instelling en hoeft niet meer in de code.
-**De schatting klopt: het gaat er in de praktijk overheen.** Het log van
-21-22 augustus 2026 staat vol met `State attributes for
-sensor.cycling_next_race exceed maximum size of 16384 bytes ... Attributes
-will not be stored` — bij elke update. De sensor werkt gewoon (de
-attributen gaan wel over de websocket naar de kaart), maar de recorder
-bewaart ze niet, dus er is geen historie van. Wie dat wil oplossen zal
-`upcoming` of `max_other` moeten inperken; beide kosten iets zichtbaars.
+| post | bytes | wat erin zit |
+|---|---:|---|
+| `upcoming` | 13 189 | 10 etappes × (profiel van 60 punten + tot 4 cols) |
+| `races` | 8 908 | 2 blokken × 5 lijsten van 10 renners; het primaire blok draagt géén uitslagen (die staan al in de gewone attributen) |
+| `elevation` | 2 395 | 200 punten van de getoonde etappe |
+| `past` | 1 681 | 3 etappes × 5 renners |
+| de vijf lijsten op de tegel | 3 845 | uitslag, algemeen, punten, berg, jongeren |
+| `other_result` + `other_gc` | 1 174 | herhaling van het eerste andere koersblok, voor kaarten van vóór 0.11 |
+| **totaal** | **33 263** | ruim het dubbele van de grens |
 
-`past` kost zo'n 400 bytes per etappe: vijf renners zonder ploeg, plus de
-kop en de plaatsnamen. Met de standaard van drie is dat ruim een kilobyte,
-en `past_n` op 0 haalt het er helemaal af.
+**Onder de 16 kB komen kan, maar niet met één knop.** Ook gemeten:
 
-De startlijst komt er niet bovenop maar staat in de plaats van de uitslag:
-tien renners is zo'n 600 bytes per koers, en een koers zonder uitslag heeft
-juist geen `last_result`, `gc_top` en de rest. Per saldo scheelt het.
+| opstelling | bytes |
+|---|---:|
+| standaard | 33 263 |
+| `past_n` op 21 (een hele grote ronde) | 43 343 |
+| `max_other` op 1 | 28 876 |
+| `upcoming_n` op 6 | 28 011 |
+| `upcoming_n` 6 + `max_other` 1 | 23 624 |
+| alle knoppen zuinig: `upcoming_n` 4, `max_other` 1, `past_n` 2, 5 renners overal | **15 918** |
+
+Die laatste past net, met weinig marge, en levert een merkbaar kaler
+dashboard op: vier komende dagen in plaats van tien, één koers naast de
+getoonde, en halve klassementen.
+
+**Weeg eerst wat het oplevert.** Het enige dat je wint is dat de recorder de
+attributen bewaart. Dit zijn geen meetwaarden waar je een grafiek van trekt —
+het zijn uitslagen, profielen en tv-tijden, en die haal je bij de bron. Voor
+wie alleen van de waarschuwing af wil is de goedkope weg dan ook de sensor
+uit de recorder houden (zie de README); dat kost niets op het dashboard.
+Zichtbaar inleveren om historie te bewaren die niemand opvraagt is de
+verkeerde ruil.
+
+Twee dingen die wél bewust klein gehouden zijn en dat moeten blijven:
+
+- **Een koersblok draagt geen hoogteprofiel.** Dat komt uit `upcoming` via
+  `race_key`. Zou elk blok zijn eigen profiel meesturen, dan was `races`
+  ruwweg dubbel zo zwaar.
+- **De profieltjes in "Komende dagen" staan op 60 punten.** Ze stonden op
+  150; dat bracht de state op ruim 34 kB en het verschil is niet te zien —
+  die profieltjes zijn maar een paar pixels hoog.
 
 `level` op elke etappe in `upcoming` en op elk blok in `races` kost een stuk
 of vijftien bytes per stuk — een paar honderd in totaal, en het alternatief
@@ -863,8 +883,35 @@ of vijftien bytes per stuk — een paar honderd in totaal, en het alternatief
 
 Een niveau erbij kost niets zolang er niet méér koersen in beeld komen:
 `max_other` begrenst het aantal blokken en `upcoming_n` het aantal etappes.
-Wat het wél kost zijn verzoeken bij procyclingstats — een kalenderpagina per
-niveau per dag, en een etappelijst per koers die in het venster valt.
+Wat het wél kost zijn verzoeken bij cyclingstage — een kalenderpagina per
+jaar per dag, en een etappelijst per koers die in het venster valt.
+
+## Wat er sinds 0.25 niet meer is
+
+Alles wat via procyclingstats liep is eruit: de startlijst en de ranglijst
+die hem ordende, de officiële ploegcodes, de dagwinst uit de kolom "Prev",
+het naamherstel, de colnamen en de colcategorie, en de Cloudflare-bypass
+(cloudscraper plus curl_cffi) die het nog probeerde. `requirements` in de
+manifest is daarmee **leeg**.
+
+Waarom het eruit moest en niet bleef staan "voor als de site weer opengaat":
+elke functie ving zijn eigen fouten af, dus er kwam niets in het log. Wat er
+overbleef waren verzoeken die elke ronde op een 403 stukliepen, en drie
+pakketten die Home Assistant bij elke start installeerde voor code die niets
+kon opleveren. Een dood pad dat er onschuldig uitziet is erger dan een leeg
+veld dat je ziet.
+
+De attribuutsleutels blijven bestaan en blijven leeg (`startlist_top`,
+`startlist_quality`, `team_code`, `gain_s`), zodat een kaart van vóór deze
+versie er niet over struikelt — dezelfde lijn als bij de live-stip in
+0.22.2. De optie `start_n` is wél weg: een knop in het instelscherm die
+niets doet is verwarrender dan een knop die later terugkomt.
+
+Terughalen begint in de geschiedenis: `git log -S "_fetch_startlist" --
+custom_components`. Maar de bron is niet procyclingstats — die weg is
+uitgeput. Een startlijst hoort van een bron te komen die wél opendoet, en
+dat is een parser met opgeslagen HTML in `tests/fixtures/`, zoals elke
+andere bron in dit project.
 
 ## Opzetten: de entiteit wacht niet op een geslaagde ronde
 
