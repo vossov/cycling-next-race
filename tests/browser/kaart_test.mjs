@@ -114,11 +114,13 @@ const voorDeStart = {
   kom_top: [], youth_top: [], other_label: '', other_result: [],
   races: [{ primary: true, key: 'tour-de-france', label: 'Tour de France',
             race_name: 'Tour de France', women: false, level: 'm', jersey: '#F3C700' }],
-  startlist_riders: 176, startlist_teams: 22,
+  // zoals cyclingstage hem levert: rugnummer en ploeg, geen rangorde en
+  // geen punten. `out` = doorgestreept op de startlijstpagina.
+  startlist_riders: 184, startlist_teams: 23, startlist_out: 34,
   startlist_top: [
-    { rank: 1, rider: 'Pogacar Tadej', team: 'UAE Team Emirates', team_code: 'UAD', points: 4521 },
-    { rank: 2, rider: 'Evenepoel Remco', team: 'Soudal Quick-Step', points: 3310 },
-    { rank: 6, rider: 'Vingegaard Jonas', team: 'Team Visma', team_code: 'TVL', points: 2104 },
+    { bib: 1, rider: 'Primoz Roglic', team: 'Red Bull-BORA-hansgrohe', out: false },
+    { bib: 11, rider: 'Tadej Pogacar', team: 'UAE Emirates-XRG', out: true },
+    { bib: 31, rider: 'Wout van Aert', team: 'Visma | Lease a Bike', out: false },
   ],
 };
 

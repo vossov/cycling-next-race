@@ -75,6 +75,7 @@ Achter **Configureren** bij de integratie stel je in:
 |---|---|
 | Aantal renners in de uitslag | 10 |
 | Aantal renners in het klassement | 10 |
+| Aantal renners per ploeg in de startlijst | 1 |
 | Maximaal aantal komende etappes | 10 |
 | Komende etappes tonen tot (dagen vooruit) | 7 |
 | Aantal etappes om terug te bladeren | 3 (maximaal 21) |
@@ -208,6 +209,30 @@ verandert niet meer en wordt maar één keer opgehaald.
 Het geldt voor de koers op de tegel; bij de andere koersen in de pop-up
 staat alleen de laatste uitslag.
 
+### Startlijst
+
+Zolang een koers nog geen uitslag heeft valt er niets te tonen. In dat gat
+komt de startlijst: hoeveel renners en ploegen er aan de start staan, en per
+ploeg de eerste renner. Zodra er gereden is verdwijnt hij weer — de uitslag
+zegt meer en de attributen zijn krap.
+
+**Het is geen rangorde.** Cyclingstage wijst nergens een kopman aan, en het
+rugnummer is dat ook niet: binnen een ploeg staan de nummers na de eerste
+gewoon alfabetisch op achternaam (bij 22 van de 23 ploegen in de Vuelta van
+2026). Alleen het eerste nummer van een ploeg is er meestal uit getild, maar
+zelfs dat niet altijd — Lidl-Trek gaf Mads Pedersen juist het láátste nummer
+van zijn blok. De kaart zet er daarom "per ploeg op rugnummer" bij en niet
+"op volgorde van"; wie hier een 1-2-3 leest zou een ranglijst zien die niet
+bestaat.
+
+Bij **Aantal renners per ploeg in de startlijst** zet je hoeveel er per ploeg
+getoond worden (standaard 1, maximaal 8). Elke stap erbij kost ongeveer
+1,7 kB in de attributen — bij een grote ronde zijn dat 23 ploegen.
+
+Renners die zijn opgegeven staan met "opgegeven" erachter; cyclingstage
+streept ze door op de startlijstpagina. Bij een koers die nog moet beginnen
+zijn dat er nul.
+
 ### Wat deze integratie niet toont
 
 Cyclingstage is de enige bron. Wat daar niet staat, staat hier ook niet — er
@@ -215,7 +240,6 @@ wordt niets bij verzonnen:
 
 | ontbreekt | waarom |
 |---|---|
-| de **startlijst** van een koers die nog moet beginnen | stond op procyclingstats; cyclingstage heeft er geen |
 | de **UCI-ploegcode** achter een renner | cyclingstage geeft alleen een landcode, en een land is geen ploeg |
 | **dagwinst en -verlies** in de klassementen | daarvoor is de vorige stand per rij nodig; die geeft cyclingstage niet |
 | de **categorie** van een col (HC, 1, 2 …) | cyclingstage publiceert geen bergklassement |

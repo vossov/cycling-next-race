@@ -618,3 +618,153 @@ def parse_uitslag_index(html: str, slug: str, jaar: int) -> dict:
         uit.setdefault(int(m.group(1)), f"{BASIS}/{delen[0]}/{delen[1]}/")
     _LOGGER.debug("Uitslagoverzicht %s %s: %s etappes", slug, jaar, len(uit))
     return uit
+
+
+# ── startlijst ──────────────────────────────────────────────────────
+#
+# `/vuelta-2026/spain-riders-2026/` — één div per ploeg, de ploegnaam in een
+# <i>, daarna de renners met hun rugnummer, gescheiden door <br>:
+#
+#   <div class="block">
+#   <i>Visma | Lease a Bike</i><br>
+#   31. Wout van Aert<br>
+#   36. <del datetime="2026-09-05T14:43:03+00:00">Christophe Laporte</del><br>
+#   ...
+#   38. Ben Tulett</div>
+#
+# Wat de bron hier wél geeft en de resultatenpagina niet: de **ploeg** van
+# elke renner, zijn **rugnummer**, en wie er is **uitgevallen** (doorgestreept).
+# Wat hij niet geeft: een renner-adres, een land, een ploegcode, en welke
+# renner de kopman is — zie `startlijst_rijen` over dat laatste.
+_PLOEGBLOK = re.compile(r'<div class="block">(.*?)</div>', re.S | re.I)
+_PLOEGNAAM = re.compile(r"<i>(.*?)</i>", re.S | re.I)
+# "31. Wout van Aert" of "217.<del ...> Henri-François Haquin</del>". De spatie
+# na de punt is optioneel: bij precies één van de 184 rijen in de opgeslagen
+# pagina staat hij bínnen de <del> in plaats van erbuiten. Met `\s` erin viel
+# die renner weg en telde zijn ploeg zeven man — geen fout, gewoon een renner
+# minder.
+_RENNER = re.compile(r"^(\d{1,3})\.\s*(.*)$", re.S)
+
+
+def parse_startlijst(html: str) -> list[dict]:
+    """De renners aan de start, per ploeg, uit de startlijstpagina.
+
+    Geeft per renner `team`, `bib` (rugnummer), `rider` en `out` (of hij is
+    uitgevallen), in de volgorde waarin de pagina ze zet — dat is oplopend
+    rugnummer.
+
+    Twee dingen die op de echte pagina misgaan als je ze niet apart afvangt,
+    allebei gevonden in de opgeslagen Vuelta-startlijst:
+
+    - **De ploegnaam kan zelf een nummer bevatten.** "Pinarello Q36.5" laat
+      een regex die in de hele bloktekst naar `NN.` zoekt een 185e renner
+      vinden die niet bestaat (rugnummer 36, naam "5"). Daarom wordt de
+      `<i>`-regel er eerst afgeknipt en pas daarna naar renners gezocht.
+    - **De opmaak van een regel is niet constant.** Bij rugnummer 217 staat
+      `217.<del ...> Henri-François Haquin</del>`: geen spatie ná de punt,
+      maar erbinnen. Vandaar `\\s*` en niet `\\s`.
+
+    Een blok zonder ploegnaam of zonder renners telt niet mee: dan is het
+    geen ploegblok maar iets anders dat toevallig dezelfde class draagt.
+    """
+    uit: list[dict] = []
+    for blok in _PLOEGBLOK.findall(html or ""):
+        naam = _PLOEGNAAM.search(blok)
+        if not naam:
+            continue
+        ploeg = _kaal(naam.group(1))
+        if not ploeg:
+            continue
+        # alles vóór en inclusief de ploegnaam eraf; wat overblijft zijn de
+        # rennerregels, zodat een cijfer in de ploegnaam niet meetelt
+        romp = blok[naam.end():]
+        for stuk in re.split(r"<br\s*/?>", romp, flags=re.I):
+            m = _RENNER.match(_kaal(stuk))
+            if not m:
+                continue
+            renner = _kaal(m.group(2))
+            if not renner:
+                continue
+            uit.append({
+                "team": ploeg,
+                "bib": int(m.group(1)),
+                "rider": renner,
+                # doorgestreept = uitgevallen; de pagina zegt dat er zelf bij
+                # ("crossed-out riders withdrew")
+                "out": "<del" in stuk.lower(),
+            })
+    _LOGGER.debug("Startlijst: %s renners, %s ploegen, %s uitgevallen",
+                  len(uit), len({r["team"] for r in uit}),
+                  sum(1 for r in uit if r["out"]))
+    return uit
+
+
+def startlijst_rijen(renners: list[dict], per_ploeg: int) -> list[dict]:
+    """Hoogstens `per_ploeg` renners per ploeg, op rugnummer.
+
+    **Dit is geen rangorde en al helemaal geen kopmanslijst.** Cyclingstage
+    wijst nergens een kopman aan — de woorden "leader" en "captain" komen op
+    de pagina niet voor, en binnen een ploegblok is er geen enkele opmaak die
+    één renner onderscheidt.
+
+    Wat het rugnummer wél zegt, gemeten op de opgeslagen Vuelta-startlijst:
+    bij 22 van de 23 ploegen staan de nummers x2 tot en met x8 strikt
+    alfabetisch op achternaam. Die zeven dragen dus geen informatie. Alleen
+    het eerste nummer van een ploeg is er bij 18 van de 23 ploegen uit
+    getild — daar heeft iemand een keuze gemaakt. Maar niet altijd, en het
+    dekt de lading niet: Lidl-Trek gaf Mads Pedersen juist het laatste
+    nummer van zijn blok (88).
+
+    Vandaar dat dit `bib` heet en niet `rank`, en dat de kaart erbij zet dat
+    het om het rugnummer gaat. Het is de volgorde van de bron, niet van ons.
+    """
+    if per_ploeg <= 0:
+        return []
+    geteld: dict[str, int] = {}
+    uit = []
+    for r in sorted(renners or [], key=lambda x: x.get("bib") or 0):
+        ploeg = r.get("team") or ""
+        if geteld.get(ploeg, 0) >= per_ploeg:
+            continue
+        geteld[ploeg] = geteld.get(ploeg, 0) + 1
+        uit.append(r)
+    return uit
+
+
+def startlijst_kandidaten(html: str, koers_url: str) -> list[str]:
+    """Waar de startlijst van een koers kan staan, gelezen uit de bron.
+
+    Net als bij de routepagina is het adres niet af te leiden. Drie koersen,
+    drie vormen: `spain-riders-2026` bij de Vuelta, `riders-rt-2026` bij de
+    Renewi Tour, `riders-gb-2026` bij de Tour of Britain. Die afkorting kan
+    niemand raden, dus wordt de link opgezocht.
+
+    Er is één verschil met `route_kandidaten`, en dat is precies het soort
+    detail dat anders stil misgaat: **de startlijst hangt onder een ándere
+    map dan de routepagina**. De kalender wijst voor de Vuelta naar
+    `/vuelta-2026-route/spain-route-2026/`, maar de startlijst staat op
+    `/vuelta-2026/spain-riders-2026/`. Filteren op de map van de meegegeven
+    URL zou hem dus nooit vinden. Van de 49 koersen van 2026 hebben alleen
+    de Giro, de Tour en de Vuelta een koersmap die op `-route` eindigt; bij
+    de rest zijn de twee mappen gelijk.
+    """
+    map_naam = _map_van(koers_url)
+    if not map_naam:
+        return []
+    # de koersmap zelf én die zonder `-route`; bij de meeste koersen is dat
+    # hetzelfde en levert de set één naam op
+    mappen = {map_naam.lower(), re.sub(r"-route$", "", map_naam, flags=re.I).lower()}
+    uit = []
+    for u in _HREF.findall(html or ""):
+        pad = _pad_van(u.strip())
+        if not pad:
+            continue
+        delen = pad.strip("/").split("/")
+        if len(delen) != 2 or delen[0].lower() not in mappen:
+            continue
+        if "riders" not in delen[1].lower():
+            continue
+        adres = f"{BASIS}/{delen[0]}/{delen[1]}/"
+        if adres not in uit:
+            uit.append(adres)
+    return uit

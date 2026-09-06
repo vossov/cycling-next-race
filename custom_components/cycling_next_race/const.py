@@ -11,7 +11,7 @@ NAME = "Cycling Next Race"
 # Gelijk aan "version" in manifest.json; hangt achter de kaart-URL zodat de
 # browser na een update de nieuwe versie ophaalt. tests/test_repo.py bewaakt
 # dat de twee niet uiteenlopen.
-VERSION = "0.25.0"
+VERSION = "0.26.0"
 
 # De meegeleverde Lovelace-kaart, door de integratie zelf geregistreerd.
 KAART_BESTAND = "cycling-next-race-card.js"
@@ -20,6 +20,10 @@ KAART_URL = f"/{DOMAIN}/{KAART_BESTAND}"
 # Optiesleutels (opgeslagen in ConfigEntry.options)
 CONF_RESULT_N = "result_n"
 CONF_GC_N = "gc_n"
+# Hoeveel renners er per ploeg in de startlijst staan zolang een koers nog
+# geen uitslag heeft. Per ploeg en niet in totaal, want dat is de enige
+# indeling die cyclingstage geeft: één blok per ploeg, op rugnummer.
+CONF_START_N = "start_n"
 CONF_UPCOMING_N = "upcoming_n"
 CONF_PAST_N = "past_n"
 CONF_UPCOMING_DAYS = "upcoming_days"
@@ -64,6 +68,10 @@ NIVEAU_KEUZE: dict[str, str] = {k: v["naam"] for k, v in NIVEAUS.items()}
 # Standaardwaarden; gelijk aan wat de integratie vóór de config flow gebruikte
 DEFAULT_RESULT_N = 10
 DEFAULT_GC_N = 10
+# Eén renner per ploeg. Dat is bewust zuinig: 23 ploegen x 1 is zo'n 1,7 kB
+# in de attributen en die zitten al ruim boven de grens van de recorder.
+# Hoger zetten mag, het kost ongeveer even veel per stap erbij.
+DEFAULT_START_N = 1
 DEFAULT_UPCOMING_N = 10
 # Hoeveel gereden etappes je in de pop-up terug kunt bladeren. Elke etappe
 # kost een verzoek (eenmalig — een gereden uitslag verandert niet meer) en
@@ -90,6 +98,9 @@ MAX_SCAN_MINUTES = 240
 MIN_LIVE_SCAN_MINUTES = 2
 MAX_LIVE_SCAN_MINUTES = 60
 MIN_RIDERS = 3
+# Renners per ploeg in de startlijst; een grote ronde heeft er acht.
+MIN_START_N = 1
+MAX_START_N = 8
 MAX_RIDERS = 30
 MIN_UPCOMING_DAYS = 1
 MAX_UPCOMING_DAYS = 21
@@ -113,6 +124,7 @@ MAX_PAST_N = 21
 OPTION_DEFAULTS: dict[str, object] = {
     CONF_RESULT_N: DEFAULT_RESULT_N,
     CONF_GC_N: DEFAULT_GC_N,
+    CONF_START_N: DEFAULT_START_N,
     CONF_UPCOMING_N: DEFAULT_UPCOMING_N,
     CONF_PAST_N: DEFAULT_PAST_N,
     CONF_UPCOMING_DAYS: DEFAULT_UPCOMING_DAYS,

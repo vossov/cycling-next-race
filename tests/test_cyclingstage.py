@@ -677,3 +677,138 @@ def test_uitslagoverzicht_op_echte_links(cs):
     assert cs.parse_uitslag_index(ROUTE.read_text(), "giro", 2026) == {}
     assert cs.parse_uitslag_index("", "vuelta", 2026) == {}
     assert cs.parse_uitslag_index("<a href='/x/'>x</a>", "", 2026) == {}
+
+
+# ── startlijst ──────────────────────────────────────────────────────
+#
+# `tests/fixtures/cyclingstage_vuelta_2026_riders.html` is de pagina
+# https://www.cyclingstage.com/vuelta-2026/spain-riders-2026/ zoals hij op
+# 6 september 2026 was, door de eigenaar opgeslagen in Safari. Bij het
+# opruimen in 0.25.0 was de aanname dat cyclingstage geen startlijst heeft;
+# die klopte alleen voor de resultatenpagina.
+
+RIDERS = Path(__file__).parent / "fixtures" / "cyclingstage_vuelta_2026_riders.html"
+
+
+@pytest.fixture(scope="module")
+def startlijst(cs):
+    return cs.parse_startlijst(RIDERS.read_text())
+
+
+def test_alle_renners_en_ploegen(startlijst):
+    """23 ploegen van 8; verandert dit, dan is de pagina veranderd."""
+    assert len(startlijst) == 184
+    assert len({r["team"] for r in startlijst}) == 23
+    assert all(len([r for r in startlijst if r["team"] == p]) == 8
+               for p in {r["team"] for r in startlijst})
+
+
+def test_ploegnaam_met_een_cijfer_erin_levert_geen_valse_renner(startlijst):
+    """"Pinarello Q36.5" is een ploeg, geen renner 36 die "5" heet.
+
+    Een regex die in de hele bloktekst naar `NN.` zoekt vindt hier een 185e
+    rij. Die zou als rugnummer 36 binnenkomen — een nummer dat al bestaat,
+    dus het valt niet eens op als dubbel.
+    """
+    assert "Pinarello Q36.5" in {r["team"] for r in startlijst}
+    zesendertig = [r for r in startlijst if r["bib"] == 36]
+    assert len(zesendertig) == 1
+    assert zesendertig[0]["rider"] == "Christophe Laporte"
+    assert zesendertig[0]["team"] == "Visma | Lease a Bike"
+
+
+def test_regel_met_de_spatie_binnen_de_doorhaling(startlijst):
+    """Rugnummer 217 staat als `217.<del ...> Henri-François Haquin</del>`.
+
+    Geen spatie ná de punt maar erbinnen — als enige van de 184. Met `\\s` in
+    plaats van `\\s*` viel die renner weg en telde zijn ploeg zeven man.
+    """
+    haquin = [r for r in startlijst if r["bib"] == 217]
+    assert len(haquin) == 1
+    assert haquin[0]["rider"] == "Henri-François Haquin"
+    assert haquin[0]["out"] is True
+    assert len([r for r in startlijst if r["team"] == "Team Picnic PostNL"]) == 8
+
+
+def test_uitgevallen_renners_zijn_gemarkeerd(startlijst):
+    """De pagina zegt zelf wat de doorhaling betekent: "crossed-out riders withdrew"."""
+    uit = [r for r in startlijst if r["out"]]
+    assert len(uit) == 34
+    assert {"Tadej Pogacar", "Jay Vine"} <= {r["rider"] for r in uit}
+    # het rugnummer staat nooit binnen de doorhaling, alleen de naam
+    assert all(isinstance(r["bib"], int) for r in uit)
+
+
+def test_diakrieten_blijven_heel(startlijst):
+    namen = {r["rider"] for r in startlijst}
+    for naam in ("Raúl García Pierna", "Iñigo Elosegui", "Jørgen Nordhagen",
+                 "Marcel Camprubí", "Embret Svestad-Bårdseng"):
+        assert naam in namen
+
+
+def test_ploegnaam_met_pipe_blijft_heel(startlijst):
+    assert "Visma | Lease a Bike" in {r["team"] for r in startlijst}
+
+
+def test_startlijst_van_een_pagina_zonder_ploegblokken(cs):
+    assert cs.parse_startlijst("<html><body>nog geen startlijst</body></html>") == []
+    assert cs.parse_startlijst("") == []
+    # een block zonder ploegnaam is geen ploegblok
+    assert cs.parse_startlijst('<div class="block">1. Iemand</div>') == []
+    # en een ploeg zonder renners evenmin
+    assert cs.parse_startlijst('<div class="block"><i>Ploeg</i></div>') == []
+
+
+def test_rijen_per_ploeg_volgen_het_rugnummer(cs, startlijst):
+    """Eén per ploeg = het laagste rugnummer, in de volgorde van de bron."""
+    een = cs.startlijst_rijen(startlijst, 1)
+    assert len(een) == 23
+    assert [r["bib"] for r in een[:5]] == [1, 11, 21, 31, 41]
+    assert een[0]["rider"] == "Primoz Roglic"
+    # geen enkele rij draagt een `rank`: dit is geen rangorde
+    assert all("rank" not in r for r in een)
+
+
+def test_rijen_per_ploeg_kapt_af_maar_laat_geen_ploeg_weg(cs, startlijst):
+    drie = cs.startlijst_rijen(startlijst, 3)
+    assert len(drie) == 69
+    assert len({r["team"] for r in drie}) == 23
+    assert cs.startlijst_rijen(startlijst, 0) == []
+    assert cs.startlijst_rijen([], 3) == []
+
+
+def test_startlijstadres_wordt_opgezocht_niet_geraden(cs):
+    """Drie koersen, drie vormen — en de map wijkt af van de routemap.
+
+    De Vuelta-routepagina hangt onder `/vuelta-2026-route/`, zijn startlijst
+    onder `/vuelta-2026/`. Filteren op de map van de meegegeven URL zou hem
+    dus missen; daarom wordt `-route` er ook afgehaald.
+    """
+    route = ROUTE.read_text()
+    assert cs.startlijst_kandidaten(
+        route, "https://www.cyclingstage.com/vuelta-2026-route/spain-route-2026/"
+    ) == ["https://www.cyclingstage.com/vuelta-2026/spain-riders-2026/"]
+    # dezelfde pagina noemt ook een andere koers; die hoort niet mee te komen
+    assert cs.startlijst_kandidaten(
+        route, "https://www.cyclingstage.com/renewi-tour-2026/route-rt-2026/"
+    ) == ["https://www.cyclingstage.com/renewi-tour-2026/riders-rt-2026/"]
+    # een koers zonder `-route` in de map: hier zijn de twee mappen gelijk
+    assert cs.startlijst_kandidaten(
+        RIDERS.read_text(), "https://www.cyclingstage.com/tour-of-britain-2026/"
+    ) == ["https://www.cyclingstage.com/tour-of-britain-2026/riders-gb-2026/"]
+
+
+def test_startlijstadres_op_de_kalenderpagina(cs, kalender):
+    """De kalender noemt de link ook; handig als terugval."""
+    assert cs.startlijst_kandidaten(
+        FIXTURE.read_text(),
+        "https://www.cyclingstage.com/vuelta-2026-route/spain-route-2026/"
+    ) == ["https://www.cyclingstage.com/vuelta-2026/spain-riders-2026/"]
+
+
+def test_geen_startlijstadres_zonder_koers_of_pagina(cs):
+    assert cs.startlijst_kandidaten("", "https://www.cyclingstage.com/x-2026/") == []
+    assert cs.startlijst_kandidaten(ROUTE.read_text(), "") == []
+    # een koers die op deze pagina niet voorkomt levert niets op
+    assert cs.startlijst_kandidaten(
+        ROUTE.read_text(), "https://www.cyclingstage.com/giro-2026-route/") == []
