@@ -24,6 +24,15 @@ tv-zenders. Zowel mannen- als vrouwen-WorldTour.
 - **Uitbrengen gaat met een versienummer, nooit met een commit-hash.** Zie
   "Uitbrengen" verderop. Dit is een algemene voorkeur van de eigenaar en
   geldt voor al zijn projecten.
+- **Een afgeronde wijziging mag meteen live.** Staande toestemming van de
+  eigenaar (5 september 2026): naar `main` mergen en `vX.Y.Z` taggen hoort
+  bij het werk af maken, daar hoeft niet apart om gevraagd te worden. Een
+  wijziging die op een branch blijft staan is niet af — hij draait dan
+  nergens. Dat gold namelijk voor `v0.23.0`: gemerged, nooit getagd, en
+  daardoor liep de installatie van de eigenaar nog maanden op `v0.22.1`
+  zonder dat iemand dat zag. Vraag alleen als de wijziging zelf onzeker is
+  (niet getest, een gok in een parser), niet omdat uitbrengen een aparte
+  stap zou zijn.
 - **Elke wijziging aan de integratie hoogt het versienummer op.** In
   dezelfde commit, in `manifest.json` én `const.py`, en die twee blijven
   gelijk. Niet pas bij het taggen: zonder ophoging meldt Home Assistant nog
@@ -1125,7 +1134,9 @@ Ophogen doe je in de commit met de wijziging zelf (zie "Werkafspraken"), niet
 pas hier; taggen is dan alleen nog het nummer dat er al staat vastleggen.
 
 Uitbrengen is dus: zet de wijziging mét ophoging op `main` en tag daarna
-`vX.Y.Z` met datzelfde nummer. De workflow weigert een tag die niet
+`vX.Y.Z` met datzelfde nummer. Dat hoort in dezelfde beurt als de wijziging
+zelf (zie "Werkafspraken"); wachten op toestemming is niet nodig en heeft al
+één keer een versie laten stilstaan. De workflow weigert een tag die niet
 overeenkomt met de manifest — anders installeert HACS `v0.5.0` terwijl Home
 Assistant `0.4.0` rapporteert.
 
