@@ -42,12 +42,8 @@ def coordinator(wt, monkeypatch):
         return fn(*args)
 
     co._job = _job
-    # een koersblok haalt ook de startlijst, de ranglijst, de tv-gids en de
-    # vorige stand op; die gaan hier niet het net op
-    monkeypatch.setattr(wt, "_fetch_startlist", lambda *a: [])
-    monkeypatch.setattr(wt, "_fetch_ranking", lambda *a: {})
+    # een koersblok haalt ook de tv-gids op; die gaat hier niet het net op
     monkeypatch.setattr(wt, "_fetch_tv_html", lambda *a: "")
-    monkeypatch.setattr(wt, "_fetch_rank_maps", lambda *a: {})
     return co
 
 
@@ -134,57 +130,7 @@ def test_zonder_uitslag_blijft_het_blok_leeg_maar_bestaat_het(
     assert uit["other_label"] == ""
 
 
-def test_koers_zonder_uitslag_toont_de_startlijst(wt, coordinator, monkeypatch):
-    """Nog niets gereden: dan is wie er meedoet het enige dat er te melden valt."""
-    stages = _stages(FEMMES["url"], FEMMES["name"], [date(2026, 7, 20)], women=True)
-    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag(finished=False))
-    monkeypatch.setattr(wt, "_fetch_startlist", lambda *a: [
-        {"rider": "Vollering Demi", "rider_url": "rider/demi-vollering",
-         "team": "FDJ - SUEZ", "team_url": "team/fdj-suez-2026"},
-        {"rider": "Wiebes Lorena", "rider_url": "rider/lorena-wiebes",
-         "team": "Team SD Worx", "team_url": "team/sd-worx-2026"},
-    ])
-    monkeypatch.setattr(wt, "_fetch_ranking", lambda *a: {
-        "rider/lorena-wiebes": (1, 3120), "rider/demi-vollering": (3, 2480)})
-    # de ploegcodes komen van een eigen pagina; die gaat hier niet het net op
-    monkeypatch.setattr(wt, "_fetch_team_abbr", lambda *a: "")
 
-    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
-
-    assert [r["rider"] for r in blok["startlist_top"]] == [
-        "Wiebes Lorena", "Vollering Demi"]
-    assert blok["startlist_riders"] == 2 and blok["startlist_teams"] == 2
-
-
-def test_koers_met_uitslag_laat_de_startlijst_weg(wt, coordinator, monkeypatch):
-    """Met een uitslag zegt de startlijst niets meer en kost hij alleen ruimte."""
-    stages = _stages(FEMMES["url"], FEMMES["name"],
-                     [date(2026, 7, 17), VANDAAG], women=True)
-    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag())
-    monkeypatch.setattr(wt, "_fetch_startlist", lambda *a: [
-        {"rider": "Wiebes Lorena", "rider_url": "rider/lorena-wiebes",
-         "team": "Team SD Worx", "team_url": "team/sd-worx-2026"}])
-    monkeypatch.setattr(wt, "_fetch_ranking", lambda *a: {
-        "rider/lorena-wiebes": (1, 3120)})
-
-    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
-
-    assert blok["last_result"] and blok["startlist_top"] == []
-
-
-def test_startlijst_zonder_ranglijst_blijft_leeg(wt, coordinator, monkeypatch):
-    """Zonder bron voor de volgorde geen lijstje — maar wel de telling."""
-    stages = _stages(FEMMES["url"], FEMMES["name"], [date(2026, 7, 20)], women=True)
-    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag(finished=False))
-    monkeypatch.setattr(wt, "_fetch_startlist", lambda *a: [
-        {"rider": "Wiebes Lorena", "rider_url": "rider/lorena-wiebes",
-         "team": "Team SD Worx", "team_url": "team/sd-worx-2026"}])
-    monkeypatch.setattr(wt, "_fetch_ranking", lambda *a: {})
-
-    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
-
-    assert blok["startlist_top"] == []
-    assert blok["startlist_riders"] == 1 and blok["startlist_teams"] == 1
 
 
 def test_oude_attributen_herhalen_de_eerste_koers_met_uitslag(
@@ -339,42 +285,6 @@ def test_mislukte_tv_gids_kost_niet_het_hele_koersblok(wt, coordinator,
     assert uit["races"][1]["channels_detail"] == []
 
 
-def test_dagwinst_ook_in_de_andere_koersen(wt, coordinator, monkeypatch):
-    """Dezelfde berekening als op de tegel: koppelen op positie, niet op naam."""
-    uitslag = dict(_uitslag(), gc=[
-        {"rank": 1, "rider": "Vollering Demi", "time": "9:14:02", "prev": 1},
-        {"rank": 2, "rider": "Kopecky Lotte", "time": "9:14:36", "prev": 2},
-    ], points_top=[
-        {"rank": 1, "rider": "Wiebes Lorena", "points": 120, "prev": 1},
-    ])
-    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: uitslag)
-    monkeypatch.setattr(wt, "_fetch_rank_maps", lambda *a: {
-        "gc": {1: "6:10:00", 2: "6:10:20"},
-        "points": {1: 95}, "kom": {}, "youth": {},
-    })
-    stages = _stages(FEMMES["url"], FEMMES["name"],
-                     [date(2026, 7, 16), date(2026, 7, 17)], women=True)
-
-    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
-
-    # nummer 2 verloor 14 seconden op de leider: (34) - (20)
-    assert blok["gc_top"][1]["gain_s"] == 14
-    assert blok["points_top"][0]["gain"] == 25
-
-
-def test_zonder_vorige_etappe_geen_dagwinst(wt, coordinator, monkeypatch):
-    """Bij de eerste etappe valt er niets te vergelijken."""
-    monkeypatch.setattr(wt, "_fetch_stage", lambda *a: _uitslag())
-    gevraagd = []
-    monkeypatch.setattr(wt, "_fetch_rank_maps",
-                        lambda *a: gevraagd.append(a) or {})
-    stages = _stages(FEMMES["url"], FEMMES["name"], [date(2026, 7, 17)],
-                     women=True)
-
-    blok = _draai(coordinator, PRIMAIR, [_kandidaat(FEMMES, stages)])["races"][1]
-
-    assert gevraagd == []
-    assert "gain_s" not in blok["gc_top"][0]
 
 
 def test_tussensprint_alleen_bij_de_eerste_etappe_van_een_popupkoers(
@@ -448,138 +358,6 @@ def test_komende_etappe_draagt_starttijd_en_verwachte_finish(wt, coordinator):
 
     assert e["start_time"] == "12:50"
     assert re.match(r"^\d{2}:\d{2}$", e["finish_est"]), e["finish_est"]
-
-
-# ── officiële ploegcode ─────────────────────────────────────────────
-
-# De code komt van de ploegpagina bij procyclingstats. Er wordt niets uit
-# de naam afgeleid: een zelfgemaakte afkorting lijkt op een UCI-ploegcode
-# zonder het te zijn.
-
-def _stub_pcs(monkeypatch, code):
-    """Vervangt het procyclingstats-pakket door een Team met deze code."""
-    import sys
-    import types
-
-    class _Team:
-        def __init__(self, url):
-            self.url = url
-
-        def abbreviation(self):
-            if isinstance(code, Exception):
-                raise code
-            return code
-
-    mod = types.ModuleType("procyclingstats")
-    mod.Team = _Team
-    monkeypatch.setitem(sys.modules, "procyclingstats", mod)
-
-
-def test_ploegcode_komt_van_de_ploegpagina(wt, monkeypatch):
-    _stub_pcs(monkeypatch, " uad ")
-    assert wt._fetch_team_abbr("team/uae-team-emirates-2026") == "UAD"
-
-
-@pytest.mark.parametrize("waarde", [
-    "UAE Team Emirates",       # de volledige naam, geen code
-    "",                        # niets ingevuld
-    None,
-    "TEAMCODE",                # te lang om een ploegcode te zijn
-    RuntimeError("pagina weg"),
-])
-def test_onbruikbare_ploegcode_wordt_niet_getoond(wt, monkeypatch, waarde):
-    """Liever de volledige naam dan iets dat op een code lijkt."""
-    _stub_pcs(monkeypatch, waarde)
-    assert wt._fetch_team_abbr("team/x-2026") == ""
-
-
-@pytest.fixture
-def zonder_pauze(wt, monkeypatch):
-    async def _slaap(_seconden):
-        return None
-
-    monkeypatch.setattr(wt.asyncio, "sleep", _slaap)
-
-
-def _data(ploegen, per_lijst=1):
-    rijen = [{"rank": i + 1, "rider": f"Renner {i}", "team": p}
-             for i, p in enumerate(ploegen)]
-    return {"results": rijen,
-            "gc": [dict(r) for r in rijen[:per_lijst]],
-            "team_urls": {p: f"team/{p.lower()}-2026" for p in ploegen}}
-
-
-def test_ploegcode_komt_op_elke_rij(wt, coordinator, monkeypatch, zonder_pauze):
-    opgehaald = []
-    monkeypatch.setattr(wt, "_fetch_team_abbr",
-                        lambda url: opgehaald.append(url) or url[5:8].upper())
-    data = _data(["Alpha", "Beta"])
-
-    asyncio.run(coordinator._ploegcodes(data))
-
-    assert [r["team_code"] for r in data["results"]] == ["ALP", "BET"]
-    assert data["gc"][0]["team_code"] == "ALP"
-    # één verzoek per ploeg, niet per rij
-    assert len(opgehaald) == 2
-
-
-def test_ploegcode_wordt_maar_een_keer_opgehaald(wt, coordinator, monkeypatch,
-                                                 zonder_pauze):
-    opgehaald = []
-    monkeypatch.setattr(wt, "_fetch_team_abbr",
-                        lambda url: opgehaald.append(url) or "ABC")
-
-    asyncio.run(coordinator._ploegcodes(_data(["Alpha"])))
-    asyncio.run(coordinator._ploegcodes(_data(["Alpha"])))
-
-    assert len(opgehaald) == 1
-
-
-def test_mislukte_ploegcode_wordt_niet_elke_ronde_herhaald(
-        wt, coordinator, monkeypatch, zonder_pauze):
-    """Wel opnieuw bij een nieuwe kalenderdag; die leegt de cache."""
-    opgehaald = []
-    monkeypatch.setattr(wt, "_fetch_team_abbr",
-                        lambda url: opgehaald.append(url) or "")
-    data = _data(["Alpha"])
-
-    asyncio.run(coordinator._ploegcodes(data))
-    asyncio.run(coordinator._ploegcodes(data))
-
-    assert len(opgehaald) == 1
-    assert "team_code" not in data["results"][0], "lege code hoort niet op de rij"
-
-
-def test_ploeg_zonder_adres_houdt_zijn_naam(wt, coordinator, monkeypatch,
-                                            zonder_pauze):
-    monkeypatch.setattr(wt, "_fetch_team_abbr", lambda url: "ABC")
-    data = _data(["Alpha"])
-    data["team_urls"] = {}
-
-    asyncio.run(coordinator._ploegcodes(data))
-
-    assert "team_code" not in data["results"][0]
-    assert data["results"][0]["team"] == "Alpha"
-
-
-def test_niet_alle_ploegcodes_in_een_keer(wt, coordinator, monkeypatch,
-                                          zonder_pauze):
-    """Een koers telt zo'n twintig ploegen; die niet in één ronde ophalen."""
-    opgehaald = []
-    monkeypatch.setattr(wt, "_fetch_team_abbr",
-                        lambda url: opgehaald.append(url) or "ABC")
-    ploegen = [f"Ploeg{n:02d}" for n in range(wt.MAX_PLOEGCODES_PER_RONDE + 3)]
-    data = _data(ploegen)
-
-    asyncio.run(coordinator._ploegcodes(data))
-    assert len(opgehaald) == wt.MAX_PLOEGCODES_PER_RONDE
-    zonder = [r for r in data["results"] if "team_code" not in r]
-    assert len(zonder) == 3, "de rest hoort zijn volledige naam te houden"
-
-    # de volgende ronde komt de rest erbij
-    asyncio.run(coordinator._ploegcodes(data))
-    assert len(opgehaald) == len(ploegen)
-    assert all("team_code" in r for r in data["results"])
 
 
 # ── niveau in de attributen ─────────────────────────────────────────
