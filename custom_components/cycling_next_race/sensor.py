@@ -46,7 +46,6 @@ from .const import (
     CONF_MAX_OTHER,
     CONF_RESULT_N,
     CONF_SCAN_MINUTES,
-    CONF_START_N,
     CONF_UPCOMING_DAYS,
     CONF_UPCOMING_N,
     CONF_PAST_N,
@@ -55,7 +54,6 @@ from .const import (
     DEFAULT_MAX_OTHER,
     DEFAULT_RESULT_N,
     DEFAULT_SCAN_MINUTES,
-    DEFAULT_START_N,
     DEFAULT_UPCOMING_DAYS,
     DEFAULT_UPCOMING_N,
     DOMAIN,
@@ -75,7 +73,6 @@ LIVE_SCAN_INTERVAL = timedelta(minutes=DEFAULT_LIVE_SCAN_MINUTES)
 
 RESULT_N = DEFAULT_RESULT_N  # aantal renners in de uitslag (pop-up)
 GC_N = DEFAULT_GC_N          # aantal renners in het klassement (pop-up)
-START_N = DEFAULT_START_N    # aantal renners in de startlijst (pop-up)
 UPCOMING_N = DEFAULT_UPCOMING_N  # veiligheidscap op aantal komende etappes
 UPCOMING_DAYS = DEFAULT_UPCOMING_DAYS  # venster voor "Komende dagen"
 

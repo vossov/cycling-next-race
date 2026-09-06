@@ -20,9 +20,6 @@ KAART_URL = f"/{DOMAIN}/{KAART_BESTAND}"
 # Optiesleutels (opgeslagen in ConfigEntry.options)
 CONF_RESULT_N = "result_n"
 CONF_GC_N = "gc_n"
-# Hoeveel renners er in de startlijst staan zolang een koers nog geen
-# uitslag heeft.
-CONF_START_N = "start_n"
 CONF_UPCOMING_N = "upcoming_n"
 CONF_PAST_N = "past_n"
 CONF_UPCOMING_DAYS = "upcoming_days"
@@ -67,7 +64,6 @@ NIVEAU_KEUZE: dict[str, str] = {k: v["naam"] for k, v in NIVEAUS.items()}
 # Standaardwaarden; gelijk aan wat de integratie vóór de config flow gebruikte
 DEFAULT_RESULT_N = 10
 DEFAULT_GC_N = 10
-DEFAULT_START_N = 10
 DEFAULT_UPCOMING_N = 10
 # Hoeveel gereden etappes je in de pop-up terug kunt bladeren. Elke etappe
 # kost een verzoek (eenmalig — een gereden uitslag verandert niet meer) en
@@ -117,7 +113,6 @@ MAX_PAST_N = 21
 OPTION_DEFAULTS: dict[str, object] = {
     CONF_RESULT_N: DEFAULT_RESULT_N,
     CONF_GC_N: DEFAULT_GC_N,
-    CONF_START_N: DEFAULT_START_N,
     CONF_UPCOMING_N: DEFAULT_UPCOMING_N,
     CONF_PAST_N: DEFAULT_PAST_N,
     CONF_UPCOMING_DAYS: DEFAULT_UPCOMING_DAYS,

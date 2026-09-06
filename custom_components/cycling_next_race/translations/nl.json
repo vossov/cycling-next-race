@@ -17,7 +17,6 @@
         "data": {
           "result_n": "Aantal renners in de uitslag",
           "gc_n": "Aantal renners in het klassement",
-          "start_n": "Aantal renners in de startlijst",
           "upcoming_n": "Maximaal aantal komende etappes",
           "past_n": "Aantal etappes om terug te bladeren",
           "upcoming_days": "Komende etappes tonen tot (dagen vooruit)",
@@ -28,12 +27,12 @@
           "max_other": "Aantal koersen naast de getoonde in de pop-up"
         },
         "data_description": {
-          "start_n": "Zolang een koers nog geen uitslag heeft toont de pop-up wie er aan de start staan, op volgorde van de PCS-ranglijst.",
-          "scan_minutes": "Hoe vaak procyclingstats wordt geraadpleegd buiten koersen om.",
-          "live_scan_minutes": "Tijdens een live etappe, zodat de positie van het peloton meebeweegt.",
+          "scan_minutes": "Hoe vaak cyclingstage wordt geraadpleegd buiten koersen om.",
+          "live_scan_minutes": "Tijdens een live etappe, zodat de uitslag er sneller staat.",
+          "past_n": "Hoe ver je in de pop-up terug kunt bladeren door de uitslagen. 21 is een hele grote ronde; elke etappe kost ruimte in de attributen, die al boven de grens van de recorder zitten.",
           "levels": "Deze niveaus mogen de tegel pakken en staan ook in de pop-up.",
-          "levels_popup": "Deze niveaus komen er in de pop-up als knop bij, maar blijven van de tegel af. Zet ProSeries hier neer om koersen als de Ronde van Denemarken te volgen zonder dat je dashboard verandert.",
-          "max_other": "0 laat alleen de getoonde koers zien. Elke koers erbij kost verzoeken bij procyclingstats en ruimte in de attributen."
+          "levels_popup": "Deze niveaus komen er in de pop-up als knop bij, maar blijven van de tegel af.",
+          "max_other": "0 laat alleen de getoonde koers zien. Elke koers erbij kost verzoeken bij cyclingstage en ruimte in de attributen."
         }
       }
     }
