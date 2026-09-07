@@ -1296,6 +1296,11 @@ vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/c
 
 ## Openstaande punten
 
+**Wat er aan opgeslagen pagina's nodig is staat in
+`docs/gevraagde-paginas.md`**, op volgorde van wat het meest oplevert. Vul die
+lijst aan zodra er een nieuwe blinde vlek bij komt, en streep af wat er als
+fixture in `tests/fixtures/` is geland.
+
 - **De resultatenindexpagina van cyclingstage is niet in het echt gelezen.**
   `parse_uitslag_index` draait op de links die in de opgeslagen
   Vuelta-routepagina staan; de indexpagina zelf kon van hieruit niet worden
