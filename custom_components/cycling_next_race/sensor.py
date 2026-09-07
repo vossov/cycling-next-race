@@ -559,6 +559,50 @@ def _etappelijst_urls(race_url: str) -> list[str]:
 # staan. `{}` in de cache betekent "vandaag al geprobeerd, niets gevonden" —
 # zonder dat zou elke etappe van zo'n koers elke ronde de pagina opnieuw
 # ophalen.
+# De HTML van een etappepagina, per dag. Hij wordt voor twee dingen gebruikt
+# — de colnamen én het GPX-adres — en dat hoort één verzoek te zijn.
+_ETAPPE_HTML: dict[str, str] = {}
+_ETAPPE_HTML_DAG = None
+
+
+def _etappe_html(url: str) -> str:
+    """De etappepagina, hoogstens één keer per dag opgehaald."""
+    global _ETAPPE_HTML_DAG
+
+    if not url:
+        return ""
+    vandaag = date.today()
+    if _ETAPPE_HTML_DAG != vandaag:
+        _ETAPPE_HTML.clear()
+        _ETAPPE_HTML_DAG = vandaag
+    if url not in _ETAPPE_HTML:
+        _ETAPPE_HTML[url] = _haal_html(url, "etappetekst")
+    return _ETAPPE_HTML[url]
+
+
+def _gpx_uit_etappe(stage: dict) -> list[str]:
+    """Het GPX-adres dat de etappepagina zelf noemt.
+
+    `_gpx_urls` bouwt adressen uit de koersslug en dat gaat mis zodra de map
+    van de plaatjes anders heet dan de koers. Bij de Vuelta is dat zo — de
+    koers is `vuelta`, de map `vuelta-spain` — en beide gebouwde adressen
+    geven daar een 404. Op 7 september 2026 nagemeten:
+    `.../images/vuelta/2026/stage-19-times.htm` bestaat niet,
+    `.../images/vuelta-spain/2026/stage-4-route.gpx` wel, en dat laatste
+    adres staat gewoon op de etappepagina.
+
+    Kost geen extra verzoek: die pagina wordt toch al opgehaald voor de
+    colnamen, en `_etappe_html` deelt hem.
+    """
+    from . import cyclingstage as cs
+
+    url = stage.get("stage_url") or ""
+    jaar = stage["date"].year if stage.get("date") else 0
+    if not url:
+        return []
+    return cs.gpx_uit_pagina(_etappe_html(url), jaar)
+
+
 _UITSLAGINDEX: dict[str, dict] = {}
 _UITSLAGINDEX_DAG = None
 
@@ -957,15 +1001,9 @@ def _fetch_stage_names(url, distance=None):
     """
     if not url:
         return [], {}
-    import urllib.request
     from html import unescape
-    try:
-        req = urllib.request.Request(
-            url, headers=UA_HEADERS)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            doc = resp.read().decode("utf-8", "replace")
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Etappetekst ophalen mislukt %s: %s", url, err)
+    doc = _etappe_html(url)
+    if not doc:
         return [], {}
     # Start/finish uit <title> "... stage N: Vertrek - Aankomst" (spaties rond koppelteken
     # vereist, zodat plaatsnamen als Orcières-Merlette heel blijven)
@@ -1834,7 +1872,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
         enkel adres iets op, dan wordt het adres opgezocht op de
         GPX-overzichtspagina van die koers - de bron, dus geen gokwerk.
         """
-        kandidaten = _gpx_urls(s)
+        # eerst wat de etappepagina zélf noemt, dan pas de gebouwde adressen
+        gelezen = await self._job(_gpx_uit_etappe, s)
+        gelezen = list(gelezen) if isinstance(gelezen, (list, tuple)) else []
+        kandidaten = gelezen + [u for u in _gpx_urls(s) if u not in gelezen]
         # één voor één en niet de hele lijst aan `_fetch_gpx`, want dan is
         # achteraf te zeggen wélk adres het werd (`gpx_used`)
         for kandidaat in kandidaten:

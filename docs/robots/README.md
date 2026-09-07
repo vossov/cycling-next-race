@@ -25,3 +25,30 @@ Voor een live-feed komt daar nog iets bij dat robots.txt helemaal niet
 regelt: het verzoekpatroon. Een kalenderpagina is één verzoek per dag, een
 live-positie wil elke minuut ververst worden. Zie "Live: welke bron" in
 CLAUDE.md.
+
+## www.lavuelta.es — `Disallow: /api` (7 september 2026)
+
+Het hoofddomein hééft wel een robots.txt, en daar staat onder
+`User-agent: *`:
+
+```
+Disallow: /admin
+Disallow: /sonatadmin
+Disallow: /api
+Disallow: /graphql
+Disallow: /login
+```
+
+**`/api` is precies het pad dat een live-koppeling zou gebruiken**
+(`/api/telemetryCompetitor-2026`, `/api/ranking-2026`).
+
+Formeel geldt dit niet voor `racecenter.lavuelta.es`: robots.txt werkt per
+host, en dat subdomein heeft er zelf geen (404). Maar dit is dezelfde
+situatie als `Disallow: /images` bij cyclingstage, en scherper: daar ging
+het om een sjabloonregel voor afbeeldingen, hier om precies het
+gegevenspad, expliciet genoemd naast `/admin` en `/graphql`.
+
+Wie hierop terugkomt: dit is een uitspraak van ASO over hoe zij hun API
+bekeken willen zien. Een 404 op het subdomein is geen toestemming, en de
+afwezigheid van een regel op de ene host weegt niet op tegen een expliciete
+regel op de andere.

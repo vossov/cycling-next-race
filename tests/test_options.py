@@ -60,6 +60,9 @@ def test_cache_verwart_grote_en_kleine_profielen_niet(wt):
     gevraagd = []
 
     async def nep_job(fn, *args):
+        # de etappepagina noemt zelf geen gpx in deze test
+        if fn is wt._gpx_uit_etappe:
+            return []
         # args van _fetch_gpx: (gpx_url, n_out)
         gevraagd.append(args[1])
         return [[i * 1.0, 100 + i] for i in range(args[1])], []
@@ -87,6 +90,8 @@ def test_beschikbaarheid_blijft_bekend_voor_de_koerskeuze(wt):
     c = wt.CyclingCoordinator(None)
 
     async def zonder_profiel(fn, *args):
+        if fn is wt._gpx_uit_etappe:
+            return []
         # de terugval vraagt ook de overzichtspagina op; die geeft een dict
         return {} if fn is wt._fetch_gpx_index else ([], [])
 
@@ -121,6 +126,8 @@ def test_gpx_valt_terug_op_de_overzichtspagina(wt):
     opgehaald = []
 
     async def nep_job(fn, *args):
+        if fn is wt._gpx_uit_etappe:
+            return []
         if fn is wt._fetch_gpx_index:
             return {3: echt}
         opgehaald.append(args[0])
@@ -147,6 +154,8 @@ def test_gpx_overzichtspagina_hoogstens_een_keer_per_koers(wt):
     index_verzoeken = []
 
     async def nep_job(fn, *args):
+        if fn is wt._gpx_uit_etappe:
+            return []
         if fn is wt._fetch_gpx_index:
             index_verzoeken.append(args[0].get("race_slug"))
             return {}

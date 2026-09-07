@@ -774,3 +774,40 @@ def startlijst_kandidaten(html: str, koers_url: str) -> list[str]:
         if adres not in uit:
             uit.append(adres)
     return uit
+
+
+# ── het GPX-adres zoals de bron het zelf noemt ──────────────────────
+
+# `gpx_urls()` bouwt adressen uit de koersslug, en dat gaat mis zodra de
+# map van de plaatjes anders heet dan de koers. Bij de Vuelta is dat zo: de
+# koers is `vuelta`, de map `vuelta-spain`. Beide vaste adressen geven daar
+# een 404 en het profiel hing volledig op de terugval.
+#
+# De etappepagina noemt het echte adres gewoon:
+#   https://cdn.cyclingstage.com/images/vuelta-spain/2026/stage-4-route.gpx
+_GPX_OP_PAGINA = re.compile(r'href=["\']([^"\']+\.gpx)["\']', re.I)
+
+
+def gpx_uit_pagina(html: str, jaar: int = 0) -> list[str]:
+    """De GPX-adressen die een etappepagina zelf noemt.
+
+    Lezen in plaats van raden — dezelfde lijn als bij de routepagina's, de
+    startlijst en het resultatenoverzicht. Adressen van een ander jaar
+    vallen af als er een jaar is meegegeven; zo'n pagina linkt ook naar
+    eerdere jaargangen.
+    """
+    uit = []
+    for u in _GPX_OP_PAGINA.findall(html or ""):
+        adres = u.strip()
+        if adres.startswith("//"):
+            adres = "https:" + adres
+        elif adres.startswith("/"):
+            adres = BASIS + adres
+        elif not adres.startswith("http"):
+            continue
+        adres = re.sub(r"^http://", "https://", adres)
+        if jaar and str(jaar) not in adres:
+            continue
+        if adres not in uit:
+            uit.append(adres)
+    return uit

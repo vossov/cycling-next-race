@@ -814,7 +814,25 @@ onder September) van 22 september tot 13 september — achteruit.
 | Tijdschema (tussensprint) | `www.../images/{slug}/{y}/stage-{n}-times.htm` |
 | Etappetekst (colnamen, finishtijd) | per koers een sjabloon, zie `CYCLINGSTAGE_ROUTE` |
 
-**Die GPX-adressen zijn een aanname over de bestandsnaam, geen bron.** Wijkt
+**Sinds 0.26.4 komt het GPX-adres van de etappepagina zelf.** Die noemt het
+gewoon (`https://cdn.cyclingstage.com/images/vuelta-spain/2026/stage-4-route.gpx`)
+en wordt toch al opgehaald voor de colnamen, dus het kost geen verzoek —
+`_etappe_html` deelt hem tussen `_gpx_uit_etappe` en `_fetch_stage_names`.
+
+Dat was nodig omdat de gebouwde adressen hieronder **fout zijn voor de
+Vuelta**: de koersslug is `vuelta`, maar de map van de plaatjes heet
+`vuelta-spain`. Beide vaste adressen gaven daar een 404, en het profiel hing
+volledig op de terugval via de overzichtspagina. Op 7 september 2026
+nagemeten met `images/vuelta/2026/stage-19-times.htm` — bestaat niet.
+
+**Dat raakt ook het tijdschema.** `times_url()` bouwt zijn adres op dezelfde
+manier en is dus voor de Vuelta net zo fout; de tussensprint komt daar niet
+binnen. De etappepagina noemt geen `times.htm`-link, dus daar is die
+oplossing niet te herhalen. Wie dit wil repareren heeft de juiste map nodig
+— vermoedelijk `vuelta-spain`, maar dat is niet nagekeken.
+
+**De gebouwde adressen hieronder zijn een aanname over de bestandsnaam én
+over de map, geen bron.** Wijkt
 cyclingstage er voor één koers van af, dan blijft het profiel leeg zonder dat
 er iets kapot lijkt — de melding "de GPX van de Vuelta doet het niet" was van
 hieruit niet na te trekken, juist omdat er geen fout uit komt. Levert geen

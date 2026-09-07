@@ -346,7 +346,7 @@ def test_komende_etappe_draagt_starttijd_en_verwachte_finish(wt, coordinator):
             return dict(meta)
         if fn is wt._fetch_gpx:
             return [], []
-        if fn is wt._fetch_stage_climbs:
+        if fn is wt._gpx_uit_etappe:
             return []
         return fn(*args)
 

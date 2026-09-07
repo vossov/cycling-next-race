@@ -812,3 +812,73 @@ def test_geen_startlijstadres_zonder_koers_of_pagina(cs):
     # een koers die op deze pagina niet voorkomt levert niets op
     assert cs.startlijst_kandidaten(
         ROUTE.read_text(), "https://www.cyclingstage.com/giro-2026-route/") == []
+
+
+# ── het GPX-adres komt van de pagina, niet uit een gok ───────────────
+
+WK = Path(__file__).parent / "fixtures" / "cyclingstage_wk_2026_canada.html"
+FAVOURITES = (Path(__file__).parent / "fixtures"
+              / "cyclingstage_vuelta_2026_favourites.html")
+
+
+def test_de_gebouwde_gpx_adressen_kloppen_niet_voor_de_vuelta(cs):
+    """De map van de plaatjes heet anders dan de koers.
+
+    De koersslug is `vuelta`, maar de plaatjes staan onder `vuelta-spain`.
+    Beide adressen die `gpx_urls` bouwt geven daar een 404 — op 7 september
+    2026 nagemeten met `stage-19-times.htm`, dat langs dezelfde weg wordt
+    opgebouwd. Het profiel hing daarmee volledig op de terugval.
+    """
+    gebouwd = cs.gpx_urls("vuelta", 2026, 4)
+    assert all("/images/vuelta/" in u for u in gebouwd)
+    echt = cs.gpx_uit_pagina(ETAPPE4.read_text(), 2026)
+    assert echt == ["https://cdn.cyclingstage.com/images/vuelta-spain/2026/"
+                    "stage-4-route.gpx"]
+    assert echt[0] not in gebouwd
+
+
+def test_gpx_uit_de_etappepagina_randgevallen(cs):
+    assert cs.gpx_uit_pagina("", 2026) == []
+    assert cs.gpx_uit_pagina(ETAPPE4.read_text(), 2025) == []   # ander jaar
+    # relatieve en protocolloze adressen worden volledig gemaakt
+    assert cs.gpx_uit_pagina('<a href="/x/2026/r.gpx">', 2026) == [
+        "https://www.cyclingstage.com/x/2026/r.gpx"]
+    assert cs.gpx_uit_pagina('<a href="//cdn.x.com/2026/r.gpx">', 2026) == [
+        "https://cdn.x.com/2026/r.gpx"]
+    # geen dubbele
+    twee = '<a href="https://cdn.x.com/2026/r.gpx"><a href="https://cdn.x.com/2026/r.gpx">'
+    assert len(cs.gpx_uit_pagina(twee, 2026)) == 1
+
+
+# ── koersen waar de terugval niet werkt ─────────────────────────────
+
+
+def test_het_wk_heeft_een_tabel_met_andere_kolommen(cs):
+    """Vastleggen dat dit niet werkt, en waarom.
+
+    Het WK is een van de zes koersen zonder routeadres in de kalender. Zijn
+    programmatabel staat wél op de koerspagina, maar met een andere
+    indeling: `datum | start - finish | type | km | el.gain`, zonder
+    nummerkolom — het zijn onderdelen (ITT, mixed relay, wegrace), geen
+    genummerde etappes. En er staat geen enkele link in, dus er is ook geen
+    etappe-adres om een uitslag of profiel mee op te halen.
+    """
+    html = WK.read_text()
+    assert cs.parse_etappes(html, 2026) == []
+    assert cs.route_kandidaten(
+        html, "https://www.cyclingstage.com/world-championships-2026-canada/") == []
+    # de tabel is er wel, en noemt de onderdelen
+    assert "mixed relay" in html and "el.gain" in html
+
+
+def test_de_favorietenpagina_is_geen_kopmannenlijst(cs):
+    """Opgevraagd als mogelijke bron voor "wie ertoe doet"; dat is hij niet.
+
+    Het is een tabel met per etappe een omschrijving van het soort renner
+    dat kan winnen, niet een opsomming van namen. Daarmee blijft de
+    startlijst op rugnummer staan, met de vermelding dat dat geen rangorde
+    is.
+    """
+    html = FAVOURITES.read_text()
+    assert cs.parse_blokken(html) == []
+    assert "Favourites for the first red jersey" in html
