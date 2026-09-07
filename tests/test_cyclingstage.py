@@ -882,3 +882,59 @@ def test_de_favorietenpagina_is_geen_kopmannenlijst(cs):
     html = FAVOURITES.read_text()
     assert cs.parse_blokken(html) == []
     assert "Favourites for the first red jersey" in html
+
+
+# ── de drie terugvallen, nu op de echte pagina's ─────────────────────
+
+RESULTS_INDEX = (Path(__file__).parent / "fixtures"
+                 / "cyclingstage_vuelta_2026_results_index.html")
+GPX_INDEX = (Path(__file__).parent / "fixtures"
+             / "cyclingstage_vuelta_2026_gpx_index.html")
+TOB_ROUTE = (Path(__file__).parent / "fixtures"
+             / "cyclingstage_tour_of_britain_2026_route.html")
+
+
+def test_resultatenoverzicht_op_de_echte_pagina(cs):
+    """Stond in CLAUDE.md als "niet in het echt gelezen"; nu wel.
+
+    De terugval leest exact de adressen die `uitslag_url` ook afleidt — dus
+    de afleiding klopt én de terugval doet wat hij moet.
+    """
+    index = cs.parse_uitslag_index(RESULTS_INDEX.read_text(), "vuelta", 2026)
+    assert len(index) == 15
+    assert sorted(index) == list(range(1, 16))
+    assert index[1] == ("https://www.cyclingstage.com/vuelta-2026-results/"
+                        "stage-1-spain-results-2026/")
+    # en dat is hetzelfde adres als de afleiding uit het etappeadres geeft
+    assert cs.uitslag_url(
+        "https://www.cyclingstage.com/vuelta-2026-route/stage-1-spain-2026/"
+    ) == index[1]
+    # een andere koers of een ander jaar levert niets op
+    assert cs.parse_uitslag_index(RESULTS_INDEX.read_text(), "giro", 2026) == {}
+
+
+def test_routepagina_zonder_tabel(cs):
+    """De Tour of Britain: een derde vorm, met de etappes als lopende tekst.
+
+    Het adres `route-gb-2026` was de openstaande aanname van 0.24 en blijkt
+    te kloppen. Maar er staat geen tabel op — `parse_etappes` vindt niets en
+    `parse_etappes_tekst` moet het overnemen.
+    """
+    html = TOB_ROUTE.read_text()
+    assert cs.parse_etappes(html, 2026) == []
+    tekst = cs.parse_etappes_tekst(html)
+    assert [r["idx"] for r in tekst] == [1, 2, 3, 4, 5]
+    assert tekst[0]["distance_km"] == 182.5
+    assert tekst[0]["vertical_m"] == 1393
+    assert tekst[3]["vertical_m"] == 2699
+    # wat de pagina niet geeft blijft leeg
+    assert all(r["date"] is None and r["url"] == "" for r in tekst)
+
+
+def test_tekstvorm_slaat_niet_aan_op_een_gewone_routepagina(cs):
+    """Een pagina mét tabel hoort langs de gewone weg te gaan."""
+    assert cs.parse_etappes_tekst(ROUTE.read_text()) == []
+    assert cs.parse_etappes_tekst("") == []
+    # "Stage 3" zonder 1 en 2 is geen etappelijst
+    assert cs.parse_etappes_tekst(
+        "<em>Stage 3</em> – <small>10 kilometres</small>") == []

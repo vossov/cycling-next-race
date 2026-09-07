@@ -450,6 +450,34 @@ Dat leverde twee fouten op die geen fout léken:
   cyclingstage noemt élke koers van de site (268 links op de
   Vuelta-routepagina), dus zonder die padeis is dit een verzoekenregen.
 
+### Drie vormen van een routepagina (sinds 0.27)
+
+Een routepagina kan er op drie manieren uitzien, en alle drie komen voor:
+
+1. **Een etappetabel** — nummer, datum, "start - finish", afstand, terrein,
+   met per etappe een adres. Zo staan de grote rondes erop; `parse_etappes`
+   leest dit.
+2. **Een programmatabel zonder nummerkolom** — datum, "start - finish",
+   type, km, hoogtemeters. Zo staat het WK erop: het zijn onderdelen (ITT,
+   mixed relay, wegrace) en geen genummerde etappes, en er staat geen enkele
+   link in. Daar valt dus niets mee te doen; zie de fixture
+   `cyclingstage_wk_2026_canada.html`.
+3. **Geen tabel, maar lopende tekst** — `<em>Stage 1</em> – <small>182.5
+   kilometres, 1,393 metres of elevation gain</small>` gevolgd door een
+   alinea. Zo staat de Tour of Britain erop. `parse_etappes_tekst` leest
+   nummer, afstand en hoogtemeters; meer staat er niet.
+
+Bij die derde vorm ontbreekt de **datum per etappe**, en daar rekent de hele
+tegelkeuze op. `_datums_verdelen` vult hem alleen aan als er precies zoveel
+etappes zijn als koersdagen — dan is er maar één indeling mogelijk en is het
+geen gok. Zijn er minder etappes dan dagen, dan zitten er rustdagen tussen
+en is niet te zeggen wélke; dan blijft de lijst leeg en valt de koers weg.
+Een etappe op de verkeerde dag is erger dan geen etappe.
+
+Er is bij die vorm ook geen etappe-adres. Dat is minder erg dan het lijkt:
+de uitslag komt via `_uitslagindex` (de resultatenpagina van de koers noemt
+de adressen) en het profiel via de GPX-overzichtspagina.
+
 ### Uitslagen buiten de grote rondes (sinds 0.24)
 
 `uitslag_url` eiste `-route/` in het etappeadres. Dat hébben alleen de Giro,
@@ -674,6 +702,38 @@ voor hem geldt, hoort zich in elk geval kenbaar te maken.
 FirstCycling, en het is ook niet niks. Wie hierop terugkomt: de bestanden
 staan in `docs/robots/`, de afweging staat hierboven, en het gaat om het
 hoogteprofiel en de tussensprint — niet om de rest van de integratie.
+
+### Wat "verboden" betekent in dit project
+
+Vastgelegd op 7 september 2026, na een discussie waarin dit te ver was
+doorgeslagen.
+
+**De regel: wat niet expliciet verboden is, mag.** Een `Disallow` die op onze
+user-agent en op ons pad slaat is een verbod en daar houden we ons aan. Een
+afwezige regel, een regel voor een andere bot, een regel op een ander
+subdomein of een uitgecommentarieerde regel is géén verbod.
+
+Waarom die grens zo strak getrokken is: bij het tegenovergestelde
+uitgangspunt — "als het niet uitdrukkelijk is toegestaan, laat het" — mag
+niets meer. Vrijwel geen enkele site geeft expliciet toestemming, dus dan
+valt elke bron af en houdt deze integratie op te bestaan. Dat is geen
+zorgvuldigheid meer maar verlamming.
+
+Wat dat concreet betekent voor de drie gevallen die we tegenkwamen:
+
+| geval | uitkomst |
+|---|---|
+| FirstCycling: `User-agent: *` met `Disallow: /`, plus ClaudeBot bij naam | **verboden**, en dat blijft zo |
+| Cyclingstage: `Disallow: /images` in de blokken van googlebot en anderen, geen actieve `*`-groep | **toegestaan** — die regels gelden voor die bots, niet voor ons |
+| ASO: `Disallow: /api` op `www.lavuelta.es`, geen robots.txt op `racecenter.lavuelta.es` | **toegestaan** — robots.txt geldt per host, dat is de standaard en geen technicality |
+
+Wat wél van ons wordt gevraagd, juist omdat we ons op die grens beroepen:
+een herkenbare user-agent met een adres erin (zie `UA` in sensor.py), niet
+vaker ophalen dan nodig, en netjes degraderen als een bron eruit ligt. Wie
+zich op de letter beroept, hoort zich ook aan de rest van de omgangsvormen
+te houden.
+
+De bestanden staan in `docs/robots/`, met per bron wat er precies staat.
 
 ### FirstCycling is uitgesloten (robots.txt)
 
@@ -1426,17 +1486,6 @@ vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/c
 lijst aan zodra er een nieuwe blinde vlek bij komt, en streep af wat er als
 fixture in `tests/fixtures/` is geland.
 
-- **De resultatenindexpagina van cyclingstage is niet in het echt gelezen.**
-  `parse_uitslag_index` draait op de links die in de opgeslagen
-  Vuelta-routepagina staan; de indexpagina zelf kon van hieruit niet worden
-  opgehaald. Werkt de terugval niet, kijk in het debuglogboek op
-  "Uitslagoverzicht": daar staat of de pagina binnenkwam en hoeveel etappes
-  eruit kwamen.
-- **De etappelijst van de zes koersen zonder routeadres is niet in het echt
-  gecontroleerd.** Dat `/tour-of-britain-2026/route-gb-2026/` bestaat komt
-  uit een zoekresultaat, niet uit de pagina zelf. Als de Tour of Britain nog
-  steeds één etappe toont, kijk dan op "Etappelijst van ... gevonden op" en
-  op "Routepagina zonder etappetabel" in het debuglogboek.
 - **Live: geen bron aangesloten, wel in kaart gebracht.** Zie "Live: welke
   bron" hierboven. ASO Race Center is de meest lonende eerste stap; de
   live-feed zelf is nog niet vastgesteld en de `robots.txt` van ASO is nog
@@ -1461,15 +1510,6 @@ fixture in `tests/fixtures/` is geland.
 - `LEIDERSTRUI` dekt alleen de koersen waarvan de truikleur vaststaat. Voor
   de rest (Catalunya, Baskenland, Denemarken, Renewi, Groot-Brittannië …)
   is er bewust niets ingevuld. Aanvullen mag, maar alleen na controle.
-- **De GPX-overzichtspagina is niet in het echt gelezen.** Dat de pagina
-  bestaat en `{slug}-{jaar}-gpx` heet, is nagekeken via zoekresultaten met
-  echte adressen (`vuelta-2026-gpx`, `giro-2026-gpx`,
-  `tour-de-france-2026-gpx`); hoe de links erop staan is dat **niet** — de
-  proxy laat cyclingstage niet door. `_parse_gpx_index` is daarom zo ruim
-  mogelijk gehouden (elke `href` die op `.gpx` eindigt, nummer uit het
-  bestandspad) en de test ernaast draait op synthetische HTML. Werkt de
-  terugval niet, kijk dan in het debuglogboek op "GPX-overzicht": daar staat
-  of de pagina binnenkwam en hoeveel links eruit kwamen.
 - **De cyclingstage-adressen van de etappeteksten zijn per koers gecheckt via
   zoekresultaten, niet door de pagina te openen.** Voor Giro en Vuelta stond
   er de koersnaam waar het land hoort (`stage-5-giro-2026` in plaats van

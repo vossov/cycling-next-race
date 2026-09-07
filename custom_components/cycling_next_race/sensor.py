@@ -492,6 +492,21 @@ def _cs_event_stages(event: dict) -> list[dict]:
                               race_url, kandidaat)
                 break
         if not rijen:
+            # Derde vorm: een routepagina zonder tabel, met de etappes als
+            # lopende tekst (`<em>Stage 1</em> - <small>182.5 kilometres,
+            # 1,393 metres of elevation gain</small>`). Zo staat de Tour of
+            # Britain erop. Die noemt geen datum per etappe; `_datums_verdelen`
+            # vult die alleen in als het sluitend kan.
+            for html in opgehaald:
+                tekst = cs.parse_etappes_tekst(html)
+                if tekst:
+                    rijen = _datums_verdelen(tekst, event.get("start"),
+                                             event.get("end"))
+                    if rijen:
+                        _LOGGER.debug("Etappelijst van %s uit de tekst: %s etappes",
+                                      race_url, len(rijen))
+                    break
+        if not rijen:
             _LOGGER.debug("Geen etappelijst gevonden voor %s", race_url)
             return []
 
@@ -512,7 +527,36 @@ def _cs_event_stages(event: dict) -> list[dict]:
         "stage_type": r["stage_type"],
         "departure": r["departure"],
         "arrival": r["arrival"],
+        # alleen de tekstvorm geeft dit; uit een tabel komt het van de
+        # etappepagina zelf
+        **({"vertical_m": r["vertical_m"]} if r.get("vertical_m") else {}),
     } for r in rijen]
+
+
+def _datums_verdelen(rijen: list[dict], start, eind) -> list[dict]:
+    """Datums invullen voor etappes die er zelf geen hebben.
+
+    Een routepagina zonder tabel (de Tour of Britain) noemt per etappe wel
+    het nummer, de afstand en de hoogtemeters, maar niet de dag. Die valt
+    alleen sluitend af te leiden als er precies zoveel etappes zijn als
+    koersdagen: dan is er maar één indeling mogelijk en is etappe N op
+    `start + N-1`.
+
+    Zijn er minder etappes dan dagen, dan zitten er rustdagen tussen en is
+    niet te zeggen wélke. Dan blijft de datum leeg en valt de koers weg —
+    dat is beter dan een etappe op de verkeerde dag zetten, want daar rekent
+    de hele tegel op.
+    """
+    if not rijen or not start or not eind:
+        return []
+    dagen = (eind - start).days + 1
+    if len(rijen) != dagen:
+        _LOGGER.debug("Etappes zonder datum: %s etappes over %s dagen, "
+                      "niet sluitend af te leiden", len(rijen), dagen)
+        return []
+    for i, r in enumerate(rijen):
+        r["date"] = start + timedelta(days=i)
+    return rijen
 
 
 def _etappelijst_urls(race_url: str) -> list[str]:

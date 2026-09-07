@@ -811,3 +811,54 @@ def gpx_uit_pagina(html: str, jaar: int = 0) -> list[str]:
         if adres not in uit:
             uit.append(adres)
     return uit
+
+
+# ── routepagina zonder tabel ────────────────────────────────────────
+
+# Een derde vorm, gevonden op de Tour of Britain (7 september 2026): de
+# routepagina heeft géén tabel maar een lopend verhaal, met per etappe een
+# kopregel en daaronder een alinea beschrijving:
+#
+#   <em>Stage 1</em> – <small>182.5 kilometres, 1,393 metres of elevation gain</small><br>
+#   The Tour of Britain opens with a big loop north of ...
+#
+# Wat er staat: nummer, afstand en hoogtemeters. Wat er níét staat: de datum
+# per etappe, start en finish, en een etappe-adres.
+_TEKST_ETAPPE = re.compile(
+    r"<em>\s*Stage\s+(\d+)\s*</em>\s*[-–—]\s*<small>(.*?)</small>",
+    re.S | re.I)
+_TEKST_AFSTAND = re.compile(r"([\d.,]+)\s*kilometre", re.I)
+_TEKST_HOOGTE = re.compile(r"([\d.,]+)\s*metres?\s+of\s+elevation", re.I)
+
+
+def parse_etappes_tekst(html: str) -> list[dict]:
+    """Etappes uit een routepagina die geen etappetabel heeft.
+
+    Geeft alleen wat er staat: `idx`, `distance_km` en `vertical_m`. Geen
+    datum, geen start/finish, geen adres — die noemt zo'n pagina niet, en
+    invullen wat er niet staat doet dit project niet. De aanroeper vult de
+    datum aan als hij die sluitend kan afleiden; zie `_datums_verdelen` in
+    sensor.py.
+    """
+    uit = []
+    for m in _TEKST_ETAPPE.finditer(html or ""):
+        kaal = _kaal(m.group(2))
+        afstand = _TEKST_AFSTAND.search(kaal)
+        hoogte = _TEKST_HOOGTE.search(kaal)
+        rij = {"idx": int(m.group(1)), "date": None, "name": "",
+               "departure": "", "arrival": "", "url": "",
+               "distance_km": _getal(afstand.group(1)) if afstand else None,
+               "stage_type": ""}
+        if hoogte:
+            try:
+                rij["vertical_m"] = int(float(hoogte.group(1).replace(",", "")))
+            except ValueError:
+                pass
+        uit.append(rij)
+    # oplopend en zonder gaten, anders is het geen etappelijst maar tekst die
+    # toevallig "Stage N" bevat
+    if [r["idx"] for r in uit] != list(range(1, len(uit) + 1)):
+        return []
+    if uit:
+        _LOGGER.debug("Routepagina zonder tabel: %s etappes uit de tekst", len(uit))
+    return uit

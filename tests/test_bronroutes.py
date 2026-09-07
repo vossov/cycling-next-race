@@ -318,3 +318,41 @@ def test_de_pagina_die_we_al_hebben_kost_geen_kandidaatplek(cs):
         not in kandidaten
     assert kandidaten == [
         "https://www.cyclingstage.com/tour-of-britain-2026/riders-gb-2026/"]
+
+
+def test_tour_of_britain_krijgt_zijn_vijf_etappes(wt, monkeypatch):
+    """De klacht waarmee dit begon: één etappe waar er vijf horen te zijn.
+
+    De kalender geeft voor deze koers geen routeadres, dus de koerspagina
+    komt binnen. Die linkt naar `route-gb-2026`, en dáár staan de etappes —
+    niet in een tabel maar als lopende tekst.
+    """
+    route = (Path(__file__).parent / "fixtures"
+             / "cyclingstage_tour_of_britain_2026_route.html").read_text()
+    # de koerspagina linkt naar de routepagina; die staat in de fixture zelf
+    opgevraagd = _pagina(wt, monkeypatch, {KOERS: route})
+    etappes = wt._cs_event_stages(
+        {"url": KOERS, "name": "Tour of Britain", "start": date(2026, 9, 2),
+         "end": date(2026, 9, 6), "women": False, "level": "m"})
+    assert [e["idx"] for e in etappes] == [1, 2, 3, 4, 5]
+    assert [e["date"] for e in etappes] == [
+        date(2026, 9, d) for d in (2, 3, 4, 5, 6)]
+    assert etappes[0]["distance_km"] == 182.5
+    assert etappes[3]["vertical_m"] == 2699
+
+
+def test_datums_alleen_als_ze_sluitend_zijn(wt):
+    """Minder etappes dan dagen betekent rustdagen, en dan is het raden.
+
+    Een etappe op de verkeerde dag zetten is erger dan de koers laten
+    wegvallen: de hele tegelkeuze rekent op die datum.
+    """
+    rijen = [{"idx": i, "date": None} for i in range(1, 6)]
+    goed = wt._datums_verdelen([dict(r) for r in rijen],
+                               date(2026, 9, 2), date(2026, 9, 6))
+    assert [r["date"] for r in goed] == [date(2026, 9, d) for d in (2, 3, 4, 5, 6)]
+    # 5 etappes over 7 dagen: er zitten rustdagen tussen, maar welke?
+    assert wt._datums_verdelen([dict(r) for r in rijen],
+                               date(2026, 9, 2), date(2026, 9, 8)) == []
+    assert wt._datums_verdelen([], date(2026, 9, 2), date(2026, 9, 6)) == []
+    assert wt._datums_verdelen([dict(r) for r in rijen], None, None) == []
