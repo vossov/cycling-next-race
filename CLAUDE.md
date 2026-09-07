@@ -74,16 +74,15 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
   `async_add_executor_job`, want procyclingstats en urllib zijn blokkerend.
 - Caches op de coordinator (per dag of per koers geleegd bij een nieuwe dag):
   `_elev_cache`, `_names_cache`, `_tv_cache`, `_sprints_cache`,
-  `_prevrank_cache`, `_startlist_cache` (de startlijst per koers),
+  `_startlist_cache` (de startlijst per koers),
   `_gpxindex_cache` (de GPX-adressen die cyclingstage zelf op een rij zet,
   per koers; alleen gevuld als de vaste adressen falen),
-  `_ranking_cache` (de PCS-ranglijst per adres uit `RANGLIJST`),
   `_other_cache` (dict
   per etappe van de andere koersen; alleen afgeronde etappes komen erin).
   `_tv_cache` bewaart de tv-gids als HTML — op die pagina staan álle koersen
   van de dag, dus één verzoek bedient de tegel en de pop-up samen.
-  `_sprints_cache` en `_prevrank_cache` zijn dicts per etappe en geen enkele
-  plek, want de koersen in de pop-up vragen ze ook op.
+  `_sprints_cache` is een dict per etappe en geen enkele plek, want de
+  koersen in de pop-up vragen hem ook op.
   `_elev_cache` heeft `(etappe, aantal punten)` als sleutel: dezelfde etappe
   wordt als komende dag met 60 punten opgehaald en als getoonde etappe met
   200. Stond alleen de URL in de sleutel, dan kreeg het grote profiel de
@@ -203,10 +202,10 @@ knoppen van bovenin de pop-up; de eerste staat open.
 
 Zo'n blok geeft hetzelfde beeld als de tegelkoers:
 
-- `last_result`, `gc_top`, `points_top`, `kom_top`, `youth_top` — met
-  dagwinst, op dezelfde manier berekend als op de tegel: de stand van de
-  vorige etappe via `_rank_maps` en koppelen op **positie** (kolom "Prev"),
-  nooit op naam.
+- `last_result`, `gc_top`, `points_top`, `kom_top`, `youth_top` — hetzelfde
+  als op de tegel. De dagwinst die hier tot 0.24 bij stond is weg: die kwam
+  uit de kolom "Prev" bij procyclingstats en cyclingstage geeft geen vorige
+  stand per rij.
 - `channels` en `channels_detail` — waar die koers te zien is, uit dezelfde
   tv-gids. `_zenders_voor` slaat een koers over die verder dan zes dagen weg
   is, want zo ver kijkt de gids niet vooruit.
@@ -244,26 +243,21 @@ schakelaar voor de uitslag zelf.
 
 Een koers die nog moet beginnen heeft niets te tonen: geen uitslag, geen
 klassement. Daar komt de startlijst voor in de plaats — `startlist_top`,
-`startlist_riders` en `startlist_teams`, op de tegel én op elk koersblok, en
-alleen zolang `last_result` leeg is. Zodra er gereden is verdwijnt hij weer;
-dat scheelt ruimte in de attributen en de uitslag zegt meer.
+`startlist_riders`, `startlist_teams` en `startlist_out`, op de tegel én op
+elk koersblok, en alleen zolang `last_result` leeg is. Zodra er gereden is
+verdwijnt hij weer; dat scheelt ruimte in de attributen en de uitslag zegt
+meer.
 
-De startlijst zelf staat op volgorde van ploeg en zegt niets over wie de
-kopmannen zijn. **De volgorde komt daarom van de individuele PCS-ranglijst**
-(`RANGLIJST`, per geslacht één adres, één keer per dag opgehaald), gekoppeld
-op `rider_url` — een vaste sleutel, dus zonder namen te vergelijken. Wie niet
-op die ranglijst staat komt niet in het lijstje: een renner een geschatte
-plek geven zou precies het verzinnen zijn dat dit project niet doet. `rank`
-in de rijen is dan ook de plek op die ranglijst en geen 1-2-3 van onszelf;
-de kaart zet dat er met zoveel woorden bij.
+De bron is cyclingstage; zie "De startlijst komt van cyclingstage" verderop
+voor de parser, het adres en waarom het rugnummer géén rangorde is.
 
-Levert de ranglijst niets op (of klopt het vrouwenadres niet), dan blijft
-`startlist_top` leeg en laat de kaart het lijstje weg; de telling van renners
-en ploegen blijft dan wel staan. `_fetch_ranking` logt een waarschuwing en
-`startlist_diag` laat zien hoeveel renners er gekoppeld konden worden.
+**Op de tegel hoort `shown_event` en niet `cur`.** Die twee wijken uiteen
+zodra de tegel doorrolt naar de volgende koers; met `cur` zou de startlijst
+van de vórige koers gepubliceerd worden onder de naam van de nieuwe. Dat is
+in 0.26.1 gerepareerd nadat een review het vond.
 
-`_zenders_voor`, `_sprints_voor` en `_rank_maps` slikken hun eigen fouten en
-geven leeg terug. Dat moet: `_races_block` vangt een uitzondering per blok af
+`_zenders_voor`, `_sprints_voor` en `_startlijst_blok` slikken hun eigen
+fouten en geven leeg terug. Dat moet: `_races_block` vangt een uitzondering per blok af
 door het hele blok te laten vallen, en een hikje bij wielerflits hoort geen
 koers uit de pop-up te laten verdwijnen.
 
@@ -299,7 +293,14 @@ ze dubbel staan met het eigen blok van die koers.
 
 ## Bronnen en URL-patronen
 
-### procyclingstats (pakket `procyclingstats==0.2.8` + `cloudscraper` + `curl_cffi`)
+### procyclingstats — historie, sinds 0.25 niet meer in gebruik
+
+Alles in deze sectie beschrijft hoe het wás. De code is in 0.25 verwijderd en
+`requirements` in de manifest is leeg; het staat er omdat de reden waaróm die
+weg uitgeput is telkens opnieuw wordt gevraagd. Zoek geen van deze functies
+in de broncode — ze bestaan niet meer.
+
+#### Het pakket (`procyclingstats==0.2.8` + `cloudscraper` + `curl_cffi`)
 
 **procyclingstats.com staat sinds 23 augustus 2026 achter Cloudflare.** In
 het log van die dag: `Kalender van WorldTour mannen ophalen mislukt:
@@ -421,8 +422,8 @@ elk half uur een extra verzoek te krijgen omdat wij willen weten waarom.
   de rijen (renner, ploeg en hun adressen); `_roster_van` maakt daar de
   renner→ploeg-tabel van die `_repair_rows` gebruikt.
 - Ranglijst: `Ranking("rankings/me/individual").individual_ranking(...)`, en
-  voor de vrouwen `rankings/we/individual`. Zie `RANGLIJST` in `sensor.py`;
-  het vrouwenadres is **niet geverifieerd**.
+  voor de vrouwen `rankings/we/individual`. Dat vrouwenadres is nooit
+  geverifieerd en is met de rest verdwenen.
 
 ### Als de kalender geen routeadres geeft (sinds 0.24)
 
@@ -712,8 +713,8 @@ Drie dingen die daar anders zijn dan bij procyclingstats:
   herkent ze op de kop, dus zodra ze verschijnen lopen ze mee zonder
   codewijziging.
 - **Geen dagwinst.** Die werd berekend uit de "Prev"-kolom; cyclingstage
-  geeft geen vorige stand per rij. `_rank_maps` en `_gain_*` hebben daarmee
-  geen bron meer.
+  geeft geen vorige stand per rij. `_rank_maps` en `_gain_*` hadden daarmee
+  geen bron meer en zijn in 0.25 verwijderd.
 
 **De kop van het klassement liegt.** Op de pagina van etappe 2 staat "GC
 after stage 1" boven het klassement ná die etappe (Pogacar eerste, Brennan
@@ -1057,9 +1058,8 @@ te halen.
 ## Diagnose-attributen
 
 Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:
-`gpx_diag`, `gpx_used`, `times_diag`, `names_diag`, `levels_diag`, `startlist_diag`,
-`gain_headers`, `gain_raw`,
-`names_fixed`, `gains_set`, `roster_size`, `elevation_source`.
+`gpx_diag`, `gpx_used`, `times_diag`, `names_diag`, `levels_diag`,
+`elevation_source`.
 
 ## Dashboard
 
@@ -1257,33 +1257,17 @@ anders de volledige naam. Naam en ploeg zitten in hetzelfde vakje (`.naam`
 met ellipsis, `.ploeg` gedimd erbinnen), zodat bij weinig ruimte eerst de
 ploeg wegvalt en de rennernaam heel blijft; nagekeken op 360 px.
 
-### Ploegcodes
+### Ploegcodes zijn er niet meer
 
-De code komt van de **ploegpagina bij procyclingstats**
-(`_fetch_team_abbr` → `Team(team_url).abbreviation()`), niet uit de naam.
-Zelf initialen maken zou iets opleveren dat op een UCI-ploegcode lijkt
-zonder het te zijn; dat is precies wat "nooit data verzinnen" verbiedt.
-Vandaar ook de controle `^[A-Z0-9]{2,4}$`: geeft de pagina de volledige naam
-of iets anders terug, dan telt het niet als code en blijft de naam staan.
+Tot 0.24 stond de officiële UCI-ploegcode achter elke renner; die kwam van
+de ploegpagina bij procyclingstats en is met die bron verdwenen. Cyclingstage
+geeft in de uitslag alleen een landcode, en op de startlijst de volledige
+ploegnaam. `rennerMetPloeg` in de kaart valt daar in die volgorde op terug:
+`team_code` als hij er is, anders `team`, anders het land.
 
-Het adres van de ploegpagina komt uit de tabellen zelf: `_fetch_stage`
-vraagt `team_url` mee (met terugval op de oude veldenlijst als de pagina hem
-niet geeft) en zet `data["team_urls"]` als `{ploegnaam: adres}`. Dat blijft
-binnen de coordinator — in de rijen zou het alleen ruimte in de attributen
-kosten. De rijen krijgen alleen `team_code`, drie tekens.
-
-`_ploegcodes` haalt per ronde hoogstens `MAX_PLOEGCODES_PER_RONDE` (12)
-nieuwe codes op: een koers telt zo'n twintig ploegen en elke code is een
-eigen pagina, dus alles ineens maakt de eerste update na een herstart
-onnodig lang. Wat nog niet bekend is houdt zolang de volledige naam en volgt
-de ronde erna. `_abbr_cache` staat op ploegnaam en gaat een dag mee; een
-mislukte poging staat als `""` in de cache, zodat hij niet elke ronde
-opnieuw wordt geprobeerd maar morgen wel.
-
-Aanroepen gebeurt **na** `_repair_rows`: dat vergelijkt de ploegkolom met de
-startlijst, en die noemt de volledige naam. Ook op een uitslag uit
-`_other_cache`, anders krijgen de rijen die vorige ronde buiten de twaalf
-vielen nooit meer een code.
+Zelf een code uit de naam afleiden zou iets opleveren dat op een
+UCI-ploegcode lijkt zonder het te zijn — precies wat "nooit data verzinnen"
+verbiedt.
 
 ## Uitbrengen
 
@@ -1347,15 +1331,6 @@ vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/c
 - `LEIDERSTRUI` dekt alleen de koersen waarvan de truikleur vaststaat. Voor
   de rest (Catalunya, Baskenland, Denemarken, Renewi, Groot-Brittannië …)
   is er bewust niets ingevuld. Aanvullen mag, maar alleen na controle.
-- **Het vrouwenadres van de ranglijst (`rankings/we/individual`) is niet
-  geverifieerd.** Net als bij de ProSeries-nummers kon dat van hieruit niet
-  worden nagekeken. Klopt het niet, dan blijft de startlijst van een
-  vrouwenkoers leeg; kijk in het debuglogboek op "Ranglijst" en op
-  `startlist_diag`. Aanpassen is één regel in `RANGLIJST` in `sensor.py`.
-- **`Ranking.individual_ranking()` is niet geverifieerd** met de velden
-  `rank`, `rider_url` en `points`; ze staan zo in de documentatie van het
-  pakket, maar de sandbox komt niet bij procyclingstats. Faalt het, dan is
-  de startlijst leeg — niet de hele sensor.
 - **De GPX-overzichtspagina is niet in het echt gelezen.** Dat de pagina
   bestaat en `{slug}-{jaar}-gpx` heet, is nagekeken via zoekresultaten met
   echte adressen (`vuelta-2026-gpx`, `giro-2026-gpx`,
@@ -1370,10 +1345,3 @@ vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/c
   er de koersnaam waar het land hoort (`stage-5-giro-2026` in plaats van
   `stage-5-italy-2026`); de Tour klopte wel. De overige koersen in
   `CYCLINGSTAGE_ROUTE` zijn niet opnieuw nagelopen.
-- **`Team.abbreviation()` is niet geverifieerd.** Of het pakket die methode
-  zo noemt in 0.2.8, en of `team_url` als veld in de uitslagtabellen wordt
-  geaccepteerd, blijkt pas in een draaiende Home Assistant — de sandbox komt
-  niet bij procyclingstats. Beide staan achter een terugval: geen `team_url`
-  betekent de oude veldenlijst, en geen bruikbare code betekent de volledige
-  ploegnaam. Blijft de code overal weg, zoek dan in het debuglogboek op
-  "Ploegcode"; daar staat wat de pagina wél teruggaf.

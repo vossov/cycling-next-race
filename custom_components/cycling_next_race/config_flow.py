@@ -18,6 +18,7 @@ from homeassistant.config_entries import (
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    binnen_grenzen,
     CONF_GC_N,
     CONF_LEVELS,
     CONF_LEVELS_POPUP,
@@ -117,7 +118,12 @@ class CyclingNextRaceOptionsFlow(OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        huidig = {**OPTION_DEFAULTS, **dict(self.config_entry.options)}
+        opgeslagen = dict(self.config_entry.options)
+        # Een optie waarvan de betekenis is veranderd kan een waarde dragen
+        # die buiten het huidige schema valt; die zou het formulier
+        # onindienbaar maken. Zie OPTIE_GRENZEN in const.py.
+        huidig = {**OPTION_DEFAULTS,
+                  **{k: binnen_grenzen(k, v) for k, v in opgeslagen.items()}}
 
         schema = vol.Schema(
             {

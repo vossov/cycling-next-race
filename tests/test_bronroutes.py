@@ -101,7 +101,7 @@ def _etappe(idx=1, **kw):
 def test_uitslag_via_het_afgeleide_adres(wt, monkeypatch):
     afgeleid = ("https://www.cyclingstage.com/tour-of-britain-2026-results/"
                 "stage-1-gb-results-2026/")
-    opgevraagd = _pagina(wt, monkeypatch, {afgeleid: "<h2>Stage 1 Results</h2>"})
+    opgevraagd = _pagina(wt, monkeypatch, {afgeleid: UITSLAG})
     url, html = wt._uitslagpagina(_etappe())
     assert url == afgeleid and html
     # het overzicht is niet nodig zolang de afleiding klopt
@@ -114,7 +114,7 @@ def test_uitslag_via_het_overzicht_als_de_afleiding_niets_geeft(wt, monkeypatch)
     echt = index + "stage-1-britain-results-2026/"
     opgevraagd = _pagina(wt, monkeypatch, {
         index: f'<a href="/tour-of-britain-2026-results/stage-1-britain-results-2026/">Stage 1</a>',
-        echt: "<h2>Stage 1 Results</h2>",
+        echt: UITSLAG,
     })
     wt._UITSLAGINDEX.clear()
     url, html = wt._uitslagpagina(_etappe())
@@ -134,7 +134,7 @@ def test_het_overzicht_wordt_hoogstens_een_keer_per_dag_gehaald(wt, monkeypatch)
 def test_eendaagse_koers_leest_zijn_resultatenpagina(wt, monkeypatch):
     """Geen etappenummer, dus geen `stage-N`-adres; de koerspagina heeft het."""
     index = "https://www.cyclingstage.com/paris-roubaix-2026-results/"
-    opgevraagd = _pagina(wt, monkeypatch, {index: "<h2>Results</h2>"})
+    opgevraagd = _pagina(wt, monkeypatch, {index: UITSLAG})
     url, html = wt._uitslagpagina({
         "date": date(2026, 4, 12), "idx": None, "one_day": True,
         "race_slug": "paris-roubaix",
@@ -151,6 +151,12 @@ def test_eendaagse_koers_leest_zijn_resultatenpagina(wt, monkeypatch):
 # de Vuelta tegenover `riders-gb-2026` bij de Tour of Britain.
 
 RIDERS = Path(__file__).parent / "fixtures" / "cyclingstage_vuelta_2026_riders.html"
+
+# Zoals cyclingstage een uitslag zet: een kop met een alinea eronder, regels
+# gescheiden door <br>. Een kop zónder die regels is géén uitslag — dat is
+# precies het geval waarin het afgeleide adres niet mag winnen.
+UITSLAG = ("<h2>Stage 1 Results</h2><p>1. Jasper Philipsen (bel) 4:12:03<br>"
+           "2. Tim Merlier (bel) s.t.<br>3. Olav Kooij (ned) s.t.</p>")
 
 VUELTA = "https://www.cyclingstage.com/vuelta-2026-route/spain-route-2026/"
 VUELTA_RIDERS = "https://www.cyclingstage.com/vuelta-2026/spain-riders-2026/"
@@ -239,3 +245,76 @@ def test_startlijstblok_slikt_zijn_eigen_fouten(wt, monkeypatch, vuelta):
     blok = asyncio.run(co._startlijst_blok(vuelta))
     assert blok == {"startlist_top": [], "startlist_riders": 0,
                     "startlist_teams": 0, "startlist_out": 0}
+
+
+def test_een_pagina_die_laadt_maar_leeg_is_wint_niet(wt, monkeypatch):
+    """Toetsen op "staat er een uitslag in", niet op "kwam er iets binnen".
+
+    Het afgeleide adres is een aanname. Antwoordt cyclingstage daarop met
+    een pagina die wél laadt maar geen uitslag bevat, dan zou die gok
+    permanent winnen en werd het overzicht nooit geraadpleegd — precies de
+    stille "geen uitslag" waar deze terugval voor gemaakt is.
+    """
+    afgeleid = ("https://www.cyclingstage.com/tour-of-britain-2026-results/"
+                "stage-1-gb-results-2026/")
+    index = "https://www.cyclingstage.com/tour-of-britain-2026-results/"
+    echt = index + "stage-1-britain-results-2026/"
+    opgevraagd = _pagina(wt, monkeypatch, {
+        # laadt prima, maar er staat geen uitslag op
+        afgeleid: "<html><body><h2>Stage 1</h2><p>Nog geen uitslag.</p></body></html>",
+        index: '<a href="/tour-of-britain-2026-results/stage-1-britain-results-2026/">Stage 1</a>',
+        echt: UITSLAG,
+    })
+    wt._UITSLAGINDEX.clear()
+    url, html = wt._uitslagpagina(_etappe())
+    assert url == echt
+    assert index in opgevraagd
+
+
+def test_het_overzicht_dat_hetzelfde_adres_geeft_kost_geen_tweede_verzoek(wt, monkeypatch):
+    """Wijst het overzicht naar het adres dat we al geprobeerd hebben, dan
+    houdt het op — anders wordt dezelfde lege pagina twee keer gehaald."""
+    afgeleid = ("https://www.cyclingstage.com/tour-of-britain-2026-results/"
+                "stage-1-gb-results-2026/")
+    index = "https://www.cyclingstage.com/tour-of-britain-2026-results/"
+    opgevraagd = _pagina(wt, monkeypatch, {
+        afgeleid: "<h2>Stage 1</h2><p>Nog geen uitslag.</p>",
+        index: '<a href="/tour-of-britain-2026-results/stage-1-gb-results-2026/">Stage 1</a>',
+    })
+    wt._UITSLAGINDEX.clear()
+    assert wt._uitslagpagina(_etappe()) == ("", "")
+    assert opgevraagd.count(afgeleid) == 1
+
+
+def test_de_koerspagina_blijft_bewaard_als_een_latere_kandidaat_faalt(wt, monkeypatch, koers):
+    """De routelink staat op de koerspagina; die mag niet weggegooid worden.
+
+    `_etappelijst_urls` probeert meerdere adressen. Werd alleen de HTML van
+    de láátste bewaard, dan kreeg de link-terugval een lege string zodra die
+    laatste niet binnenkwam — en werd de routepagina nooit gevonden.
+    """
+    diep = "https://www.cyclingstage.com/tour-of-britain-2026/route-gb-2026/"
+    # de koerspagina komt binnen (met de link erop), een volgende kandidaat niet
+    opgevraagd = _pagina(wt, monkeypatch, {
+        KOERS: KOERSPAGINA_HTML,
+        diep: ROUTE.read_text(),
+    })
+    etappes = wt._cs_event_stages(koers)
+    assert len(etappes) == 21
+    assert diep in opgevraagd
+
+
+def test_de_pagina_die_we_al_hebben_kost_geen_kandidaatplek(cs):
+    """`route_kandidaten` mag het adres dat hij meekreeg niet teruggeven.
+
+    Die pagina heeft geen etappetabel opgeleverd, anders was de terugval niet
+    nodig geweest. Hem opnieuw ophalen kost een van de drie plekken.
+    """
+    html = ('<a href="/tour-of-britain-2026/route-gb-2026/">Route</a>'
+            '<a href="/tour-of-britain-2026/riders-gb-2026/">Riders</a>')
+    kandidaten = cs.route_kandidaten(
+        html, "https://www.cyclingstage.com/tour-of-britain-2026/route-gb-2026/")
+    assert "https://www.cyclingstage.com/tour-of-britain-2026/route-gb-2026/" \
+        not in kandidaten
+    assert kandidaten == [
+        "https://www.cyclingstage.com/tour-of-britain-2026/riders-gb-2026/"]

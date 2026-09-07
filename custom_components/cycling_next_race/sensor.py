@@ -39,6 +39,7 @@ from homeassistant.util import dt as dt_util
 
 from . import bronnen
 from .const import (
+    binnen_grenzen,
     CONF_GC_N,
     CONF_LEVELS,
     CONF_LEVELS_POPUP,
@@ -440,10 +441,16 @@ def _cs_event_stages(event: dict) -> list[dict]:
             "departure": "", "arrival": "",
         }]
 
-    laatste_html = ""
+    # elke opgehaalde pagina bewaren, niet alleen de laatste: mislukt de
+    # laatste kandidaat, dan zou de koerspagina die we al binnen hadden — en
+    # waar de routelink op staat — worden weggegooid en krijgt de terugval
+    # hieronder een lege string
+    opgehaald = []
     for kandidaat in _etappelijst_urls(race_url):
-        laatste_html = _haal_html(kandidaat, "routepagina")
-        rijen = cs.parse_etappes(laatste_html, jaar)
+        html = _haal_html(kandidaat, "routepagina")
+        if html:
+            opgehaald.append(html)
+        rijen = cs.parse_etappes(html, jaar)
         if rijen:
             break
     else:
@@ -453,8 +460,12 @@ def _cs_event_stages(event: dict) -> list[dict]:
         # dat niet af te leiden is (`route-gb-2026` tegenover
         # `route-tdu-2026`) maar waar die koerspagina zelf naar linkt.
         rijen = []
-        for kandidaat in cs.route_kandidaten(laatste_html,
-                                             race_url)[:MAX_ROUTE_KANDIDATEN]:
+        kandidaten = []
+        for html in opgehaald:
+            for k in cs.route_kandidaten(html, race_url):
+                if k not in kandidaten:
+                    kandidaten.append(k)
+        for kandidaat in kandidaten[:MAX_ROUTE_KANDIDATEN]:
             rijen = cs.parse_etappes(_haal_html(kandidaat, "routepagina"), jaar)
             if rijen:
                 _LOGGER.debug("Etappelijst van %s gevonden op %s",
@@ -557,6 +568,8 @@ def _uitslagpagina(stage: dict) -> tuple:
 
     1. **Afleiden uit het etappeadres** (`uitslag_url`). Nagekeken op de
        Vuelta en verder gratis: geen extra verzoek om het adres te vinden.
+       De afleiding telt pas als geslaagd wanneer er ook echt een uitslag op
+       die pagina staat; dat een pagina laadt zegt niets.
     2. **Opzoeken op de resultatenpagina van de koers.** Die afleiding is
        alleen op de grote rondes nagekeken; daar heet de koersmap
        `{slug}-{jaar}-route`, bij de andere koersen heet hij anders. Levert
@@ -574,19 +587,26 @@ def _uitslagpagina(stage: dict) -> tuple:
 
     if stage.get("one_day"):
         url = cs.uitslag_index_url(slug, jaar)
-        return (url, _haal_html(url, "uitslag")) if url else ("", "")
+        if not url:
+            return "", ""
+        return url, _haal_html(url, "uitslag")
 
-    url = cs.uitslag_url(stage.get("stage_url") or "")
-    if url:
-        html = _haal_html(url, "uitslag")
-        if html:
-            return url, html
+    afgeleid = cs.uitslag_url(stage.get("stage_url") or "")
+    if afgeleid:
+        html = _haal_html(afgeleid, "uitslag")
+        # Toetsen op "staat er een uitslag in", niet op "kwam er iets
+        # binnen". Cyclingstage antwoordt op een adres dat niet bestaat niet
+        # per se met een foutcode, en een pagina die laadt maar leeg is zou
+        # de gok permanent laten winnen — precies de stille "geen uitslag"
+        # waar deze terugval voor gemaakt is.
+        if cs.parse_uitslag(html)["results"]:
+            return afgeleid, html
 
     idx = stage.get("idx")
     if not idx or not slug or not jaar:
         return "", ""
     url = _uitslagindex(slug, jaar).get(int(idx), "")
-    if not url:
+    if not url or url == afgeleid:
         return "", ""
     _LOGGER.debug("Uitslagadres van etappe %s (%s) via het overzicht: %s",
                   idx, slug, url)
@@ -1401,9 +1421,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         """Waarde uit het optiescherm, met de standaard als terugval."""
         waarde = self._options.get(sleutel, OPTION_DEFAULTS[sleutel])
         try:
-            return int(waarde)
+            getal = int(waarde)
         except (TypeError, ValueError):
             return OPTION_DEFAULTS[sleutel]
+        # een opgeslagen waarde kan uit een versie komen waarin de optie iets
+        # anders betekende; zie OPTIE_GRENZEN in const.py
+        return binnen_grenzen(sleutel, getal)
 
     def _opt_niveaus(self, sleutel: str) -> list[str]:
         """Een keuzelijst met niveaus uit het optiescherm."""
@@ -2188,7 +2211,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
         startlijst = {"startlist_top": [], "startlist_riders": 0,
                       "startlist_teams": 0, "startlist_out": 0}
         if not last_result:
-            startlijst = await self._startlijst_blok(cur)
+            # `shown_event` en niet `cur`: rolt de tegel door naar de
+            # volgende koers, dan wijken die twee uiteen en zou hier de
+            # startlijst van de vórige koers gepubliceerd worden.
+            startlijst = await self._startlijst_blok(shown_event)
         if last_fin is None:
             last_stage_label = ""
         elif last_fin.get("one_day"):
