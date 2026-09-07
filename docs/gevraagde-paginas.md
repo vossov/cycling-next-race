@@ -5,6 +5,79 @@ racecenter-sites van ASO — de egress-proxy blokkeert ze. Elke parser die hier
 gebouwd wordt moet daarom op HTML draaien die met de hand is opgeslagen.
 Deze lijst staat op volgorde van wat het meest oplevert.
 
+## De adressen, kopieerbaar
+
+Stand 7 september 2026. Alles hieronder is een volledig adres — geen
+sjablonen. Wat al binnen is staat verderop afgestreept.
+
+### Deze week, want de Vuelta eindigt op 13 september
+
+```
+https://www.cyclingstage.com/vuelta-2026-results/
+https://www.cyclingstage.com/vuelta-2026-gpx/
+https://www.cyclingstage.com/images/vuelta/2026/stage-19-times.htm
+https://www.cyclingstage.com/vuelta-2026-points-classification/
+https://www.cyclingstage.com/vuelta-2026-kom-classification/
+https://www.cyclingstage.com/vuelta-2026-favourites/
+https://www.cyclingstage.com/vuelta-2026/vuelta-2026-withdrawals/
+```
+
+### Eendaagse koers — GP Québec rijdt 11 september
+
+```
+https://www.cyclingstage.com/gp-quebec-2026/
+https://www.cyclingstage.com/gp-quebec-2026-results/
+```
+
+De tweede pas ná de koers, anders staat er nog geen uitslag op.
+
+### Het WK, 20-27 september
+
+```
+https://www.cyclingstage.com/world-championships-2026-canada/
+```
+
+En de routepagina waar die naartoe linkt, wat dat adres ook blijkt te zijn.
+
+### Tour of Britain — voorbij, de pagina's staan er nog
+
+```
+https://www.cyclingstage.com/tour-of-britain-2026/
+https://www.cyclingstage.com/tour-of-britain-2026/route-gb-2026/
+https://www.cyclingstage.com/tour-of-britain-2026-results/
+```
+
+### Een vrouwenkoers en een niet-Vuelta-etappe
+
+```
+https://www.cyclingstage.com/tour-of-flanders-2026-women/
+https://www.cyclingstage.com/tour-of-flanders-2026-women/route-women-tof-2026/
+https://www.cyclingstage.com/giro-2026-route/italy-route-2026/
+```
+
+Van die laatste ook één etappepagina, via een link op die routepagina.
+
+### ASO live — tijdens een etappe
+
+```
+https://racecenter.lavuelta.es/api/telemetryCompetitor-2026
+https://racecenter.lavuelta.es/api/ranking-2026
+https://www.lavuelta.es/robots.txt
+```
+
+Weet je niet welk eindpunt: open `https://racecenter.lavuelta.es/en/`,
+F12 -> Netwerk -> filter op `api`, en stuur de namen die voorbijkomen.
+
+### Later, geen haast
+
+```
+https://www.wielerflits.nl/nieuws/wielrennen-op-tv/
+```
+
+Nogmaals, maar dan op een voorjaarsdag met de Ronde van Vlaanderen bij zowel
+mannen als vrouwen — dat is het geval waar de koersherkenning op het geslacht
+moet afgaan.
+
 ## Hoe opslaan
 
 In Safari: **Archief → Bewaar als → Webarchief**. Dat werkte voor de
