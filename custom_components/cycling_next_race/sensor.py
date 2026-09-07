@@ -39,6 +39,7 @@ from homeassistant.util import dt as dt_util
 
 from . import bronnen
 from .const import (
+    VERSION,
     binnen_grenzen,
     CONF_GC_N,
     CONF_LEVELS,
@@ -304,6 +305,25 @@ def _parse_start_hhmm(start_time: str | None):
 # Blocking scrape-functies — draaien via async_add_executor_job
 # ──────────────────────────────────────────────────────────────
 
+# Wie wij zijn, in elk verzoek dat deze integratie doet.
+#
+# Tot 0.26.1 stond hier `Mozilla/5.0 (HomeAssistant CyclingNextRace)`: dat
+# doet zich voor als een browser en geeft de beheerder van een bron niets om
+# op te reageren. Dit is de vorm die legitieme bots gebruiken — de
+# `Mozilla/5.0 (compatible; ...)`-prefix voor clients die daarop filteren,
+# daarachter de eigen naam, de versie en een adres waar te zien is wat dit
+# is en hoe je ons bereikt.
+#
+# Waarom dat hier uitmaakt: de robots.txt van cyclingstage zet `Disallow:
+# /images` in elk blok dat hij toelaat, en daar hangen onze GPX-profielen en
+# tijdschema's onder. Die regel raakt ons formeel niet (we matchen geen
+# groep, en de `*`-groep in dat bestand staat uitgecommentarieerd), maar dan
+# hoort er wel bij dat we herkenbaar zijn in plaats van weggestopt achter
+# een browserstring. Zie `docs/robots/` en de analyse in CLAUDE.md.
+UA = (f"Mozilla/5.0 (compatible; CyclingNextRace/{VERSION}; "
+      "+https://github.com/vossov/cycling-next-race)")
+UA_HEADERS = {"User-Agent": UA}
+
 # De laatste kalenderfout, om herhaling te dempen. Een blokkade bij de bron
 # kan weken duren; vier waarschuwingen per ronde, elke 30 minuten, maken het
 # logboek dan onbruikbaar voor al het andere. De eerste keer is nieuws, de
@@ -324,7 +344,7 @@ def _haal_html(url: str, wat: str = "pagina") -> str:
         return ""
     try:
         req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
+            url, headers=UA_HEADERS)
         with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.read().decode("utf-8", "replace")
     except Exception as err:  # noqa: BLE001
@@ -830,7 +850,7 @@ def _fetch_tv_html():
     try:
         req = urllib.request.Request(
             WIELERFLITS_TV_URL,
-            headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
+            headers=UA_HEADERS)
         with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.read().decode("utf-8", "replace")
     except Exception as err:  # noqa: BLE001
@@ -870,7 +890,7 @@ def _fetch_stage_names(url, distance=None):
     from html import unescape
     try:
         req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
+            url, headers=UA_HEADERS)
         with urllib.request.urlopen(req, timeout=30) as resp:
             doc = resp.read().decode("utf-8", "replace")
     except Exception as err:  # noqa: BLE001
@@ -1116,7 +1136,7 @@ def _fetch_gpx_index(stage: dict) -> dict:
         try:
             req = urllib.request.Request(
                 index_url,
-                headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
+                headers=UA_HEADERS)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 html = resp.read().decode("utf-8", "replace")
         except Exception as err:  # noqa: BLE001
@@ -1163,7 +1183,7 @@ def _fetch_times(stage: dict):
     for url in _times_urls(stage):
         try:
             req = urllib.request.Request(
-                url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
+                url, headers=UA_HEADERS)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 html = resp.read().decode("utf-8", "replace")
         except Exception as err:  # noqa: BLE001
@@ -1328,7 +1348,7 @@ def _fetch_gpx(gpx_url, n_out: int = 150):
     import urllib.request
     try:
         req = urllib.request.Request(
-            gpx_url, headers={"User-Agent": "Mozilla/5.0 (HomeAssistant CyclingNextRace)"})
+            gpx_url, headers=UA_HEADERS)
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read()
     except Exception as err:  # noqa: BLE001

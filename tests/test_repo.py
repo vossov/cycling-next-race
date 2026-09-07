@@ -140,3 +140,43 @@ def test_release_workflow_bewaakt_de_versie():
     assert "manifest.json" in tekst, "de workflow leest de manifest niet"
     assert "exit 1" in tekst, "de workflow faalt niet bij een verschil"
     assert "gh release create" in tekst
+
+
+# ── hoe we ons voorstellen aan een bron ─────────────────────────────
+
+
+def test_user_agent_is_eerlijk_en_navraagbaar(wt):
+    """Geen browserstring, wel een naam, een versie en een adres.
+
+    Tot 0.26.1 stond er `Mozilla/5.0 (HomeAssistant CyclingNextRace)`: dat
+    doet zich voor als een browser en geeft de beheerder van een bron niets
+    om op te reageren. Dat is te meer van belang omdat de robots.txt van
+    cyclingstage `Disallow: /images` in elk toegelaten blok zet en onze
+    GPX-profielen daaronder hangen — zie `docs/robots/` en CLAUDE.md.
+    """
+    from custom_components.cycling_next_race.const import VERSION
+
+    assert wt.UA.startswith("Mozilla/5.0 (compatible; ")
+    assert f"CyclingNextRace/{VERSION}" in wt.UA
+    assert "+https://github.com/vossov/cycling-next-race" in wt.UA
+    assert wt.UA_HEADERS == {"User-Agent": wt.UA}
+
+
+def test_geen_enkel_verzoek_gaat_buiten_die_kop_om():
+    """Elk `Request(...)` in sensor.py gebruikt UA_HEADERS.
+
+    Zes plekken hadden dezelfde string hardgecodeerd; bij een wijziging bleef
+    er dan gegarandeerd één achter.
+    """
+    import re
+    from pathlib import Path
+
+    bron = (Path(__file__).parent.parent / "custom_components"
+            / "cycling_next_race" / "sensor.py").read_text()
+    # geen enkele letterlijke User-Agent-kop meer buiten de constante om
+    koppen = re.findall(r'headers=\{[^}]*User-Agent[^}]*\}', bron)
+    assert koppen == [], koppen
+    # en elk verzoek draagt hem wel
+    verzoeken = re.findall(r'urllib\.request\.Request\((.*?)\)\n', bron, re.S)
+    assert verzoeken, "geen verzoeken gevonden — is de opzet veranderd?"
+    assert all("UA_HEADERS" in v for v in verzoeken), verzoeken

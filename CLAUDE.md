@@ -659,8 +659,18 @@ sjabloonregel is die bedoeld is om afbeeldingen niet te laten indexeren — en
 dat cyclingstage de GPX-bestanden zélf aanbiedt op een eigen
 overzichtspagina, om te downloaden.
 
-**Dat is geen uitgemaakte zaak en het is niet aan de code om die knoop door
-te hakken.** Wat hier vaststaat: het is geen `Disallow: /` zoals bij
+**Besluit van de eigenaar (7 september 2026): laten staan, maar netter
+gedragen.** Formeel is er geen regel die ons verbiedt, het gaat om één
+verzoek per etappe per dag, en cyclingstage biedt die GPX-bestanden zelf aan
+om te downloaden. Wat er wél veranderd is: de user-agent. Die luidde
+`Mozilla/5.0 (HomeAssistant CyclingNextRace)` — een browserstring die de
+beheerder van een bron niets geeft om op te reageren. Sinds 0.26.2 is het
+`Mozilla/5.0 (compatible; CyclingNextRace/{versie};
++https://github.com/vossov/cycling-next-race)`: herkenbaar, met een adres
+waar te zien is wat dit is. Wie zich op een grens beroept die formeel niet
+voor hem geldt, hoort zich in elk geval kenbaar te maken.
+
+**Dat neemt de onzekerheid niet weg.** Wat hier vaststaat: het is geen `Disallow: /` zoals bij
 FirstCycling, en het is ook niet niks. Wie hierop terugkomt: de bestanden
 staan in `docs/robots/`, de afweging staat hierboven, en het gaat om het
 hoogteprofiel en de tussensprint — niet om de rest van de integratie.
