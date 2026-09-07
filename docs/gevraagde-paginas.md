@@ -26,13 +26,18 @@ project heeft FirstCycling op precies deze grond afgewezen (`Disallow: /`,
 met ClaudeBot er apart bij naam in), en de bronnen die we **wél** gebruiken
 zijn nooit gecontroleerd. Dat is een gat.
 
-| # | adres | waarom |
-|---|---|---|
-| 1.1 | `https://www.cyclingstage.com/robots.txt` | de hoofdbron van deze integratie. Staat hier `Disallow: /`, dan is dat een probleem dat we moeten wéten, niet wegkijken |
-| 1.2 | `https://www.wielerflits.nl/robots.txt` | levert de tv-gids |
-| 1.3 | `https://cdn.cyclingstage.com/robots.txt` | daar komen de GPX-bestanden vandaan (ander subdomein, kan een eigen bestand hebben) |
+**AFGEROND op 7 september 2026.** De bestanden staan in `docs/robots/`, de
+analyse in CLAUDE.md onder "Wat de robots.txt van onze bronnen zegt".
 
-Als er iets staat wat niet mag: dat is de uitkomst, en dan halen we het eruit.
+Uitkomst in het kort: wielerflits is in orde (de `*`-groep noemt een
+padlijst zonder `Disallow: /`, en de tv-gids valt onder geen regel).
+Cyclingstage heeft géén actieve `*`-groep — die staat uitgecommentarieerd —
+dus formeel raakt geen enkele regel ons, en alle HTML-pagina's die we
+ophalen zijn zelfs voor googlebot toegestaan. Maar `Disallow: /images` staat
+in élk toegelaten blok, en daar hangen het hoogteprofiel en het tijdschema
+onder. Besluit: laten staan, met een eerlijke user-agent (0.26.2).
+
+De robots.txt van ASO (blok 4.1) staat nog open.
 
 ---
 
