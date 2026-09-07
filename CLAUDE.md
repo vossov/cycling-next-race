@@ -553,6 +553,47 @@ waar `bronnen.py` voor gemaakt is — een bron per platform, de koers wijst hem
 aan. ASO is de meest lonende eerste stap: één parser bedient acht koersen,
 waaronder twee grote rondes, en de vorm van het eindpunt staat al vast.
 
+### Live data kopen — uitgezocht op 7 september 2026
+
+Vraag van de eigenaar: kan de live-stip via een betaalde dienst? Wat er te
+vinden was, met de kanttekening dat geen van deze partijen een publieke
+prijslijst heeft en de proxy hier hun sites niet doorlaat.
+
+**Er is een verschil tussen twee dingen die allebei "live" heten**, en dat
+bepaalt het antwoord:
+
+| | te koop | wat wij ermee zouden doen |
+|---|---|---|
+| live **uitslagen** (posities, tijdverschillen, klassementen die meelopen) | ja | niets nieuws — dat halen we al bij cyclingstage |
+| de live **positie** (waar rijdt het peloton nu) | nee, dat is B2B-telemetrie naar organisatoren en broadcasters | dat is precies wat de stip nodig heeft |
+
+Wat de aanbieders zeggen te leveren:
+
+- **CyclingFlash** — uitslagen, startlijsten, etappes, klassementen. Levert
+  de data aan wielerflits (hun logo's staan in de tv-gids-fixture). Tiered
+  van één koers tot het hele archief, prijs op aanvraag. Noemt géén positie.
+- **Enetpulse**, **SportBex**, **DataSportsGroup** — vergelijkbaar:
+  schema's, uitslagen, standen, "live time updates".
+- **Sportradar** — dubbel ongeschikt: hun cycling-API is **post-event**, en
+  contracten beginnen rond $10 000 per maand.
+- **Georacing** en **Velon** — die dóén de GPS-tracking, maar leveren aan de
+  organisatie en de tv-productie.
+
+**Twee dingen die zwaarder wegen dan de prijs:**
+
+1. **Het is waarschijnlijk het verkeerde product.** Geen van deze partijen
+   adverteert met een positie of km-to-go. Wie hier geld aan uitgeeft moet
+   dat éérst gevraagd hebben, anders koop je uitslagen die we gratis hebben.
+2. **Het past slecht bij een open-source integratie.** Een commerciële feed
+   vraagt een sleutel per afnemer. Een functie die alleen werkt voor wie een
+   abonnement heeft, werkt voor vrijwel niemand die deze integratie via HACS
+   installeert — en de licentievoorwaarden van zo'n feed zeggen doorgaans
+   iets over herdistributie dat hier niet zomaar mee te rijmen is.
+
+Wie dit toch wil: vraag CyclingFlash één ding — zit er een positie of
+km-to-go in de feed, en wat kost het kleinste tier. Is het antwoord "alleen
+uitslagen", dan is de prijs niet meer relevant.
+
 Drie dingen om vooraf te wegen, want ze maken live iets anders dan de rest
 van deze integratie:
 
