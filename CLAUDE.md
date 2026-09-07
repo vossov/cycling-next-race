@@ -609,6 +609,62 @@ Let op de importnaam in tests: `cycling_next_race.bronnen` via de fixture
 een tweede exemplaar met een eigen register op, en dan meldt een test een
 bron aan die `sensor.py` nooit ziet.
 
+### Wat de robots.txt van onze bronnen zegt
+
+Op 7 september 2026 opgehaald door de eigenaar (de proxy hier laat ze niet
+door) en letterlijk bewaard in `docs/robots/`. Deze controle was er nooit
+geweest, terwijl FirstCycling er wél op is afgewezen — dat was een gat.
+
+**Wielerflits: in orde.** De `User-agent: *`-groep noemt een lijst paden
+(`/wp-admin/`, feeds, archief, URL's met parameters) en `Disallow: /` staat
+er niet bij. De tv-gids op `/nieuws/wielrennen-op-tv/` valt onder geen enkele
+regel. `GPTBot` en `CCBot` zijn expliciet geweerd en `ia_archiver` ook, maar
+onze user-agent is geen van drieën — en anders dan bij FirstCycling staat
+ClaudeBot er niet bij naam in. Er staat één `Crawl-delay: 5`; die hangt in
+het bestand onder het `ia_archiver`-blok en geldt formeel dus alleen daarvoor,
+maar het is de enige uitspraak over tempo die de site doet en één verzoek per
+dag zit daar ver onder.
+
+**Cyclingstage: geen enkele actieve regel raakt ons, maar lees verder.** Het
+bestand opent met:
+
+```
+# Deny all robots that we do not specifically want to allow
+#User-agent: *
+#Disallow: /
+```
+
+Die twee regels zijn **uitgecommentarieerd**. Er is dus geen actieve
+`*`-groep, en onze user-agent matcht geen van de acht groepen die er wél
+staan (MJ12bot, ias_crawler, Twitterbot, twee Google-bots, slurp, bingbot,
+googlebot). Volgens het protocol betekent dat: geen restrictie. De
+kalenderpagina, de routepagina's, de etappeteksten, de uitslagen, de
+resultatenindex en de startlijst raken geen enkele regel — die zijn zelfs
+voor googlebot toegestaan.
+
+**Maar `/images` is in élk toegelaten blok verboden.** ias_crawler,
+Mediapartners-Google, slurp, bingbot en googlebot krijgen allemaal
+`Disallow: /images`. En daar hangen twee dingen van ons:
+
+| ons adres | wat het levert |
+|---|---|
+| `www.cyclingstage.com/images/{slug}/{jaar}/stage-{n}-times.htm` | het tijdschema, en daarmee de tussensprint |
+| `cdn.cyclingstage.com/images/{slug}/{jaar}/stage-{n}-parcours.gpx` | het hoogteprofiel |
+
+Formeel geldt die regel niet voor ons, want we matchen geen groep. Maar het
+is een consistent signaal over precies dat pad, en de uitgecommentarieerde
+kopregel laat zien dat de eigenaar ooit een allowlist wilde. Daar staat
+tegenover dat dit een WordPress-site is en `Disallow: /images` daar een
+sjabloonregel is die bedoeld is om afbeeldingen niet te laten indexeren — en
+dat cyclingstage de GPX-bestanden zélf aanbiedt op een eigen
+overzichtspagina, om te downloaden.
+
+**Dat is geen uitgemaakte zaak en het is niet aan de code om die knoop door
+te hakken.** Wat hier vaststaat: het is geen `Disallow: /` zoals bij
+FirstCycling, en het is ook niet niks. Wie hierop terugkomt: de bestanden
+staan in `docs/robots/`, de afweging staat hierboven, en het gaat om het
+hoogteprofiel en de tussensprint — niet om de rest van de integratie.
+
 ### FirstCycling is uitgesloten (robots.txt)
 
 Op 27 augustus 2026 nagekeken als kandidaat om cyclingstage te vervangen of

@@ -1,0 +1,157 @@
+# https://www.cyclingstage.com/robots.txt — opgehaald 7 september 2026
+# (cdn.cyclingstage.com/robots.txt levert hetzelfde bestand op)
+#
+# LET OP bij het lezen: de eerste twee regels zijn UITGECOMMENTARIEERD. De
+# `User-agent: *`-groep is dus NIET actief; er is geen enkele actieve groep
+# die op een onbekende bezoeker matcht.
+# Deny all robots that we do not specifically want to allow
+#User-agent: *
+#Disallow: /
+## Block Majestic crawler
+User-agent: MJ12bot
+Disallow: /
+## Allow ias_crawler
+User-agent: ias_crawler
+Allow: /
+Disallow: /cgi-bin
+Disallow: /comments
+Disallow: /images
+Disallow: /wp-admin
+Disallow: /wp-includes
+Disallow: /*trackback
+## Allow Twitterbot
+User-agent: Twitterbot
+Allow: /
+## Allow Adsbot Google
+User-agent: AdsBot-Google
+Allow: /
+
+## Allow Mediapartner Google
+User-agent: Mediapartners-Google
+Allow: /
+Disallow: /cgi-bin
+Disallow: /comments
+Disallow: /images
+Disallow: /wp-admin
+Disallow: /wp-includes
+Disallow: /*trackback
+Disallow: /*/contact
+Disallow: /*/*/contact
+Disallow: /*map-iframe*
+Disallow: /*function.include
+Disallow: /wp-content/
+Allow: /wp-content/uploads/
+Disallow: /*.php$
+Disallow: /*.js$
+Disallow: /*.inc$
+Disallow: /*.css$
+Disallow: /*.wmv$
+Disallow: /*.cgi$
+Disallow: /*.xhtml$
+Disallow: /*.xlsx $
+Disallow: /*.doc$
+Disallow: /*.pdf$
+Disallow: /*.zip$
+Disallow: /*.gz$
+Disallow: /*?*
+
+# Yahoo
+User-agent: slurp
+Allow: /
+Disallow: /cgi-bin
+Disallow: /comments
+Disallow: /images
+Disallow: /wp-admin
+Disallow: /wp-includes
+Disallow: /*trackback
+Disallow: /*/contact
+Disallow: /*/*/contact
+Disallow: /*map-iframe*
+Disallow: /*function.include
+Disallow: /wp-content/
+Allow: /wp-content/uploads/
+Disallow: /*.php$
+Disallow: /*.js$
+Disallow: /*.inc$
+Disallow: /*.css$
+Disallow: /*.wmv$
+Disallow: /*.cgi$
+Disallow: /*.xhtml$
+Disallow: /*.xlsx $
+Disallow: /*.doc$
+Disallow: /*.pdf$
+Disallow: /*.zip$
+Disallow: /*.gz$
+Disallow: /*?*
+
+Sitemap: https://www.cyclingstage.com/sitemap_index.xml
+# bingbot
+User-agent: bingbot
+Allow: /
+Disallow: /cgi-bin
+Disallow: /comments
+Disallow: /images
+Disallow: /wp-admin
+Disallow: /wp-includes
+Disallow: /*trackback
+Disallow: /*/contact
+Disallow: /*/*/contact
+Disallow: /*map-iframe*
+Disallow: /*function.include
+Disallow: /wp-content/
+Allow: /wp-content/uploads/
+Sitemap: https://www.cyclingstage.com/sitemap_index.xml
+# google bot
+User-agent: googlebot
+Allow: /
+Disallow: /cgi-bin
+Disallow: /comments
+Disallow: /images
+Disallow: /wp-admin
+Disallow: /wp-includes
+Disallow: /*trackback
+Disallow: /*/contact
+Disallow: /*/*/contact
+Disallow: /*map-iframe*
+Disallow: /*function.include
+Disallow: /wp-content/
+Allow: /wp-content/uploads/
+Disallow: /*.php$
+Disallow: /*.js$
+Disallow: /*.inc$
+Disallow: /*.css$
+Disallow: /*.wmv$
+Disallow: /*.cgi$
+Disallow: /*.xhtml$
+Disallow: /*.xlsx $
+Disallow: /*.doc$
+Disallow: /*.pdf$
+Disallow: /*.zip$
+Disallow: /*.gz$
+Disallow: /tour-down-under-2014/stages-route-australia-2014/
+Disallow: /vuelta-206-route/
+Disallow: /vuelta-2014-contenders/
+Disallow: /cycling/tour-of-dubai-2015/
+Disallow: /amstel-gold-race-2014/route-agr-2014/_1/
+Disallow: ?wysijap=subscriptionsfeed/
+Disallow: /performgroup.htm/
+Disallow: /slideshow-/
+Disallow: /DARTIFrame_/
+Disallow: /tirreno-adriatico-2022/zweeler-pool-ta/
+Disallow: /paris-nice-2022/zweeler-pool-pn/
+Disallow: /strade-bianche-2022/zweeler-pool-sb/
+Disallow: /volta-a-catalunya-2022/zweeler-pool-cat/
+Disallow: /milan-san-remo-2022/zweeler-pool-msr/
+Disallow: /tour-of-flanders-2022/zweeler-pool-rvv/
+Disallow: /giro-2022/zweeler-pool-italy-2022/
+Disallow: /tour-de-france-2022/zweeler-pool-tdf-2022/
+
+Disallow: /tirreno-adriatico-2023/zweeler-pool-ta
+Disallow: /paris-nice-2023/zweeler-pool-pn
+Disallow: /strade-bianche-2023/zweeler-pool-sb
+Disallow: /milan-san-remo-2023/zweeler-pool-msr/
+Disallow: /tour-of-flanders-2023/zweeler-pool-rvv/
+Disallow: /giro-2023/zweeler-pool-italy/
+Disallow: /tour-de-france-2023/zweeler-pool-tdf/
+Disallow: /vuelta-2023/zweeler-pool-vuelta-2023/
+Sitemap: https://www.cyclingstage.com/sitemap_index.xml

@@ -1,0 +1,32 @@
+# https://www.wielerflits.nl/robots.txt — opgehaald 7 september 2026
+User-agent: *
+Disallow: /wp-admin/
+Disallow: /rss.php
+Disallow: /rss-channel
+Disallow: /feed.rss
+Disallow: /niet-ok/*
+Disallow: /404.php
+Disallow: /standalone/*
+Disallow: /archief/*
+Disallow: /ocean-json/
+Disallow: /*?*utm_source=
+Disallow: /*?amp
+Disallow: /*?comment_id=
+Disallow: /*?amp
+Disallow: /*?action
+Disallow: /*?cat_name
+Disallow: /*?login
+Disallow: /*?search
+Disallow: /?_gl=
+User-agent: ia_archiver
+Disallow: /
+Crawl-delay: 5
+
+User-agent: Googlebot-News
+Allow: /*?amp
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
