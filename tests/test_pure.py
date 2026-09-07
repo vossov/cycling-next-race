@@ -166,7 +166,7 @@ def test_watchability_met_data(wt):
     assert wt._watchability(40, 89, mm, "RR", 1028) >= 7           # circuitfinale
 
 
-# ── tijdschema en zenders ───────────────────────────────────────────
+# ── tijdschema ──────────────────────────────────────────────────────
 
 TIJDSCHEMA = """<table>
 <tr><th></th><th>done - km</th><th>to go - km</th><th>42 km/h</th></tr>
@@ -181,25 +181,3 @@ def test_parse_times(wt):
     assert wt._parse_times(TIJDSCHEMA.replace("intermediate sprint", "feed zone")) == []
 
 
-def _tv_blok(tijd, naam, vlaggen):
-    vl = "".join(f'<img alt="{v}" src="https://x/svg/flags/{v}.svg">' for v in vlaggen)
-    return (f'<div><span>{tijd}</span><img src="https://cyclingflash.com/_next/'
-            f'image?url=https%3A%2F%2Fcdn%2F1%2Fx.jpg&amp;w=1920"><span>{naam}</span>'
-            f'{vl}</div>')
-
-
-TV = ('<h5><a href="https://www.wielerflits.nl/wielerkalender/tour-de-france-2026'
-      '/etappes/13/">Tour de France</a></h5>'
-      + _tv_blok("12:45", "Eurosport 1", ["NL", "BE"])
-      + _tv_blok("14:15", "NPO1", ["NL"])
-      + '<h5><a href="https://www.wielerflits.nl/wielerkalender/andere-2026'
-        '/etappes/2/">Andere koers</a></h5>'
-      + _tv_blok("15:00", "Pickx+ Sports 1", ["BE"]))
-
-
-def test_parse_channels(wt):
-    ch = wt._parse_channels(TV, "tour-de-france", "2026", 13, "Tour de France")
-    assert [c["name"] for c in ch] == ["Eurosport 1", "NPO1"]     # alleen NL-vlag
-    assert ch[0]["time"] == "12:45"
-    assert ch[0]["logo"].startswith("https://") and "_next" not in ch[0]["logo"]
-    assert wt._parse_channels(TV, "tour-de-france", "2026", 99, "Tour de France") == []

@@ -807,26 +807,90 @@ def _logo_url(u):
     return u
 
 
-def _parse_channels(html, pcs_slug, year, idx, race_name):
-    """NL-tv-zenders (naam, tijd, logo) voor een koers/etappe uit de tv-gids-HTML."""
+# Een koersregel in de tv-gids. Twee vormen, en de eis dat er één van beide
+# staat is wat de "Lees meer over"-tags onderaan de pagina buitensluit — die
+# linken naar `/wielerkalender/{slug}` zónder achtervoegsel en zouden anders
+# de tekst die erna komt als zenders opleveren.
+#
+#   rittenkoers : /wielerkalender/vuelta-a-espana-2026/etappes/16/
+#   eendaagse   : /wielerkalender/grand-prix-cycliste-de-quebec-2026/startlijst
+#
+# Die tweede vorm ontbrak tot 0.26.3, waardoor een eendaagse koers nooit
+# zenders kon krijgen.
+_TV_KOERS = re.compile(
+    r'<a[^>]*wielerkalender/([^/"\']+)/(?:etappes/(\d+)/|startlijst)[^>]*>'
+    r'([^<]+)</a>', re.I)
+
+_DIAKRIET = str.maketrans("\u00e0\u00e1\u00e2\u00e4\u00e3\u00e9\u00e8\u00ea\u00eb"
+                          "\u00ed\u00ec\u00ee\u00ef\u00f3\u00f2\u00f4\u00f6\u00f5"
+                          "\u00fa\u00f9\u00fb\u00fc\u00e7\u00f1\u00fd\u00ff",
+                          "aaaaaeeeeiiiiooooouuuucnyy")
+
+
+def _naamwoorden(naam: str) -> set:
+    """De woorden van een koersnaam, zonder diakrieten en losse letters."""
+    kaal = (naam or "").lower().translate(_DIAKRIET)
+    return {w for w in re.split(r"[^a-z0-9]+", kaal) if len(w) > 1}
+
+
+def _zelfde_koers(onze_naam: str, onze_vrouwen: bool,
+                  tv_naam: str, tv_vrouwen: bool) -> bool:
+    """Of een koers in de tv-gids dezelfde is als de onze.
+
+    Twee sites, twee schrijfwijzen: wij hebben "Grand Prix de Québec" uit de
+    cyclingstage-kalender, wielerflits schrijft "Grand Prix Cycliste de
+    Québec". Vergelijken op woorden lost dat op — de ene verzameling moet in
+    de andere passen.
+
+    **Koppelen op de slug is hier eerder geprobeerd en dat gaf verkeerde
+    zenders**, wat erger is dan geen: `giro` is een prefix van
+    `giro-della-toscana-...` en `tour-de-france` van
+    `tour-de-france-femmes-we-2026`. De Giro d'Italia kreeg zo de
+    uitzendtijden van de Giro della Toscana.
+
+    Het geslacht moet daarom óók kloppen, en dat is precies wat de
+    Tour/Tour Femmes uit elkaar houdt: op woordniveau is "Tour de France"
+    een deelverzameling van "Tour de France Femmes".
+
+    Minstens twee woorden, zodat een losse "Tour" niet overal in past.
+    """
+    if bool(onze_vrouwen) != bool(tv_vrouwen):
+        return False
+    a, b = _naamwoorden(onze_naam), _naamwoorden(tv_naam)
+    if not a or not b:
+        return False
+    klein, groot = (a, b) if len(a) <= len(b) else (b, a)
+    return len(klein) >= 2 and klein <= groot
+
+
+def _parse_channels(html, race_name, idx, women=False):
+    """NL-tv-zenders (naam, tijd, logo) voor een koers/etappe uit de tv-gids.
+
+    Alleen uitzendingen met een Nederlandse vlag; een koers die alleen in
+    België te zien is (Sporza online bijvoorbeeld) hoort er niet in.
+
+    Let op de vlaggen: er staat er óók één vóór de koersnaam, en dat is het
+    land van de kóérs. Die valt buiten het blok van deze koers omdat er op de
+    koerslink gesplitst wordt, en hij draagt geen tijd, dus de zenderregex
+    pakt hem niet.
+    """
     html = re.sub(r'<img[^>]*NL\.svg[^>]*>', ' ##NL## ', html, flags=re.I)
     html = re.sub(r'<img[^>]*BE\.svg[^>]*>', ' ##BE## ', html, flags=re.I)
     html = re.sub(r'<img[^>]*src="([^"]*_next/image[^"]*)"[^>]*>',
                   lambda m: f' ##LOGO|{m.group(1)}## ', html, flags=re.I)
-    html = re.sub(r'<a[^>]*wielerkalender/([^/"\']+)/etappes/(\d+)/[^>]*>([^<]+)</a>',
-                  lambda m: f' ##RACE|{m.group(1)}|{m.group(2)}|{m.group(3).strip()}## ',
-                  html, flags=re.I)
+    html = _TV_KOERS.sub(
+        lambda m: f' ##RACE|{m.group(1)}|{m.group(2) or ""}|{m.group(3).strip()}## ',
+        html)
     text = re.sub(r'[ \t\r\n\u00a0]+', ' ', re.sub(r'<[^>]+>', ' ', html))
-    want_stage = str(idx) if idx else "1"
-    rn = _slug_norm(race_name)
+    want_stage = str(idx) if idx else ""
     for part in re.split(r'##RACE\|', text)[1:]:
         head, _, body = part.partition('##')
         f = head.split('|')
         if len(f) < 3 or f[1] != want_stage:
             continue
-        wf_slug, wf_name = f[0], _slug_norm(f[2])
-        if not (wf_slug.startswith(pcs_slug + "-") or wf_name == rn
-                or (rn and (rn in wf_name or wf_name in rn))):
+        # geslacht uit de slug én uit de regel erna; twee losse signalen
+        tv_vrouwen = "-we-" in f[0].lower() or "women elite" in body[:60].lower()
+        if not _zelfde_koers(race_name, women, f[2], tv_vrouwen):
             continue
         seen, out = set(), []
         for m in re.finditer(
@@ -858,13 +922,20 @@ def _fetch_tv_html():
         return ""
 
 
-def _channels_from(html, race_url, idx, race_name):
-    """NL-tv-zenders van één etappe uit de al opgehaalde tv-gids."""
-    m = re.match(r"race/([^/]+)/(\d{4})", race_url or "")
-    if not html or not m:
+def _channels_from(html, race_name, idx, women=False):
+    """NL-tv-zenders van één etappe uit de al opgehaalde tv-gids.
+
+    Hier stond `re.match(r"race/([^/]+)/(\d{4})", race_url)` — een
+    procyclingstats-padvorm. Sinds 0.19 komt daar een cyclingstage-adres
+    binnen, die match faalde altijd en de functie gaf voor élke koers een
+    lege lijst terug. De tv-gids was daarmee stil dood; het viel niet op
+    omdat een lege lijst er hetzelfde uitziet als "vandaag niets op tv".
+    Dezelfde soort fout als de live-stip in 0.22.2.
+    """
+    if not html or not race_name:
         return []
-    ch = _parse_channels(html, m.group(1), m.group(2), idx, race_name or "")
-    _LOGGER.debug("TV-zenders %s e%s: %s", m.group(1), idx, ch)
+    ch = _parse_channels(html, race_name, idx, women)
+    _LOGGER.debug("TV-zenders %s e%s: %s", race_name, idx, ch)
     return ch
 
 
@@ -1514,8 +1585,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
             return []          # de tv-gids toont ~6 dagen vooruit
         try:
             html = await self._tv_gids(today)
-            return await self._job(_channels_from, html, stage["race_url"],
-                                   stage.get("idx"), stage.get("race_name"))
+            return await self._job(_channels_from, html,
+                                   stage.get("race_name"), stage.get("idx"),
+                                   stage.get("women"))
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("TV-zenders mislukt voor %s: %s",
                           stage.get("stage_url"), err)

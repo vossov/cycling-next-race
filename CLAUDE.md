@@ -840,9 +840,50 @@ gaat vóór op de automatische adressen.
 ### wielerflits.nl
 
 `https://www.wielerflits.nl/nieuws/wielrennen-op-tv/` — dagoverzicht met per
-koers de zenders en tijden. De parser (`_parse_channels`) zet vlag-afbeeldingen
-en koerslinks om in tekstmarkers en splitst daarop. Toont ~6 dagen vooruit,
-dus alleen ophalen bij `days_until <= 6`.
+koers de zenders en tijden. Toont ~6 dagen vooruit, dus alleen ophalen bij
+`days_until <= 6`.
+
+**Deze parser draaide tot 0.26.3 volledig op verzonnen HTML** — als enige in
+het project. De fixture `wielerflits_tv_2026-09-07.html` legde meteen drie
+dingen bloot die geen van alle een fout in het log gaven:
+
+1. **De koppeling was al sinds 0.19 stuk.** `_channels_from` deed
+   `re.match(r"race/([^/]+)/(\d{4})", race_url)` — een procyclingstats-pad.
+   Sinds de overstap naar cyclingstage komt daar een heel ander adres
+   binnen, dus die match faalde altijd en élke koers kreeg een lege lijst.
+   Dezelfde soort fout als de live-stip in 0.22.2, en net zo onzichtbaar:
+   geen zenders ziet er hetzelfde uit als "vandaag niets op tv".
+2. **Een eendaagse koers kon nooit zenders krijgen.** De regex eiste
+   `/wielerkalender/{slug}/etappes/{n}/`, maar zo'n koers staat als
+   `/wielerkalender/{slug}/startlijst`. Dat trof alle monumenten, alle
+   klassiekers, Québec, Montréal, Lombardije en Parijs-Tours.
+3. **Koppelen op slug gaf verkeerde zenders.** `giro` is een prefix van
+   `giro-della-toscana-…` en `tour-de-france` van
+   `tour-de-france-femmes-we-2026`; die twee paren staan letterlijk naast
+   elkaar op de opgeslagen pagina. De Giro d'Italia kreeg zo de
+   uitzendtijden van de Giro della Toscana — en verkeerde data is erger dan
+   geen data.
+
+De koppeling gaat daarom op **naam plus geslacht** (`_zelfde_koers`). Twee
+sites schrijven een koersnaam anders — wij hebben "Grand Prix de Québec" uit
+de cyclingstage-kalender, wielerflits schrijft "Grand Prix Cycliste de
+Québec" — dus worden de namen op woordniveau vergeleken: de ene verzameling
+moet in de andere passen, met minstens twee woorden zodat een losse "Tour"
+niet overal in past. Het geslacht is wat de Tour en de Tour Femmes uit
+elkaar houdt, want op woordniveau is de eerste een deelverzameling van de
+tweede. Het komt uit de slug (`-we-`) én uit "Women Elite" op de regel
+erna — twee onafhankelijke signalen, net als bij de kalender.
+
+De eis dat er `/etappes/{n}/` of `/startlijst` in het adres staat sluit de
+"Lees meer over"-tags onderaan de pagina uit; die linken naar
+`/wielerkalender/{slug}` zonder achtervoegsel en zouden anders de tekst
+erna als zenders opleveren.
+
+Alleen uitzendingen met een Nederlandse vlag tellen mee. Op 7 september 2026
+had etappe 19 er drie — HBO Max (BE+NL), Sporza online (alleen BE) en VRT1
+(BE+NL) — en dat maakt de fixture een goede test voor dat filter. Let ook op
+de vlag vóór de koersnaam: dat is het land van de kóérs, niet van de
+uitzending.
 
 ## Valkuilen die al veel tijd hebben gekost
 

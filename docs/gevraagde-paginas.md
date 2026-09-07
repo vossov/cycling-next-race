@@ -47,19 +47,19 @@ Deze parsers zijn nooit tegen een echte pagina gehouden. Het project heeft de
 regel "nooit verzonnen HTML" juist omdat dat hier al twee keer een echte bug
 heeft gemaskeerd.
 
-### 2.1 De tv-gids van wielerflits
+### 2.1 De tv-gids van wielerflits — BINNEN (7 september 2026)
 
-```
-https://www.wielerflits.nl/nieuws/wielrennen-op-tv/
-```
+`tests/fixtures/wielerflits_tv_2026-09-07.html`. Meteen raak: de koppeling
+was sinds 0.19 stuk (procyclingstats-padvorm), eendaagse koersen konden nooit
+zenders krijgen, en koppelen op slug gaf de Giro d'Italia de uitzendtijden
+van de Giro della Toscana. Alle drie gerepareerd in 0.26.3, met tests op deze
+pagina.
 
-**De hele tv-functionaliteit draait op verzonnen HTML.** `_parse_channels` in
-`sensor.py` zet vlag-afbeeldingen en koerslinks om in tekstmarkers en splitst
-daarop; de test in `tests/test_pure.py` bouwt die HTML zelf op. Verandert
-wielerflits zijn opmaak, dan verdwijnen de zenders zonder dat er iets rood
-wordt. Dit is de grootste blinde vlek van de drie bronnen.
-
-Sla hem op op een dag dat er koersen zijn (dan staan er meerdere blokken).
+**Nog wél nuttig, later:** een tweede tv-gids uit een ander deel van het
+seizoen — een voorjaarsweekend met de klassiekers, of een dag met zowel een
+mannen- als een vrouwenkoers van dezelfde naam (Ronde van Vlaanderen). Dat
+laatste is het geval waar `_zelfde_koers` op het geslacht moet afgaan, en dat
+staat nu alleen als losse eenheidstest.
 
 ### 2.2 Het tijdschema van een etappe
 
@@ -179,13 +179,13 @@ géén vast patroon.
 
 ### 4.1 Live: ASO Race Center
 
-Dit is het antwoord op "live koersen doen het niet meer". Eerst:
+Dit is het antwoord op "live koersen doen het niet meer".
 
-```
-https://racecenter.lavuelta.es/robots.txt
-```
+**De robots.txt gaf een 404 (7 september 2026).** Volgens RFC 9309 mag een
+client daaruit afleiden dat er geen restricties zijn — geen verbod dus, maar
+ook geen uitnodiging. Zie `docs/robots/README.md`.
 
-Staat daar niets dat het verbiedt, dan **tijdens een etappe** (dus terwijl er
+Wat er nog nodig is, **tijdens een etappe** (dus terwijl er
 gereden wordt, anders is de feed leeg):
 
 ```
