@@ -11,7 +11,7 @@ NAME = "Cycling Next Race"
 # Gelijk aan "version" in manifest.json; hangt achter de kaart-URL zodat de
 # browser na een update de nieuwe versie ophaalt. tests/test_repo.py bewaakt
 # dat de twee niet uiteenlopen.
-VERSION = "0.26.0"
+VERSION = "0.26.1"
 
 # De meegeleverde Lovelace-kaart, door de integratie zelf geregistreerd.
 KAART_BESTAND = "cycling-next-race-card.js"
@@ -101,6 +101,34 @@ MIN_RIDERS = 3
 # Renners per ploeg in de startlijst; een grote ronde heeft er acht.
 MIN_START_N = 1
 MAX_START_N = 8
+
+# Opties waarvan de betekenis is veranderd en waarvan een opgeslagen waarde
+# dus buiten het nieuwe bereik kan vallen. `start_n` telde tot 0.24 renners
+# in totaal (3..30) en telt sinds 0.26 renners per ploeg (1..8): een entry
+# van vóór die wijziging draagt bijvoorbeeld 10, en dan levert het
+# optiescherm een standaardwaarde op die het eigen schema afkeurt — het
+# formulier is dan niet meer in te dienen. Bovendien zou 10 per ploeg de
+# hele startlijst van 184 renners in de attributen zetten.
+OPTIE_GRENZEN: dict[str, tuple] = {
+    CONF_START_N: (MIN_START_N, MAX_START_N),
+}
+
+
+def binnen_grenzen(sleutel: str, waarde):
+    """Een opgeslagen optiewaarde naar het geldige bereik trekken.
+
+    Alleen voor de sleutels in `OPTIE_GRENZEN`; de rest komt onveranderd
+    terug. Onleesbare waarden vallen terug op de standaard, net als in
+    `_opt()` op de coordinator.
+    """
+    grens = OPTIE_GRENZEN.get(sleutel)
+    if grens is None:
+        return waarde
+    try:
+        getal = int(waarde)
+    except (TypeError, ValueError):
+        return OPTION_DEFAULTS[sleutel]
+    return max(grens[0], min(grens[1], getal))
 MAX_RIDERS = 30
 MIN_UPCOMING_DAYS = 1
 MAX_UPCOMING_DAYS = 21

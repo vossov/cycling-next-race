@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.26.0';
+const VERSIE = '0.26.1';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -281,10 +281,12 @@ function puntenlijst(titel, rijen) {
 
 /** Wie er aan de start staan; alleen zolang er nog geen uitslag is.
  *
- * De volgorde komt van de PCS-ranglijst en het cijfer vóór de renner is zijn
- * plek daarop — niet 1 tot en met 10. Dat staat er ook bij: zonder die
- * vermelding leest het lijstje als een voorspelling, en dat is het niet.
- * Renners die niet op die ranglijst staan komen er niet in voor.
+ * Het cijfer vóór de renner is zijn RUGNUMMER, geen plek in een rangorde —
+ * die bestaat hier niet. Cyclingstage wijst nergens een kopman aan, en het
+ * rugnummer doet dat ook niet: binnen een ploeg staan de nummers na de
+ * eerste gewoon alfabetisch op achternaam. Vandaar "per ploeg op rugnummer"
+ * in het bijschrift; zonder die vermelding leest het lijstje als een
+ * voorspelling die niemand heeft opgesteld.
  */
 function startlijst(rijen, renners, ploegen, opgegeven) {
   if (!rijen || !rijen.length) return '';

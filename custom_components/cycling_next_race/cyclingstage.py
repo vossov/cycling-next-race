@@ -551,6 +551,10 @@ def route_kandidaten(html: str, koers_url: str) -> list[str]:
     map_naam = _map_van(koers_url)
     if not map_naam:
         return []
+    # de pagina die we al hebben hoeft niet nog een keer: die heeft geen
+    # etappetabel opgeleverd, anders waren we hier niet. Zonder deze
+    # uitsluiting kost hij een van de drie kandidaatplekken.
+    zelf = "/" + _pad_van(koers_url).strip("/") + "/"
     voor, na = [], []
     for u in _HREF.findall(html or ""):
         pad = _pad_van(u.strip())
@@ -560,6 +564,8 @@ def route_kandidaten(html: str, koers_url: str) -> list[str]:
         if len(delen) != 2 or delen[0].lower() != map_naam.lower():
             continue
         if _ETAPPEPAGINA.match(delen[1]):
+            continue
+        if "/" + "/".join(delen) + "/" == zelf:
             continue
         adres = f"{BASIS}/{delen[0]}/{delen[1]}/"
         rij = voor if "route" in delen[1].lower() else na
