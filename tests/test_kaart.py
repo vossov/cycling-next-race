@@ -95,6 +95,27 @@ def test_tekencode_is_gelijk_aan_de_template(template, functie):
     )
 
 
+def test_geschatte_stip_wijkt_af_van_een_gemeten_stip():
+    """Een schatting hoort er anders uit te zien dan een meting.
+
+    De gemeten stip (`live_km_to_go`) is een gevuld bolletje dat pulseert; de
+    schatting (`est_km_to_go`) een open, gestreepte ring die stilstaat. Draait
+    dat om, dan claimt de kaart een positie die niemand gemeten heeft.
+    `tests/browser/stip_test.mjs` tekent ze allebei echt; dit is de
+    controle die zonder node meeloopt.
+    """
+    tekst = _kaart()
+    for functie in ("svgTegel", "svgDetail"):
+        code = _functiebody(tekst, functie)
+        assert "est_km_to_go" in code, f"{functie} tekent de schatting niet"
+        stip = code[code.index("est_km_to_go"):]
+        assert 'fill="none"' in stip, f"{functie}: de schatting is geen open ring"
+        assert "stroke-dasharray" in stip, f"{functie}: de ring is niet gestreept"
+    # en er hoort in woorden bij te staan wat het is
+    assert "schattingsregel" in tekst
+    assert "schatting" in _functiebody(tekst, "svgDetail").lower()
+
+
 def test_versie_komt_overeen_met_het_manifest(const):
     """De versie hangt achter de kaart-URL; loopt hij achter, dan blijft de
     browser de oude kaart tonen."""

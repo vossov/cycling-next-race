@@ -669,6 +669,66 @@ benoemen in de kaart.
 De status blijft wel op `LIVE` staan — die komt uit de starttijd, en die
 heeft cyclingstage.
 
+### LIVE en de geschatte stip (sinds 0.28)
+
+Twee dingen die de eigenaar op 8 september 2026 vroeg, met de uitkomst van
+het live-onderzoek erboven als gegeven: er komt geen meting, dus laat zien
+wat je wél weet en zeg erbij wat het is.
+
+**LIVE stond alleen op de tegel.** `_show_state_for` — de badge van elke
+etappe in `upcoming` en van elk koersblok — kende alleen "Vandaag", "Morgen"
+en een datum. Een koers in de pop-up meldde dus "Vandaag" terwijl hij op dat
+moment op tv was. `_live_nu(sd, today, start_time, finish_time)` is nu de
+gedeelde bepaling en de tegel gebruikt hem ook.
+
+Wat die functie bewust níét doet: live afleiden uit alleen de datum. Zonder
+starttijd is het antwoord nee. Wél zit er `LIVE_MARGE_MIN` (45) op de
+verwachte finishtijd — die is een verwachting ("expected to finish around
+17:30"), en een koers die uitloopt hoort niet in de slotkilometers uit beeld
+te vallen. Op de tegel is `today_finished` (de uitslag zelf) het echte einde;
+de marge is de terugval voor de blokken, die geen uitslag bij de hand hebben.
+
+**De stip is een schatting en heet daarom anders.** `_schema_positie` verdeelt
+de afstand lineair over de tijd tussen start en verwachte finish. Dat is de
+"stip volgens schema" die hierboven al beschreven stond, met één verschil met
+het oorspronkelijke plan: het tijdschema (`stage-{n}-times.htm`) bestaat niet,
+dus er zijn geen tussenpunten en is de verdeling lineair in plaats van
+per stuk.
+
+`live_km_to_go` blijft leeg en is gereserveerd voor een échte meting. De
+schatting gaat in `est_km_to_go` en `est_pct`, en alleen zolang
+`show_state == "LIVE"` — buiten dat venster blijven de sleutels weg, want
+elke sleutel kost bytes in de attributen. Vóór de start en voorbij de
+verwachte finish geeft `_schema_positie` niets terug; doorrekenen zou een
+stip voorbij de streep opleveren.
+
+**Waarom een eigen sleutel en niet `live_km_to_go` vullen.** Een kaart van
+vóór 0.28 tekent daar een gevuld, pulserend bolletje mee — precies het beeld
+van een live feed. De schatting in dat veld zetten zou elke bestaande
+installatie een meting laten claimen die er niet is. Dezelfde reden waarom
+`startlist_top` en `team_code` leeg bleven staan in plaats van gevuld met
+iets dat erop lijkt.
+
+**Hoe de kaart het onderscheid maakt** (de vraag was: volstaat een
+vraagteken?). Nee — een `?` leest als "we weten niet wát dit is" in plaats van
+"dit is een voorspelling". Het gaat langs drie kanalen tegelijk:
+
+| | gemeten (`live_km_to_go`) | geschat (`est_km_to_go`) |
+|---|---|---|
+| vorm | gevuld bolletje, witte rand | open ring, gestreepte lijn |
+| beweging | pulseert (`<animate>`) | staat stil |
+| woorden | geen | "≈ SCHATTING" bij de stip, plus `schattingsregel()` onder het profiel |
+
+Die stilstand is het belangrijkste signaal: beweging is wat een stip "live"
+laat lijken. `schattingsregel()` noemt de km, de start- en finishtijd waar de
+verdeling op leunt, en dat de koers op een bergrit achterloopt.
+
+De tekencode staat zoals altijd óók in `lovelace/button_card_templates.yaml`
+en `tests/test_kaart.py` vergelijkt ze regel voor regel.
+`tests/browser/stip_test.mjs` tekent beide varianten echt met node — zonder
+browser — en controleert dat de meting pulseert, de schatting niet, en dat
+een meting voorgaat op een schatting.
+
 **Dezelfde fout zit nog in de col-namen.** `_fetch_race_climbs` en
 `_fetch_stage_climbs` geven een cyclingstage-adres door aan `RaceClimbs`
 en `Stage` van procyclingstats, die een PCS-pad verwachten. Ze vangen hun
@@ -971,11 +1031,28 @@ tussensprint kwam daar nooit binnen. De etappepagina noemt geen
 dat adres vooraan met de slug erachter als terugval. Kost geen verzoek: dat
 GPX-adres was er al, en `_gpx_van` draait vóór `_sprints_voor`.
 
-Wat hiervan **niet** nagekeken is: dat het tijdschema in dezelfde map staat
-als de GPX. Dat is de ene overgebleven aanname, en hij kost niets — klopt hij
-niet, dan is de uitkomst dezelfde lege lijst als hiervoor. `times_diag` in de
-attributen laat zien welke adressen het geworden zijn. Er is geen opgeslagen
-`stage-{n}-times.htm` in `tests/fixtures/`; zie `docs/gevraagde-paginas.md`.
+**En die aanname klopt niet.** Op 8 september 2026 nagemeten door de
+eigenaar: `images/vuelta-spain/2026/stage-18-times.htm` geeft óók een 404.
+Daarmee staat vast dat de tussensprint van de Vuelta uit geen van de vier
+adressen komt die we bouwen, en dat het niet aan de map lag.
+
+Erger: er is **nergens bewijs voor dit adres**. Doorzocht op alle opgeslagen
+pagina's in `tests/fixtures/`: de etappepagina noemt "times" alleen in "both
+local times (CEST)", de routepagina en de GPX-overzichtspagina noemen het
+niet, en het enige `times`-adres dat er wél staat is
+`/vuelta-2026/stage-1-start-times-spain-2026` — de startvolgorde van een
+tijdrit, niet het tijdschema onderweg. `stage-{n}-times.htm` is daarmee het
+**laatste met de hand geraden adres in dit project**, precies het soort dat
+ons het Vuelta-profiel en de uitslagen van 46 koersen kostte.
+
+Het staat er nog omdat het bewijs Vuelta-only is: dat het daar niet bestaat
+zegt niets over de Tour of de Giro. Wie hier langskomt heeft twee dingen
+nodig om het af te maken — een `times.htm` van een ándere koers (dan blijft
+het staan) of de bevestiging dat het nergens bestaat (dan gaat
+`_fetch_times`, `_parse_times`, `times_url` en `sprints` eruit, zoals de
+PCS-resten in 0.25). Tot die tijd kost het vier 404's per etappe per dag,
+gedempt door `_sprints_cache`. `times_diag` in de attributen laat zien welke
+adressen het geworden zijn.
 
 **De gebouwde adressen hieronder zijn een aanname over de bestandsnaam én
 over de map, geen bron.** Wijkt

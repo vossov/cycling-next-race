@@ -142,11 +142,20 @@ https://www.cyclingstage.com/images/vuelta-spain/2026/stage-18-times.htm
 
 (vervang `18` door een etappe die nog moet komen)
 
-**Let op de map: `vuelta-spain`, niet `vuelta`.** Het eerder gevraagde adres
-met `vuelta` gaf een 404, en dat was geen typefout maar de kern van het
-probleem — de map onder `/images/` heet niet altijd zoals de koers. Sinds
-0.27.1 leest de integratie die map van een GPX-adres af; wat deze pagina moet
-bewijzen is dat het tijdschema in diezelfde map staat.
+**Allebei geprobeerd, allebei 404** (`vuelta` op 7 september, `vuelta-spain`
+op 8 september 2026). Het ligt dus niet aan de map, en er is in geen enkele
+opgeslagen pagina een link naar een `times.htm` te vinden — `stage-{n}-times.htm`
+is het laatste met de hand geraden adres in dit project.
+
+**Wat we nu nodig hebben is een tijdschema van een ándere koers.** Bestaat dat,
+dan blijft de code staan en is alleen de Vuelta de uitzondering. Bestaat het
+nergens, dan gaan `_fetch_times`, `_parse_times`, `times_url` en het attribuut
+`sprints` eruit — een dood pad dat er onschuldig uitziet is erger dan een leeg
+veld dat je ziet.
+
+Zoek op de routepagina van een koers naar een link met "times", "timetable" of
+"schedule"; die staat er misschien gewoon, en dan hoeft er niets geraden te
+worden.
 
 Hieruit komt de **tussensprint**. `_parse_times` draait nu op een tabel die ik
 zelf heb getypt.

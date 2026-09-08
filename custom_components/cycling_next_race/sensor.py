@@ -301,6 +301,81 @@ def _parse_start_hhmm(start_time: str | None):
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
+# Hoe lang een etappe na de verwachte finishtijd nog als LIVE telt. De
+# finishtijd van cyclingstage is een verwachting ("expected to finish around
+# 17:30"), dus een koers die uitloopt hoort niet halverwege de slotkilometers
+# uit beeld te vallen. Op de tegel is de uitslag zelf het echte einde
+# (`today_finished`); dit is de terugval voor de blokken in de pop-up, die
+# geen uitslag bij de hand hebben.
+LIVE_MARGE_MIN = 45
+
+
+def _minuten(hhmm) -> int | None:
+    return hhmm[0] * 60 + hhmm[1] if hhmm else None
+
+
+def _live_nu(sd, today, start_time, finish_time, nu=None) -> bool:
+    """Rijdt deze etappe op dit moment?
+
+    Alleen op de dag zelf en alleen tussen de starttijd en de verwachte
+    finishtijd (plus `LIVE_MARGE_MIN`). Ontbreekt de starttijd, dan weten we
+    het niet en is het antwoord nee: een koers "live" noemen omdat het
+    toevallig de juiste dag is, is precies het gokken dat dit project niet
+    doet.
+    """
+    if sd != today:
+        return False
+    begin = _minuten(_parse_start_hhmm(start_time))
+    if begin is None:
+        return False
+    nu = nu if nu is not None else dt_util.now()
+    minuut = nu.hour * 60 + nu.minute
+    if minuut < begin:
+        return False
+    eind = _minuten(_parse_start_hhmm(finish_time))
+    if eind is not None and eind > begin:
+        return minuut <= eind + LIVE_MARGE_MIN
+    return True
+
+
+def _schema_positie(start_time, finish_time, distance_km, nu=None):
+    """Waar de koers volgens het tijdschema ongeveer zou moeten rijden.
+
+    Geeft `(km_te_gaan, percentage_afgelegd)`, of `(None, None)` als er niet
+    genoeg bekend is.
+
+    **Dit is een schatting en geen meting.** Er is geen open bron voor de
+    echte positie van het peloton (zie "De GPS-data ís er niet voor
+    buitenstaanders" in CLAUDE.md), dus dit is niet meer dan: de koers begint
+    om 14:40, wordt rond 17:30 verwacht, het is nu 16:05, dus zit hij op
+    ongeveer de helft. Dat is lineair in de tijd en dus fout op een bergrit —
+    het peloton rijdt in een slotklim de helft van de snelheid van een
+    vlakke aanloop — en het weet niets van een kopgroep, een valpartij of
+    een neutralisatie.
+
+    Daarom hoort de kaart hem anders te tekenen dan een gemeten stip: geen
+    kloppend bolletje maar een open, gestreepte ring, met "schatting" erbij.
+    Wie dit ooit vervangt door een echte meting zet die in `live_km_to_go`
+    en laat dit veld leeg.
+    """
+    begin = _minuten(_parse_start_hhmm(start_time))
+    eind = _minuten(_parse_start_hhmm(finish_time))
+    afstand = _num(distance_km)
+    if begin is None or eind is None or not afstand or afstand <= 0:
+        return None, None
+    duur = eind - begin
+    if duur <= 0:
+        return None, None
+    nu = nu if nu is not None else dt_util.now()
+    verstreken = (nu.hour * 60 + nu.minute) - begin
+    if verstreken < 0 or verstreken > duur:
+        # vóór de start of voorbij de verwachte finish: niets tekenen. Na de
+        # finish doorrekenen zou een stip voorbij de streep opleveren.
+        return None, None
+    deel = verstreken / duur
+    return round(afstand * (1 - deel), 1), int(round(deel * 100))
+
+
 # ──────────────────────────────────────────────────────────────
 # Blocking scrape-functies — draaien via async_add_executor_job
 # ──────────────────────────────────────────────────────────────
@@ -827,9 +902,17 @@ def _lege_uitslag(stage: dict) -> dict:
     }
 
 
-def _show_state_for(sd: date, today: date) -> str:
+def _show_state_for(sd: date, today: date, start_time: str = "",
+                    finish_time: str = "") -> str:
+    """De badge van een etappe: LIVE, Vandaag, Morgen of de dag zelf.
+
+    Met een starttijd erbij wordt "Vandaag" LIVE zodra de koers rijdt — dat
+    deed tot 0.28 alleen de tegel, waardoor een koers in de pop-up "Vandaag"
+    bleef melden terwijl hij op dat moment op tv was. Zonder starttijd blijft
+    het "Vandaag": dan weten we het niet.
+    """
     if sd == today:
-        return "Vandaag"
+        return "LIVE" if _live_nu(sd, today, start_time, finish_time) else "Vandaag"
     if sd == today + timedelta(days=1):
         return "Morgen"
     return f"{DAYS_NL[sd.weekday()]} {_fmt_nl(sd)}"
@@ -1841,7 +1924,13 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 laatst, data = klaar[-1], d
 
         if toon is not None:
-            entry["show_state"] = _show_state_for(toon["date"], today)
+            # de tijden staan niet in de etappelijst maar in `upcoming`, dat
+            # ze van de etappepagina haalt. Is die er nog niet, dan blijft
+            # het "Vandaag" — beter dan een koers live noemen op een gok.
+            _tijden = self._upcoming_cache.get(toon["stage_url"]) or {}
+            entry["show_state"] = _show_state_for(
+                toon["date"], today, _tijden.get("start_time"),
+                _tijden.get("finish_est"))
             entry["days_until"] = max(0, (toon["date"] - today).days)
             entry["eyebrow"] = (_short_race(toon["race_name"], 26) if toon.get("one_day")
                                 else f"Etappe {toon['idx']} \u00b7 {_short_race(toon['race_name'])}")
@@ -2052,7 +2141,16 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._upcoming_cache[url] = dict(e)
         sd = s["date"]
         e["date"] = sd.isoformat()
-        e["show_state"] = _show_state_for(sd, today)
+        e["show_state"] = _show_state_for(sd, today, e.get("start_time"),
+                                          e.get("finish_est"))
+        # de geschatte positie, alleen zolang die etappe rijdt. Buiten dat
+        # venster blijft de sleutel weg: elke sleutel kost bytes in de
+        # attributen en die zitten al boven de grens van de recorder.
+        if e["show_state"] == "LIVE":
+            km, pct = _schema_positie(e.get("start_time"), e.get("finish_est"),
+                                      e.get("distance_km"))
+            if km is not None:
+                e["est_km_to_go"], e["est_pct"] = km, pct
         # waar dit etappeprofiel bij hoort; de kaart zoekt er per koersblok
         # in de pop-up de eigen etappes mee op
         e["race_key"] = _race_slug(s["race_url"])
@@ -2381,10 +2479,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # ── Status-pill + eyebrow ─────────────────────────────
         sd = shown["date"]
         if sd == today and not today_finished:
-            hhmm = _parse_start_hhmm(shown_data.get("start_time"))
-            now = dt_util.now()
-            started = hhmm is not None and (now.hour, now.minute) >= hhmm
-            show_state = "LIVE" if started else "Vandaag"
+            # `finish_est` staat verderop pas; de verwachte finishtijd van
+            # cyclingstage is wat hier telt en die hebben we al
+            show_state = ("LIVE" if _live_nu(sd, today,
+                                             shown_data.get("start_time"),
+                                             cs_route.get("finish_time"))
+                          else "Vandaag")
         elif sd == today + timedelta(days=1):
             show_state = "Morgen"
         else:
@@ -2494,6 +2594,14 @@ class CyclingCoordinator(DataUpdateCoordinator):
             shown_data.get("start_time"), svg_stage["distance_km"],
             svg_stage["profile_score"], svg_stage["vertical_m"],
             shown_data.get("stage_type"))
+        # De geschatte positie op het profiel. Alleen tijdens de etappe, en
+        # alleen als een schátting: de kaart tekent hem als open ring en niet
+        # als het gemeten stipje dat `live_km_to_go` zou zijn. Zie
+        # `_schema_positie` voor wat deze schatting wel en niet weet.
+        est_km, est_pct = (
+            _schema_positie(shown_data.get("start_time"), finish_est,
+                            svg_stage["distance_km"])
+            if show_state == "LIVE" else (None, None))
         channels = await self._zenders_voor(shown, today)
 
         return {
@@ -2567,6 +2675,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 # De sleutels blijven staan zodat een oudere kaart niet
                 # struikelt; ze zijn leeg omdat er geen bron voor is.
                 "live_km_to_go": None,
+                # geschat, niet gemeten - zie `_schema_positie`
+                "est_km_to_go": est_km,
+                "est_pct": est_pct,
                 "live_avg_speed": None,
                 "live_status": "",
                 "live_url": live_url,

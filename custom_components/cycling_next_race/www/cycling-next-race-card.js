@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.27.1';
+const VERSIE = '0.28.0';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -473,6 +473,27 @@ function tegelAttributen(a, race) {
   return uit;
 }
 
+/** Het bijschrift onder een profiel met een geschatte stip.
+ *
+ * De stip is geen meting: er is geen open bron voor de positie van het
+ * peloton, dus hij wordt verdeeld over de tijd tussen de start en de
+ * verwachte finish. Dat hoort er in woorden bij te staan — een open ring
+ * alleen zegt de kijker niets, en een gemeten stip suggereren die we niet
+ * hebben is precies wat deze integratie niet doet.
+ */
+function schattingsregel(p) {
+  const km = Number(p && p.est_km_to_go);
+  if (!isFinite(km) || km <= 0) return '';
+  const wanneer = [];
+  if (p.start_time) wanneer.push('start ' + String(p.start_time).trim());
+  if (p.finish_est) wanneer.push('finish rond ' + String(p.finish_est).trim());
+  const bij = wanneer.length ? ' (' + esc(wanneer.join(', ')) + ')' : '';
+  return `<p class="schatting">De open stip is een <b>schatting</b>: ruwweg
+    ${esc(String(km).replace('.', ','))} km te gaan volgens het tijdschema${bij}.
+    Geen meting — de positie van het peloton is nergens openbaar, en op een
+    bergrit ligt de koers achter op deze verdeling.</p>`;
+}
+
 /** Alles van één koers: profiel, komende dagen, uitslag en klassementen.
  *
  * `gekozen` is de lijst uit `sections`; wat er niet in staat wordt
@@ -495,6 +516,7 @@ function koersblok(a, race, meerdere, gekozen, gekozenNiveaus) {
 
   const delen = [
     aan('profile') && profiel ? svgDetail({ attributes: profiel }) : '',
+    aan('profile') && profiel ? schattingsregel(profiel) : '',
     // elke koers zijn eigen zenders; een sensor van vóór `races` heeft ze
     // alleen bovenaan staan, en dan blijft het bij de tegelkoers
     aan('tv') ? zenders(race.primary ? a.channels_detail : u.channels_detail) : '',
@@ -579,7 +601,7 @@ function svgTegel(entity) {
   const eleAt=k=>{if(k<=ele[0][0])return ele[0][1];if(k>=xmax)return ele[ele.length-1][1];for(let i=1;i<ele.length;i++){if(ele[i][0]>=k){const t=(k-ele[i-1][0])/((ele[i][0]-ele[i-1][0])||1);return ele[i-1][1]+t*(ele[i][1]-ele[i-1][1]);}}return ele[ele.length-1][1];};
   (a.sprints||[]).forEach(v=>{const f=Number(v);if(!isFinite(f)||f<=0||f>=xmax)return;const km=xmax-f,sx=X(km).toFixed(1),sy=Y(eleAt(km));s+='<circle cx="'+sx+'" cy="'+sy.toFixed(1)+'" r="3.2" fill="currentColor" opacity=".85"/><text x="'+sx+'" y="'+(sy-8).toFixed(1)+'" text-anchor="middle" font-size="11.5" font-weight="700" fill="currentColor" opacity=".85">S</text>';});
   cl.forEach(c=>{if(!c.k)return;const km=xmax-c.f,cx=X(km),cy=Y(eleAt(km));s+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="3.2" fill="currentColor" opacity=".85"/>';s+='<text x="'+cx.toFixed(1)+'" y="'+(cy-8).toFixed(1)+'" text-anchor="middle" font-size="11.5" font-weight="700" fill="currentColor" opacity=".85">'+E(c.k)+'</text>';});
-  const lkm=Number(a.live_km_to_go);if(isFinite(lkm)&&lkm>0&&lkm<xmax){const lx=X(xmax-lkm).toFixed(1),ly=Y(eleAt(xmax-lkm)).toFixed(1);s+='<circle cx="'+lx+'" cy="'+ly+'" r="5" fill="#E4572E" stroke="#fff" stroke-width="1.8"><animate attributeName="r" values="5;7;5" dur="1.4s" repeatCount="indefinite"/></circle>';}
+  const lkm=Number(a.live_km_to_go),ekm=Number(a.est_km_to_go),gm=isFinite(lkm)&&lkm>0?lkm:ekm,sch=!(isFinite(lkm)&&lkm>0);if(isFinite(gm)&&gm>0&&gm<xmax){const lx=X(xmax-gm).toFixed(1),ly=Y(eleAt(xmax-gm)).toFixed(1);s+=sch?'<circle cx="'+lx+'" cy="'+ly+'" r="5.5" fill="none" stroke="#E4572E" stroke-width="2" stroke-dasharray="3.2 2.6"/>':'<circle cx="'+lx+'" cy="'+ly+'" r="5" fill="#E4572E" stroke="#fff" stroke-width="1.8"><animate attributeName="r" values="5;7;5" dur="1.4s" repeatCount="indefinite"/></circle>';}
   } else {
   const sc=Number(a.profile_score)||0, vm=Number(a.vertical_m)||0;
   const terr=(sc>=150||vm>=3000)?'Bergrit':(sc>=50||vm>=1500)?'Heuvelachtig':(sc||vm||cl.length)?'Vlakke etappe':'Profiel nog niet bekend';
@@ -615,7 +637,7 @@ function svgDetail(entity) {
   const eleAt=k=>{if(k<=ele[0][0])return ele[0][1];if(k>=xmax)return ele[ele.length-1][1];for(let i=1;i<ele.length;i++){if(ele[i][0]>=k){const t=(k-ele[i-1][0])/((ele[i][0]-ele[i-1][0])||1);return ele[i-1][1]+t*(ele[i][1]-ele[i-1][1]);}}return ele[ele.length-1][1];};
   (a.sprints||[]).forEach(v=>{const f=Number(v);if(!isFinite(f)||f<=0||f>=xmax)return;const km=xmax-f,sx=X(km).toFixed(1),sy=Y(eleAt(km));s+='<circle cx="'+sx+'" cy="'+sy.toFixed(1)+'" r="4" fill="currentColor" opacity=".85"/><text x="'+sx+'" y="'+(sy-9).toFixed(1)+'" text-anchor="middle" font-size="12" font-weight="700" fill="currentColor" opacity=".85">S</text>';});
   cl.forEach((c,i)=>{const km=xmax-(Number(c.f)||0),cx=X(km).toFixed(1),cy=Y(eleAt(km)).toFixed(1);s+='<circle cx="'+cx+'" cy="'+cy+'" r="11" fill="'+(CAT[c.k]||RID)+'" stroke="#0E1520" stroke-width="1.6"/><text x="'+cx+'" y="'+(Number(cy)+4.5).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="700" fill="#0E1520">'+(i+1)+'</text>';});
-  const lkm=Number(a.live_km_to_go);if(isFinite(lkm)&&lkm>0&&lkm<xmax){const lx=X(xmax-lkm).toFixed(1),ly=Y(eleAt(xmax-lkm)).toFixed(1);s+='<line x1="'+lx+'" y1="'+ly+'" x2="'+lx+'" y2="'+fl+'" stroke="'+ACC+'" stroke-width="1.5" stroke-dasharray="2 3" opacity=".65"/><circle cx="'+lx+'" cy="'+ly+'" r="6" fill="'+ACC+'" stroke="#fff" stroke-width="2"><animate attributeName="r" values="6;8.5;6" dur="1.4s" repeatCount="indefinite"/></circle>';}
+  const lkm=Number(a.live_km_to_go),ekm=Number(a.est_km_to_go),gm=isFinite(lkm)&&lkm>0?lkm:ekm,sch=!(isFinite(lkm)&&lkm>0);if(isFinite(gm)&&gm>0&&gm<xmax){const lx=X(xmax-gm).toFixed(1),ly=Y(eleAt(xmax-gm)).toFixed(1);s+='<line x1="'+lx+'" y1="'+ly+'" x2="'+lx+'" y2="'+fl+'" stroke="'+ACC+'" stroke-width="1.5" stroke-dasharray="2 3" opacity="'+(sch?'.45':'.65')+'"/>';s+=sch?'<circle cx="'+lx+'" cy="'+ly+'" r="6.5" fill="none" stroke="'+ACC+'" stroke-width="2.2" stroke-dasharray="3.4 2.8"/><text x="'+Math.max(L+34,Math.min(W-R-34,Number(lx))).toFixed(1)+'" y="'+(Number(ly)-14).toFixed(1)+'" text-anchor="middle" font-size="10.5" font-weight="700" fill="'+ACC+'" opacity=".9">\u2248 SCHATTING</text>':'<circle cx="'+lx+'" cy="'+ly+'" r="6" fill="'+ACC+'" stroke="#fff" stroke-width="2"><animate attributeName="r" values="6;8.5;6" dur="1.4s" repeatCount="indefinite"/></circle>';}
   } else {
   const sc=Number(a.profile_score)||0, vm=Number(a.vertical_m)||0;
   const terr=(sc>=150||vm>=3000)?'Bergrit':(sc>=50||vm>=1500)?'Heuvelachtig':(sc||vm||cl.length)?'Vlakke etappe':'Profiel nog niet bekend';
@@ -678,6 +700,10 @@ const STIJL = `
   ha-card { padding: 10px; overflow: hidden; }
   ha-card.klikbaar { cursor: pointer; }
   .leeg { padding: 16px; opacity: .6; font-size: 14px; }
+  .schatting {
+    margin: 2px 4px 8px; font-size: 12px; line-height: 1.35; opacity: .6;
+  }
+  .schatting b { font-weight: 700; }
   svg { display: block; width: 100%; height: auto; }
 
   .aftel { display: flex; align-items: center; padding: 2px 4px; }

@@ -181,3 +181,75 @@ def test_parse_times(wt):
     assert wt._parse_times(TIJDSCHEMA.replace("intermediate sprint", "feed zone")) == []
 
 
+
+
+# ── live, en de geschatte stip ──────────────────────────────────────
+
+def _klok(uur, minuut):
+    """Een 'nu' zoals `dt_util.now()` er een geeft; alleen uur en minuut."""
+    from datetime import datetime
+    return datetime(2026, 9, 8, uur, minuut)
+
+
+def test_live_nu_alleen_tussen_start_en_finish(wt):
+    from datetime import date, timedelta
+    vandaag = date(2026, 9, 8)
+
+    # vóór de start is het niet live
+    assert not wt._live_nu(vandaag, vandaag, "13:10", "17:25", _klok(12, 0))
+    # tijdens de koers wel
+    assert wt._live_nu(vandaag, vandaag, "13:10", "17:25", _klok(15, 30))
+    # precies op de starttijd telt al mee
+    assert wt._live_nu(vandaag, vandaag, "13:10", "17:25", _klok(13, 10))
+    # na de verwachte finish nog even, want die tijd is een verwachting
+    assert wt._live_nu(vandaag, vandaag, "13:10", "17:25", _klok(18, 0))
+    assert not wt._live_nu(vandaag, vandaag, "13:10", "17:25", _klok(18, 30))
+    # een andere dag is nooit live
+    assert not wt._live_nu(vandaag + timedelta(days=1), vandaag, "13:10",
+                           "17:25", _klok(15, 30))
+
+
+def test_live_nu_gokt_niet_zonder_starttijd(wt):
+    """Geen starttijd betekent: we weten het niet, dus niet live."""
+    from datetime import date
+    vandaag = date(2026, 9, 8)
+    assert not wt._live_nu(vandaag, vandaag, "", "17:25", _klok(15, 30))
+    assert not wt._live_nu(vandaag, vandaag, None, None, _klok(15, 30))
+    # zonder finishtijd blijft hij wél live: het einde is dan onbekend, en
+    # dat is iets anders dan weten dat hij klaar is
+    assert wt._live_nu(vandaag, vandaag, "13:10", "", _klok(20, 0))
+
+
+def test_show_state_wordt_live_met_de_tijden_erbij(wt, monkeypatch):
+    from datetime import date
+    vandaag = date(2026, 9, 8)
+    monkeypatch.setattr(wt.dt_util, "now", lambda: _klok(15, 30))
+
+    # dit is de reparatie: zonder tijden bleef een koers in de pop-up
+    # "Vandaag" melden terwijl hij op dat moment reed
+    assert wt._show_state_for(vandaag, vandaag) == "Vandaag"
+    assert wt._show_state_for(vandaag, vandaag, "13:10", "17:25") == "LIVE"
+    assert wt._show_state_for(vandaag, vandaag, "18:00", "20:00") == "Vandaag"
+
+
+def test_schema_positie_is_lineair_in_de_tijd(wt):
+    # halverwege de tijd, dus halverwege de kilometers
+    assert wt._schema_positie("14:00", "18:00", 200, _klok(16, 0)) == (100.0, 50)
+    # net begonnen
+    assert wt._schema_positie("14:00", "18:00", 200, _klok(14, 0)) == (200.0, 0)
+    # op de verwachte finish
+    assert wt._schema_positie("14:00", "18:00", 200, _klok(18, 0)) == (0.0, 100)
+
+
+def test_schema_positie_zwijgt_als_ze_niets_weet(wt):
+    leeg = (None, None)
+    # vóór de start en ná de verwachte finish niets tekenen
+    assert wt._schema_positie("14:00", "18:00", 200, _klok(13, 0)) == leeg
+    assert wt._schema_positie("14:00", "18:00", 200, _klok(18, 30)) == leeg
+    # zonder tijd of zonder afstand valt er niets te verdelen
+    assert wt._schema_positie("", "18:00", 200, _klok(16, 0)) == leeg
+    assert wt._schema_positie("14:00", "", 200, _klok(16, 0)) == leeg
+    assert wt._schema_positie("14:00", "18:00", None, _klok(16, 0)) == leeg
+    assert wt._schema_positie("14:00", "18:00", 0, _klok(16, 0)) == leeg
+    # een finishtijd vóór de start levert geen negatieve duur op
+    assert wt._schema_positie("18:00", "14:00", 200, _klok(16, 0)) == leeg

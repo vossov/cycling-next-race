@@ -251,6 +251,31 @@ sinds 23 augustus 2026 achter een Cloudflare-uitdaging die geen enkele
 HTTP-client passeert; sinds 0.25 gaat er niets meer heen. Die onderdelen
 blijven nu leeg in plaats van stil te mislukken.
 
+#### De stip op het profiel is een schatting
+
+Waar het peloton op dit moment rijdt, is nergens openbaar. De organisatoren
+meten het wel maar delen het niet; zelfs de maker van de wielerapp Radial,
+broer van een WorldTour-renner, zegt er geen toegang toe te hebben. Betaalde
+sportdata-feeds verkopen live *uitslagen*, geen positie.
+
+Sinds 0.28 staat er tijdens een etappe tóch een stip op het hoogteprofiel,
+en die is nadrukkelijk **geen meting**: hij verdeelt de afstand lineair over
+de tijd tussen de starttijd en de verwachte finishtijd, allebei van
+cyclingstage. Zo ziet hij eruit:
+
+| | gemeten | geschat |
+|---|---|---|
+| vorm | gevuld bolletje | **open ring, gestreept** |
+| beweging | pulseert | staat stil |
+| bijschrift | geen | "de open stip is een schatting …" |
+| attribuut | `live_km_to_go` | `est_km_to_go`, `est_pct` |
+
+Op dit moment is alleen de rechterkolom gevuld. Wat de schatting **niet**
+weet: een kopgroep, een valpartij, een neutralisatie, en dat het peloton in
+een slotklim de helft van de snelheid rijdt van een vlakke aanloop. Op een
+bergrit ligt de koers dus doorgaans achter op de stip. Verschijnt er ooit een
+echte meting, dan gaat die in `live_km_to_go` en wint hij vanzelf.
+
 ### De waarschuwing over de attributen
 
 Staat je logboek vol met dit, bij elke update?
