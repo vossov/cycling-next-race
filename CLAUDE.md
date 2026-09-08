@@ -669,6 +669,42 @@ benoemen in de kaart.
 De status blijft wel op `LIVE` staan — die komt uit de starttijd, en die
 heeft cyclingstage.
 
+### De getoonde etappe had geen starttijd (gerepareerd in 0.29.1)
+
+Toen de stip niet verscheen bleek de oorzaak dieper te liggen dan de stip:
+**de tegel kende de starttijd van zijn eigen etappe niet, en al sinds de
+overstap naar cyclingstage in 0.19.**
+
+`shown_data` komt van `_fetch_stage`, en dat leest alleen de
+resultatenpagina — daar staat geen starttijd. De starttijd staat op de
+etappepagina en wordt door `_fetch_stage_meta` gelezen, maar dat draaide
+alleen in `_upcoming_entry`, en de getoonde etappe staat juist **niet** in
+`upcoming` (zie "Een koersblok stuurt géén eigen hoogteprofiel mee").
+`shown_data["start_time"]` was dus altijd `""`.
+
+Wat daar stilletjes aan hing:
+
+| | gevolg |
+|---|---|
+| de badge | "VANDAAG" zonder tijden, terwijl de code een start- en finishtijd kan tonen |
+| `show_state` | werd nooit `LIVE`, want dat hangt aan de starttijd |
+| `update_interval` | schakelde daarom nooit naar `live_scan_minutes` |
+| `finish_est` | `_finish_est()` heeft de starttijd nodig en gaf dus `""` |
+| `est_km_to_go` (0.28) | kwam nooit verder dan `None` |
+
+Precies het patroon van de tv-gids en de live-stip: geen fout in het log,
+geen leeg veld dat opvalt, gewoon een tegel die er compleet uitzag.
+
+`_meta_voor()` op de coordinator is nu de enige weg naar die meta, met
+`_meta_cache` per etappe per dag. De onderliggende pagina wordt met
+`_fetch_stage_names` gedeeld via `_etappe_html`, dus het kost meestal geen
+extra verzoek — en `_fetch_stage_meta` gebruikt sindsdien diezelfde
+dagcache in plaats van elke ronde opnieuw op te halen.
+
+Daarbij hoort één regel die er eerst niet stond: `_etappe_html` bewaart een
+**lege** uitkomst niet meer. Anders haalt één hikje bij cyclingstage om acht
+uur 's ochtends de starttijd én de colnamen voor de rest van de dag weg.
+
 ### LIVE en de geschatte stip (sinds 0.28)
 
 Twee dingen die de eigenaar op 8 september 2026 vroeg, met de uitkomst van

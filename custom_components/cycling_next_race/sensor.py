@@ -773,7 +773,12 @@ def _etappe_html(url: str) -> str:
         _ETAPPE_HTML.clear()
         _ETAPPE_HTML_DAG = vandaag
     if url not in _ETAPPE_HTML:
-        _ETAPPE_HTML[url] = _haal_html(url, "etappetekst")
+        html = _haal_html(url, "etappetekst")
+        if not html:
+            # niet bewaren: een hikje bij cyclingstage om acht uur 's ochtends
+            # hoort niet de hele dag de starttijd en de colnamen weg te halen
+            return ""
+        _ETAPPE_HTML[url] = html
     return _ETAPPE_HTML[url]
 
 
@@ -1019,7 +1024,9 @@ def _fetch_stage_meta(stage: dict) -> dict:
         "stage_type": stage.get("stage_type") or "",
         "start_time": "",
     }
-    html = _haal_html(stage.get("stage_url"), "etappepagina")
+    # dezelfde pagina die `_fetch_stage_names` leest; `_etappe_html` haalt
+    # hem hoogstens één keer per dag op
+    html = _etappe_html(stage.get("stage_url"))
     if not html:
         return d
     d["ok"] = True
@@ -1172,7 +1179,7 @@ def _fetch_tv_html():
 
 
 def _channels_from(html, race_name, idx, women=False):
-    """NL-tv-zenders van één etappe uit de al opgehaalde tv-gids.
+    r"""NL-tv-zenders van één etappe uit de al opgehaalde tv-gids.
 
     Hier stond `re.match(r"race/([^/]+)/(\d{4})", race_url)` — een
     procyclingstats-padvorm. Sinds 0.19 komt daar een cyclingstage-adres
@@ -1765,6 +1772,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # tussensprints en klassementsstanden per etappe. Allebei een dict en
         # niet één plek, want de koersen in de pop-up vragen ze ook op.
         self._sprints_cache: dict[str, list] = {}
+        # starttijd, verwachte finishtijd en hoogtemeters per etappe. Ook de
+        # getoonde etappe heeft dit nodig en die staat niet in `upcoming`.
+        self._meta_cache: dict[str, dict] = {}
         # de startlijst per koers. Twee verzoeken om te vullen (het adres
         # opzoeken en de pagina lezen), dus dit hoort niet elke ronde
         # opnieuw; een dag oud is voor een startlijst ruim vers genoeg.
@@ -2156,6 +2166,22 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._gpx_beschikbaar[stage_url] = bool(elev)
         return elev, climbs
 
+    async def _meta_voor(self, stage: dict) -> dict:
+        """Starttijd, verwachte finishtijd en hoogtemeters van een etappe.
+
+        Per etappe hoogstens één keer per dag; de pagina eronder wordt met
+        `_fetch_stage_names` gedeeld, dus het kost meestal geen verzoek.
+        """
+        url = stage.get("stage_url") or ""
+        if not url:
+            return {}
+        if url not in self._meta_cache:
+            meta = await self._job(_fetch_stage_meta, stage)
+            if not meta.get("ok"):
+                return meta          # niet bewaren: morgen opnieuw proberen
+            self._meta_cache[url] = meta
+        return self._meta_cache[url]
+
     async def _names_for(self, stage_url, art_url, distance=None):
         if stage_url in self._names_cache:
             return self._names_cache[stage_url]
@@ -2172,7 +2198,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             e = dict(cached)
         else:
             await asyncio.sleep(0.4)  # niet overspoelen
-            meta = await self._job(_fetch_stage_meta, s)
+            meta = await self._meta_voor(s)
             elev, gpx_climbs = await self._gpx_van(s, 45)
             dist = meta.get("distance")
             if dist is None and elev:
@@ -2407,6 +2433,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._startlist_cache.clear()
                 self._other_cache.clear()
                 self._names_cache.clear()
+                self._meta_cache.clear()
                 self._prose_cache.clear()
             except Exception as err:  # noqa: BLE001
                 if self._calendar is None:
@@ -2557,13 +2584,30 @@ class CyclingCoordinator(DataUpdateCoordinator):
             andere_koersen, today)
 
         # ── Status-pill + eyebrow ─────────────────────────────
+        #
+        # De starttijd staat niet in de uitslag maar op de etappepagina, en
+        # die werd voor de getoonde etappe nooit gelezen: `_fetch_stage_meta`
+        # draaide alleen voor `upcoming`, en juist de getoonde etappe staat
+        # daar niet in. `shown_data["start_time"]` was dus sinds de overstap
+        # naar cyclingstage altijd leeg — zonder fout in het log. Daardoor
+        # bleven de tijden op de badge weg, werd `show_state` nooit LIVE, en
+        # schakelde de coordinator nooit over op het live-ritme.
+        shown_meta = await self._meta_voor(shown)
+        if not shown_data.get("start_time"):
+            shown_data["start_time"] = shown_meta.get("start_time") or ""
+        if shown_data.get("vertical") is None and shown_meta.get("vertical") is not None:
+            shown_data["vertical"] = shown_meta["vertical"]
+        # de verwachte finishtijd: uit de etappetekst als die gelezen is,
+        # anders uit dezelfde meta
+        finish_bron = cs_route.get("finish_time") or shown_meta.get("finish_time") or ""
+
         sd = shown["date"]
         if sd == today and not today_finished:
             # `finish_est` staat verderop pas; de verwachte finishtijd van
             # cyclingstage is wat hier telt en die hebben we al
             show_state = ("LIVE" if _live_nu(sd, today,
                                              shown_data.get("start_time"),
-                                             cs_route.get("finish_time"))
+                                             finish_bron)
                           else "Vandaag")
         elif sd == today + timedelta(days=1):
             show_state = "Morgen"
@@ -2670,7 +2714,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         today_or_tomorrow = show_state in ("LIVE", "Vandaag", "Morgen")
         days_until = max(0, (shown["date"] - today).days)
         # echte finishtijd van cyclingstage; anders de schatting
-        finish_est = cs_route.get("finish_time") or _finish_est(
+        finish_est = finish_bron or _finish_est(
             shown_data.get("start_time"), svg_stage["distance_km"],
             svg_stage["profile_score"], svg_stage["vertical_m"],
             shown_data.get("stage_type"))

@@ -304,3 +304,32 @@ def test_schema_positie_zwijgt_als_ze_niets_weet(wt):
     assert wt._schema_positie("14:00", "18:00", 0, _klok(16, 0)) == leeg
     # een finishtijd vóór de start levert geen negatieve duur op
     assert wt._schema_positie("18:00", "14:00", 200, _klok(16, 0)) == leeg
+
+
+def test_starttijd_van_de_getoonde_etappe_komt_van_de_etappepagina(wt, monkeypatch):
+    """De tegel las de starttijd nooit, en dat zag je nergens aan.
+
+    `_fetch_stage` levert de uitslag en die kent geen starttijd;
+    `_fetch_stage_meta` leest hem van de etappepagina maar draaide alleen
+    voor `upcoming`, waar de getoonde etappe juist niet in staat. Gevolg:
+    `start_time` altijd leeg, dus geen tijden op de badge, nooit LIVE, en
+    nooit het snellere verversingsritme.
+    """
+    from datetime import date
+    pagina = ("<html><body><p>Stage 16 of the Vuelta starts at 13:20 and the "
+              "race is expected to finish around 17:25 - both local times "
+              "(CEST).</p><p>1,050 metres of elevation gain</p></body></html>")
+    monkeypatch.setattr(wt, "_haal_html", lambda url, wat="": pagina)
+    wt._ETAPPE_HTML.clear()
+    etappe = {"stage_url": "https://www.cyclingstage.com/vuelta-2026-route/stage-16-spain-2026/",
+              "date": date(2026, 9, 8), "idx": 16, "distance_km": 181.1}
+    meta = wt._fetch_stage_meta(etappe)
+    assert meta["ok"]
+    assert meta["start_time"] == "13:20"
+    assert meta["finish_time"] == "17:25"
+    # en daarmee wordt de etappe ook echt live genoemd
+    assert wt._live_nu(date(2026, 9, 8), date(2026, 9, 8), meta["start_time"],
+                       meta["finish_time"], _klok(16, 3))
+    km, pct, model = wt._schema_positie(meta["start_time"], meta["finish_time"],
+                                        181.1, _klok(16, 3))
+    assert km is not None and 0 < km < 181.1 and model == "tijd"
