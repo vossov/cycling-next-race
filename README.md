@@ -259,22 +259,32 @@ broer van een WorldTour-renner, zegt er geen toegang toe te hebben. Betaalde
 sportdata-feeds verkopen live *uitslagen*, geen positie.
 
 Sinds 0.28 staat er tijdens een etappe tóch een stip op het hoogteprofiel,
-en die is nadrukkelijk **geen meting**: hij verdeelt de afstand lineair over
-de tijd tussen de starttijd en de verwachte finishtijd, allebei van
-cyclingstage. Zo ziet hij eruit:
+en die is nadrukkelijk **geen meting**: hij verdeelt de tijd tussen de
+starttijd en de verwachte finishtijd (allebei van cyclingstage) over de
+etappe, met het hoogteprofiel als tempo — klimmen kosten meer tijd per
+kilometer dan afdalingen. Zo ziet hij eruit:
 
 | | gemeten | geschat |
 |---|---|---|
 | vorm | gevuld bolletje | **open ring, gestreept** |
 | beweging | pulseert | staat stil |
 | bijschrift | geen | "de open stip is een schatting …" |
-| attribuut | `live_km_to_go` | `est_km_to_go`, `est_pct` |
+| attribuut | `live_km_to_go` | `est_km_to_go`, `est_pct`, `est_model` |
 
-Op dit moment is alleen de rechterkolom gevuld. Wat de schatting **niet**
-weet: een kopgroep, een valpartij, een neutralisatie, en dat het peloton in
-een slotklim de helft van de snelheid rijdt van een vlakke aanloop. Op een
-bergrit ligt de koers dus doorgaans achter op de stip. Verschijnt er ooit een
-echte meting, dan gaat die in `live_km_to_go` en wint hij vanzelf.
+Op dit moment is alleen de rechterkolom gevuld.
+
+Het tempo komt uit het profiel: vlak telt als ~42 km/h, een klim van 8% als
+~17 en een afdaling van 6% als ~55. Er wordt geen absolute snelheid
+aangenomen — de totale duur staat vast op de start- en finishtijd, en die
+verhoudingen bepalen alleen hoe die tijd over de kilometers valt. Is er geen
+hoogteprofiel, dan blijft de verdeling gelijkmatig; `est_model` zegt welke
+van de twee het is en de kaart schrijft het eronder uit.
+
+Wat de schatting **niet** weet: een kopgroep die vooruit rijdt, een
+valpartij, een neutralisatie, de wind, en dat een koers vaak hard begint. En
+de verwachte finishtijd waar alles op leunt is zelf een verwachting.
+Verschijnt er ooit een echte meting, dan gaat die in `live_km_to_go` en wint
+hij vanzelf.
 
 ### De waarschuwing over de attributen
 

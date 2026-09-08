@@ -114,6 +114,11 @@ def test_geschatte_stip_wijkt_af_van_een_gemeten_stip():
     # en er hoort in woorden bij te staan wat het is
     assert "schattingsregel" in tekst
     assert "schatting" in _functiebody(tekst, "svgDetail").lower()
+    # met en zonder hoogteprofiel is het een andere schatting, en het
+    # bijschrift hoort te zeggen welke van de twee
+    assert "est_model" in tekst
+    assert "hoogteprofiel verdeeld" in tekst
+    assert "gelijkmatig over de kilometers" in tekst
 
 
 def test_versie_komt_overeen_met_het_manifest(const):

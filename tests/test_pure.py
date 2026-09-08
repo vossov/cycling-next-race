@@ -232,17 +232,68 @@ def test_show_state_wordt_live_met_de_tijden_erbij(wt, monkeypatch):
     assert wt._show_state_for(vandaag, vandaag, "18:00", "20:00") == "Vandaag"
 
 
-def test_schema_positie_is_lineair_in_de_tijd(wt):
+def test_schema_positie_zonder_profiel_is_lineair(wt):
+    """Zonder hoogteprofiel valt hij terug op de tijd, en zegt dat ook."""
     # halverwege de tijd, dus halverwege de kilometers
-    assert wt._schema_positie("14:00", "18:00", 200, _klok(16, 0)) == (100.0, 50)
+    assert wt._schema_positie("14:00", "18:00", 200, _klok(16, 0)) == (100.0, 50, "tijd")
     # net begonnen
-    assert wt._schema_positie("14:00", "18:00", 200, _klok(14, 0)) == (200.0, 0)
+    assert wt._schema_positie("14:00", "18:00", 200, _klok(14, 0)) == (200.0, 0, "tijd")
     # op de verwachte finish
-    assert wt._schema_positie("14:00", "18:00", 200, _klok(18, 0)) == (0.0, 100)
+    assert wt._schema_positie("14:00", "18:00", 200, _klok(18, 0)) == (0.0, 100, "tijd")
+
+
+def _profiel(punten):
+    """Een hoogteprofiel als `[[km, meter], ...]`."""
+    return [[k, h] for k, h in punten]
+
+
+def test_schema_positie_volgt_het_hoogteprofiel(wt):
+    """Een slotklim kost meer tijd per kilometer dan de vlakke aanloop.
+
+    100 km vlak gevolgd door 20 km klimmen aan 8%. Lineair in de tijd zou de
+    koers halverwege de rijtijd op 60 km staan; met het profiel erbij ligt
+    dat punt verder, want die laatste twintig kilometer slokken een groot
+    deel van de tijd op.
+    """
+    prof = _profiel([(0, 0), (100, 0), (120, 1600)])
+    km, pct, model = wt._schema_positie("12:00", "16:00", 120, _klok(14, 0), prof)
+    assert model == "profiel"
+    lineair = 120 * 0.5
+    gereden = 120 - km
+    assert gereden > lineair + 10, "de klim hoort duidelijk zwaarder te wegen"
+    assert gereden < 100, "maar niet zo zwaar dat de vlakke aanloop gratis is"
+    assert pct == int(round(gereden / 120 * 100))
+
+
+def test_schema_positie_op_vlak_terrein_blijft_lineair(wt):
+    """Zonder hoogteverschil mag het profiel niets veranderen."""
+    prof = _profiel([(0, 50), (60, 50), (120, 50)])
+    km, pct, model = wt._schema_positie("12:00", "16:00", 120, _klok(14, 0), prof)
+    assert model == "profiel"
+    assert abs(km - 60) < 0.2 and abs(pct - 50) <= 1
+
+
+def test_tempoverdeling_weigert_een_onbruikbaar_profiel(wt):
+    assert wt._tempoverdeling(None) is None
+    assert wt._tempoverdeling([]) is None
+    assert wt._tempoverdeling([[0, 0], [10, 0]]) is None      # te weinig punten
+    # een profiel dat niet vooruit loopt levert niets op
+    assert wt._tempoverdeling([[0, 0], [0, 10], [0, 20]]) is None
+
+
+def test_tempoverdeling_begrenst_uitschieters(wt):
+    """Een steile afdaling in de GPX mag geen oneindige snelheid geven."""
+    prof = _profiel([(0, 0), (1, -400), (2, -800), (3, -1200)])
+    verdeling = wt._tempoverdeling(prof)
+    assert verdeling is not None
+    # elk stuk is even steil, dus de tijd verdeelt gelijk over de drie
+    delen = [d for _, d in verdeling]
+    assert delen[0] == 0.0 and abs(delen[-1] - 1.0) < 1e-9
+    assert abs(delen[1] - 1 / 3) < 0.01
 
 
 def test_schema_positie_zwijgt_als_ze_niets_weet(wt):
-    leeg = (None, None)
+    leeg = (None, None, "")
     # vóór de start en ná de verwachte finish niets tekenen
     assert wt._schema_positie("14:00", "18:00", 200, _klok(13, 0)) == leeg
     assert wt._schema_positie("14:00", "18:00", 200, _klok(18, 30)) == leeg

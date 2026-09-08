@@ -338,42 +338,120 @@ def _live_nu(sd, today, start_time, finish_time, nu=None) -> bool:
     return True
 
 
-def _schema_positie(start_time, finish_time, distance_km, nu=None):
-    """Waar de koers volgens het tijdschema ongeveer zou moeten rijden.
+# Hoeveel langzamer of sneller het peloton rijdt dan op vlak terrein, per
+# eenheid helling. Dit is een model en geen meting, maar het is wél geijkt
+# op snelheden die je bij een WorldTour-koers ziet:
+#
+#   vlak            ~42 km/h   ->  factor 1
+#   8% klim         ~17 km/h   ->  1 + 18.4 * 0.08 = 2.47  ->  42/2.47 = 17
+#   afdaling van 6% ~55 km/h   ->  1 -  4.0 * 0.06 = 0.76  ->  42/0.76 = 55
+#
+# Alleen de verhoudingen tellen: de totale duur wordt vastgepind op de start-
+# en finishtijd van cyclingstage, dus deze factoren bepalen alleen hoe die
+# tijd over de etappe wordt verdeeld. Een absolute snelheid wordt nergens
+# aangenomen.
+TRAAGHEID_OMHOOG = 18.4
+TRAAGHEID_OMLAAG = 4.0
+# Grenzen, want een GPX kent uitschieters: zonder deze zou een afdaling van
+# 25% een oneindige snelheid opleveren en een muur van 30% een stilstand.
+TRAAGHEID_MIN = 0.55
+TRAAGHEID_MAX = 6.0
 
-    Geeft `(km_te_gaan, percentage_afgelegd)`, of `(None, None)` als er niet
-    genoeg bekend is.
+
+def _tempoverdeling(elevation):
+    """Hoe de rijtijd over het profiel verdeeld ligt.
+
+    Geeft `[(km, deel_van_de_tijd), ...]` van 0 tot 1, of `None` als er geen
+    bruikbaar profiel is. Klimmen krijgen meer tijd per kilometer dan
+    afdalingen, met `TRAAGHEID_*` als maat.
+
+    Dit vervangt de lineaire verdeling die 0.28 gebruikte. Die was op een
+    bergrit gewoon fout: de laatste tien kilometer van een aankomst bergop
+    kosten drie keer zoveel tijd als de eerste tien van de aanloop, en de
+    stip liep dus voor.
+    """
+    if not elevation or len(elevation) < 3:
+        return None
+    grenzen, gewichten, totaal = [], [], 0.0
+    for (k0, h0), (k1, h1) in zip(elevation, elevation[1:]):
+        dx = _num(k1) - _num(k0) if k0 is not None and k1 is not None else 0
+        if not dx or dx <= 0:
+            continue
+        helling = ((_num(h1) or 0) - (_num(h0) or 0)) / (dx * 1000.0)
+        traag = 1 + (TRAAGHEID_OMHOOG if helling > 0 else TRAAGHEID_OMLAAG) * helling
+        traag = max(TRAAGHEID_MIN, min(TRAAGHEID_MAX, traag))
+        totaal += dx * traag
+        grenzen.append(_num(k1))
+        gewichten.append(totaal)
+    if not gewichten or totaal <= 0:
+        return None
+    eerste = _num(elevation[0][0]) or 0.0
+    return [(eerste, 0.0)] + [(km, g / totaal) for km, g in zip(grenzen, gewichten)]
+
+
+def _km_bij_tijddeel(verdeling, deel: float) -> float:
+    """Bij welke kilometer hoort dit deel van de rijtijd."""
+    vorige_km, vorig_deel = verdeling[0]
+    for km, d in verdeling:
+        if d >= deel:
+            span = d - vorig_deel
+            t = (deel - vorig_deel) / span if span > 0 else 0.0
+            return vorige_km + t * (km - vorige_km)
+        vorige_km, vorig_deel = km, d
+    return verdeling[-1][0]
+
+
+def _schema_positie(start_time, finish_time, distance_km, nu=None,
+                    elevation=None):
+    """Waar de koers volgens het schema ongeveer zou moeten rijden.
+
+    Geeft `(km_te_gaan, percentage_afgelegd, model)`, of `(None, None, "")`
+    als er niet genoeg bekend is. `model` is `"profiel"` als het
+    hoogteprofiel het tempo bepaalt en `"tijd"` als dat er niet is en de
+    verdeling lineair blijft.
 
     **Dit is een schatting en geen meting.** Er is geen open bron voor de
     echte positie van het peloton (zie "De GPS-data ís er niet voor
-    buitenstaanders" in CLAUDE.md), dus dit is niet meer dan: de koers begint
-    om 14:40, wordt rond 17:30 verwacht, het is nu 16:05, dus zit hij op
-    ongeveer de helft. Dat is lineair in de tijd en dus fout op een bergrit —
-    het peloton rijdt in een slotklim de helft van de snelheid van een
-    vlakke aanloop — en het weet niets van een kopgroep, een valpartij of
-    een neutralisatie.
+    buitenstaanders" in CLAUDE.md). Wat er wél is: de starttijd en de
+    verwachte finishtijd van cyclingstage, en het hoogteprofiel uit de GPX.
+    Die twee samen leggen vast hoe lang de etappe duurt en waar in die tijd
+    het langzaam gaat.
 
-    Daarom hoort de kaart hem anders te tekenen dan een gemeten stip: geen
-    kloppend bolletje maar een open, gestreepte ring, met "schatting" erbij.
-    Wie dit ooit vervangt door een echte meting zet die in `live_km_to_go`
-    en laat dit veld leeg.
+    Wat het model nog steeds niet weet: een kopgroep die vooruit rijdt, een
+    valpartij, een neutralisatie, wind, en dat een koers vaak hard begint.
+    En de verwachte finishtijd is zelf een verwachting. De schatting blijft
+    dus een schatting; de kaart hoort hem als open ring te tekenen en niet
+    als het gemeten bolletje dat `live_km_to_go` zou zijn.
     """
     begin = _minuten(_parse_start_hhmm(start_time))
     eind = _minuten(_parse_start_hhmm(finish_time))
     afstand = _num(distance_km)
     if begin is None or eind is None or not afstand or afstand <= 0:
-        return None, None
+        return None, None, ""
     duur = eind - begin
     if duur <= 0:
-        return None, None
+        return None, None, ""
     nu = nu if nu is not None else dt_util.now()
     verstreken = (nu.hour * 60 + nu.minute) - begin
     if verstreken < 0 or verstreken > duur:
         # vóór de start of voorbij de verwachte finish: niets tekenen. Na de
         # finish doorrekenen zou een stip voorbij de streep opleveren.
-        return None, None
+        return None, None, ""
     deel = verstreken / duur
-    return round(afstand * (1 - deel), 1), int(round(deel * 100))
+    verdeling = _tempoverdeling(elevation)
+    if verdeling:
+        # de kaart tekent de stip op het profiel, dus de kilometers moeten
+        # van datzelfde profiel komen en niet uit de etappelijst — die twee
+        # verschillen soms een kilometer of wat
+        einde = verdeling[-1][0]
+        gereden = _km_bij_tijddeel(verdeling, deel)
+        model = "profiel"
+    else:
+        einde, gereden, model = afstand, afstand * deel, "tijd"
+    if einde <= 0:
+        return None, None, ""
+    return (round(max(0.0, einde - gereden), 1),
+            int(round(min(1.0, gereden / einde) * 100)), model)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -2147,10 +2225,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # venster blijft de sleutel weg: elke sleutel kost bytes in de
         # attributen en die zitten al boven de grens van de recorder.
         if e["show_state"] == "LIVE":
-            km, pct = _schema_positie(e.get("start_time"), e.get("finish_est"),
-                                      e.get("distance_km"))
+            km, pct, model = _schema_positie(
+                e.get("start_time"), e.get("finish_est"), e.get("distance_km"),
+                elevation=e.get("elevation"))
             if km is not None:
                 e["est_km_to_go"], e["est_pct"] = km, pct
+                e["est_model"] = model
         # waar dit etappeprofiel bij hoort; de kaart zoekt er per koersblok
         # in de pop-up de eigen etappes mee op
         e["race_key"] = _race_slug(s["race_url"])
@@ -2598,10 +2678,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # alleen als een schátting: de kaart tekent hem als open ring en niet
         # als het gemeten stipje dat `live_km_to_go` zou zijn. Zie
         # `_schema_positie` voor wat deze schatting wel en niet weet.
-        est_km, est_pct = (
+        est_km, est_pct, est_model = (
             _schema_positie(shown_data.get("start_time"), finish_est,
-                            svg_stage["distance_km"])
-            if show_state == "LIVE" else (None, None))
+                            svg_stage["distance_km"], elevation=elevation)
+            if show_state == "LIVE" else (None, None, ""))
         channels = await self._zenders_voor(shown, today)
 
         return {
@@ -2678,6 +2758,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 # geschat, niet gemeten - zie `_schema_positie`
                 "est_km_to_go": est_km,
                 "est_pct": est_pct,
+                # "profiel" = het tempo volgt het hoogteprofiel, "tijd" =
+                # geen profiel, dus lineair verdeeld
+                "est_model": est_model,
                 "live_avg_speed": None,
                 "live_status": "",
                 "live_url": live_url,

@@ -689,11 +689,43 @@ te vallen. Op de tegel is `today_finished` (de uitslag zelf) het echte einde;
 de marge is de terugval voor de blokken, die geen uitslag bij de hand hebben.
 
 **De stip is een schatting en heet daarom anders.** `_schema_positie` verdeelt
-de afstand lineair over de tijd tussen start en verwachte finish. Dat is de
-"stip volgens schema" die hierboven al beschreven stond, met één verschil met
-het oorspronkelijke plan: het tijdschema (`stage-{n}-times.htm`) bestaat niet,
-dus er zijn geen tussenpunten en is de verdeling lineair in plaats van
-per stuk.
+de tijd tussen de start en de verwachte finish over de etappe. Dat is de
+"stip volgens schema" die hierboven al beschreven stond; het tijdschema
+(`stage-{n}-times.htm`) bestaat niet, dus de tussenpunten komen ergens anders
+vandaan.
+
+**Het tempo volgt het hoogteprofiel (sinds 0.29).** In 0.28 was de verdeling
+lineair in de tijd, en dat is op een bergrit gewoon fout: de laatste tien
+kilometer van een aankomst bergop kosten drie keer zoveel tijd als de eerste
+tien van de aanloop, dus de stip liep voor. `_tempoverdeling` weegt daarom elk
+stukje profiel met `TRAAGHEID_OMHOOG` (18,4) en `TRAAGHEID_OMLAAG` (4,0) per
+eenheid helling, geijkt op snelheden die je bij een WorldTour-koers ziet:
+
+| terrein | factor | komt neer op |
+|---|---|---|
+| vlak | 1 | ~42 km/h |
+| 8% klim | 1 + 18,4 × 0,08 = 2,47 | ~17 km/h |
+| afdaling 6% | 1 − 4,0 × 0,06 = 0,76 | ~55 km/h |
+
+**Er wordt nergens een absolute snelheid aangenomen.** De totale duur staat
+vast op de start- en finishtijd van cyclingstage; deze factoren bepalen
+alleen hoe die tijd over de kilometers verdeeld wordt. Alleen de
+verhoudingen tellen dus, en dat is precies wat je van een profiel kunt
+aflezen en van een klok niet.
+
+`TRAAGHEID_MIN`/`TRAAGHEID_MAX` (0,55 en 6,0) vangen de uitschieters in een
+GPX af: zonder die grenzen levert een afdaling van 25% een oneindige snelheid
+op en een muur van 30% een stilstand.
+
+Op een gemeten voorbeeldrit (160 km: vlak, een col van 6%, de afdaling,
+weer vlak, en een slotklim van 8% over de laatste 20 km) zit het verschil met
+de lineaire verdeling rond de tien kilometer, en een half uur voor de finish
+op acht: de stip staat dan onderaan de slotklim in plaats van halverwege.
+
+`est_model` zegt welke van de twee het geworden is — `"profiel"` als de GPX er
+was, `"tijd"` als er geen profiel is en de verdeling gelijkmatig blijft. De
+kaart schrijft dat verschil uit in `schattingsregel()`, want zonder profiel
+staat de stip op een bergrit te ver vooruit en dat hoort de kijker te weten.
 
 `live_km_to_go` blijft leeg en is gereserveerd voor een échte meting. De
 schatting gaat in `est_km_to_go` en `est_pct`, en alleen zolang
@@ -718,6 +750,11 @@ vraagteken?). Nee — een `?` leest als "we weten niet wát dit is" in plaats va
 | vorm | gevuld bolletje, witte rand | open ring, gestreepte lijn |
 | beweging | pulseert (`<animate>`) | staat stil |
 | woorden | geen | "≈ SCHATTING" bij de stip, plus `schattingsregel()` onder het profiel |
+
+Wat het model níét weet, en wat er dus in `schattingsregel()` bij staat: een
+kopgroep die vooruit rijdt, een valpartij, een neutralisatie, de wind, en dat
+een koers vaak hard begint. En de verwachte finishtijd waar alles op leunt is
+zelf een verwachting van cyclingstage.
 
 Die stilstand is het belangrijkste signaal: beweging is wat een stip "live"
 laat lijken. `schattingsregel()` noemt de km, de start- en finishtijd waar de

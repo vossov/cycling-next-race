@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.28.0';
+const VERSIE = '0.29.0';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -488,10 +488,16 @@ function schattingsregel(p) {
   if (p.start_time) wanneer.push('start ' + String(p.start_time).trim());
   if (p.finish_est) wanneer.push('finish rond ' + String(p.finish_est).trim());
   const bij = wanneer.length ? ' (' + esc(wanneer.join(', ')) + ')' : '';
+  // hoe de tijd over de etappe verdeeld is: met het hoogteprofiel als tempo,
+  // of - als dat er niet is - gelijkmatig. Dat verschil hoort de kijker te
+  // weten, want zonder profiel staat de stip op een bergrit te ver vooruit.
+  const hoe = p.est_model === 'profiel'
+    ? 'de tijd is over het hoogteprofiel verdeeld, dus klimmen tellen zwaarder dan afdalingen'
+    : 'de tijd is gelijkmatig over de kilometers verdeeld, want er is geen hoogteprofiel';
   return `<p class="schatting">De open stip is een <b>schatting</b>: ruwweg
-    ${esc(String(km).replace('.', ','))} km te gaan volgens het tijdschema${bij}.
-    Geen meting — de positie van het peloton is nergens openbaar, en op een
-    bergrit ligt de koers achter op deze verdeling.</p>`;
+    ${esc(String(km).replace('.', ','))} km te gaan${bij} — ${hoe}.
+    Geen meting: de positie van het peloton is nergens openbaar, en dit weet
+    niets van een kopgroep, een valpartij of de wind.</p>`;
 }
 
 /** Alles van één koers: profiel, komende dagen, uitslag en klassementen.
