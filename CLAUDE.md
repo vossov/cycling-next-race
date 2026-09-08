@@ -553,6 +553,40 @@ waar `bronnen.py` voor gemaakt is — een bron per platform, de koers wijst hem
 aan. ASO is de meest lonende eerste stap: één parser bedient acht koersen,
 waaronder twee grote rondes, en de vorm van het eindpunt staat al vast.
 
+### De GPS-data ís er niet voor buitenstaanders
+
+De sterkste aanwijzing komt van Radial, de gratis wieler-app van Kristo
+Jorgenson (broer van Visma-renner Matteo Jorgenson) die in juli 2026 viraal
+ging — 35 000 downloads in drie dagen. In een interview met Rouleur, op de
+vraag of GPS-data makkelijker te krijgen is dan vijftien jaar geleden:
+
+> "Not really, at least not for fans who are following the sport. They do
+> measure it, but the question is: where is it? **I myself do not have
+> direct access to the GPS data.**"
+
+En over waarom:
+
+> "Keeping that data and GPS information secret feels like organizations try
+> to force people to watch the broadcast, as if the idea is: if we give away
+> the position data, why would they still watch?"
+
+Dat is het antwoord op de vraag die hier telkens terugkomt. Iemand met een
+broer in de WorldTour, achttien maanden voltijds werk en een app die de hele
+wielerwereld kent, komt er niet bij. Het is dus geen kwestie van beter
+zoeken, meer moeite of een slimmere parser — **de data wordt bewust niet
+gedeeld**.
+
+Wat Radial wél doet is dezelfde route als wij: publieke bronnen. Hij noemt
+Velonews, Cyclingnews en Wielerflits voor voorbeschouwingen, en de "situatie
+op de weg" (kopgroep, aanvallen, tijdsverschillen) komt uit live
+tekstverslagen, niet uit telemetrie. Zijn financiering is spaargeld, geen
+betaalde feed.
+
+**Gevolg voor deze integratie:** `live_km_to_go`, `live_avg_speed` en
+`live_status` blijven leeg, en dat is geen tekortkoming die met werk op te
+lossen is. Wie hier ooit weer op terugkomt: eerst nagaan of de organisatoren
+hun standpunt hebben gewijzigd. Verandert dat niet, dan verandert dit niet.
+
 ### Live data kopen — uitgezocht op 7 september 2026
 
 Vraag van de eigenaar: kan de live-stip via een betaalde dienst? Wat er te
