@@ -15,7 +15,7 @@ sjablonen. Wat al binnen is staat verderop afgestreept.
 ```
 https://www.cyclingstage.com/vuelta-2026-results/
 https://www.cyclingstage.com/vuelta-2026-gpx/
-https://www.cyclingstage.com/images/vuelta/2026/stage-19-times.htm
+https://www.cyclingstage.com/images/vuelta-spain/2026/stage-19-times.htm
 https://www.cyclingstage.com/vuelta-2026-points-classification/
 https://www.cyclingstage.com/vuelta-2026-kom-classification/
 https://www.cyclingstage.com/vuelta-2026-favourites/
@@ -137,11 +137,16 @@ staat nu alleen als losse eenheidstest.
 ### 2.2 Het tijdschema van een etappe
 
 ```
-https://www.cyclingstage.com/images/vuelta/2026/stage-18-times.htm
+https://www.cyclingstage.com/images/vuelta-spain/2026/stage-18-times.htm
 ```
 
-(vervang `18` door een etappe die nog moet komen; zie de GPX-adressen in
-`gpx_urls()` voor de slug van een andere koers)
+(vervang `18` door een etappe die nog moet komen)
+
+**Let op de map: `vuelta-spain`, niet `vuelta`.** Het eerder gevraagde adres
+met `vuelta` gaf een 404, en dat was geen typefout maar de kern van het
+probleem — de map onder `/images/` heet niet altijd zoals de koers. Sinds
+0.27.1 leest de integratie die map van een GPX-adres af; wat deze pagina moet
+bewijzen is dat het tijdschema in diezelfde map staat.
 
 Hieruit komt de **tussensprint**. `_parse_times` draait nu op een tabel die ik
 zelf heb getypt.

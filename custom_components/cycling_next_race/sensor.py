@@ -1304,6 +1304,35 @@ def _fetch_gpx_index(stage: dict) -> dict:
     return {}
 
 
+# De map onder `/images/` per koers, afgelezen van een écht GPX-adres. De
+# koersslug is er niet altijd gelijk aan — bij de Vuelta is de slug `vuelta`
+# en de map `vuelta-spain` — en het tijdschema wordt met diezelfde map
+# opgebouwd. Wordt niet per dag geleegd: dit is geen opgehaalde inhoud maar
+# een afgelezen padnaam, en die verandert binnen een jaargang niet.
+_IMG_MAP: dict[str, str] = {}
+
+
+def _img_map_sleutel(stage: dict) -> str:
+    jaar = stage["date"].year if stage.get("date") else 0
+    return f"{stage.get('race_slug') or ''}/{jaar}"
+
+
+def _onthoud_img_map(stage: dict, urls) -> None:
+    """De beeldmap van deze koers onthouden, als een adres hem prijsgeeft."""
+    from . import cyclingstage as cs
+
+    sleutel = _img_map_sleutel(stage)
+    if _IMG_MAP.get(sleutel):
+        return
+    for url in urls or ():
+        if not isinstance(url, str):
+            continue
+        mp = cs.map_uit_gpx(url)
+        if mp:
+            _IMG_MAP[sleutel] = mp
+            return
+
+
 def _times_urls(stage: dict) -> list[str]:
     """Tijdschema-pagina's van cyclingstage; daar staat de tussensprint in."""
     from . import cyclingstage as cs
@@ -1311,7 +1340,8 @@ def _times_urls(stage: dict) -> list[str]:
     if stage.get("one_day") or not stage.get("idx") or not stage.get("date"):
         return []
     return cs.times_url(stage.get("race_slug") or "", stage["date"].year,
-                        stage.get("idx"))
+                        stage.get("idx"),
+                        _IMG_MAP.get(_img_map_sleutel(stage), ""))
 
 
 def _parse_times(html):
@@ -1919,6 +1949,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # eerst wat de etappepagina zélf noemt, dan pas de gebouwde adressen
         gelezen = await self._job(_gpx_uit_etappe, s)
         gelezen = list(gelezen) if isinstance(gelezen, (list, tuple)) else []
+        # de etappepagina noemt het volledige adres, en daarin staat de map
+        # onder /images/ die het tijdschema ook nodig heeft
+        _onthoud_img_map(s, gelezen)
         kandidaten = gelezen + [u for u in _gpx_urls(s) if u not in gelezen]
         # één voor één en niet de hele lijst aan `_fetch_gpx`, want dan is
         # achteraf te zeggen wélk adres het werd (`gpx_used`)
@@ -1928,6 +1961,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._gpx_gebruikt[s["stage_url"]] = kandidaat
                 return elev, climbs
         alt = (await self._gpx_index(s)).get(s.get("idx") or 0)
+        _onthoud_img_map(s, [alt] if alt else [])
         if not alt or alt in kandidaten:
             return [], []
         elev, climbs = await self._job(_fetch_gpx, alt, n_out)

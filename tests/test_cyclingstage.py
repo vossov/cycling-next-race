@@ -292,6 +292,32 @@ def test_tijdschema_adressen(cs):
     assert cs.times_url("vuelta", 2026, None) == []
 
 
+def test_beeldmap_uit_gpx_adres(cs):
+    """De map onder /images/ heet niet altijd zoals de koers."""
+    assert cs.map_uit_gpx(
+        "https://cdn.cyclingstage.com/images/vuelta-spain/2026/"
+        "stage-4-route.gpx") == "vuelta-spain"
+    assert cs.map_uit_gpx("https://www.cyclingstage.com/vuelta-2026-gpx/") == ""
+    assert cs.map_uit_gpx("") == ""
+
+
+def test_tijdschema_gebruikt_de_echte_beeldmap(cs):
+    """Met de map van de site gaat het juiste adres vooraan, de slug erachter.
+
+    `images/vuelta/2026/stage-19-times.htm` gaf op 7 september 2026 een 404;
+    de map van de Vuelta is `vuelta-spain`.
+    """
+    urls = cs.times_url("vuelta", 2026, 19, "vuelta-spain")
+    assert urls[0] == ("https://www.cyclingstage.com/images/vuelta-spain/2026/"
+                       "stage-19-times.htm")
+    # de slug blijft als terugval staan, want meestal zijn ze wél gelijk
+    assert any("/images/vuelta/2026/" in u for u in urls)
+    # en dezelfde map twee keer levert geen dubbele adressen op
+    assert len(set(urls)) == len(urls)
+    assert cs.times_url("vuelta", 2026, 19, "vuelta") == cs.times_url(
+        "vuelta", 2026, 19)
+
+
 # ── de keten: kalender -> etappes ───────────────────────────────────
 
 def test_kalender_en_etappes_samen(wt, monkeypatch):
@@ -336,6 +362,15 @@ def test_kalender_en_etappes_samen(wt, monkeypatch):
     # en de adressen die daaruit volgen, zonder één handmatige tabel
     assert wt._gpx_urls(vierde)[0].endswith("vuelta/2026/stage-4-parcours.gpx")
     assert wt._times_urls(vierde)[0].endswith("vuelta/2026/stage-4-times.htm")
+    # zodra een écht GPX-adres de beeldmap prijsgeeft, gaat die vooraan
+    wt._onthoud_img_map(vierde, [
+        "https://cdn.cyclingstage.com/images/vuelta-spain/2026/"
+        "stage-4-route.gpx"])
+    try:
+        assert wt._times_urls(vierde)[0].endswith(
+            "vuelta-spain/2026/stage-4-times.htm")
+    finally:
+        wt._IMG_MAP.clear()
     assert wt._gpx_index_urls(vierde) == [
         "https://www.cyclingstage.com/vuelta-2026-gpx/"]
     assert wt._is_grote_ronde(vuelta["slug"])

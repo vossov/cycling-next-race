@@ -344,12 +344,48 @@ def gpx_index_url(slug: str, jaar: int) -> str:
     return f"{BASIS}/{slug}-{jaar}-gpx/" if slug else ""
 
 
-def times_url(slug: str, jaar: int, idx) -> list[str]:
-    """Het tijdschema van een etappe; daar staat de tussensprint in."""
-    if not slug or not idx:
+def map_uit_gpx(url: str) -> str:
+    """De map onder `/images/` waar cyclingstage de bestanden van een koers zet.
+
+    `https://cdn.cyclingstage.com/images/vuelta-spain/2026/stage-4-route.gpx`
+    -> `vuelta-spain`.
+
+    Die map heet niet altijd zoals de koers: de slug van de Vuelta is
+    `vuelta`, de map `vuelta-spain`. Het adres komt van de site zelf (de
+    etappepagina of de GPX-overzichtspagina noemt het), dus dit is aflezen
+    en geen aanname.
+    """
+    m = re.search(r"/images/([^/]+)/\d{4}/", url or "")
+    return m.group(1) if m else ""
+
+
+def times_url(slug: str, jaar: int, idx, map_: str = "") -> list[str]:
+    """Het tijdschema van een etappe; daar staat de tussensprint in.
+
+    `map_` is de map onder `/images/` zoals hij uit een écht GPX-adres komt
+    (`map_uit_gpx`) en gaat vóór op de slug. Dat is nodig omdat de twee niet
+    altijd gelijk zijn: op 7 september 2026 nagemeten geeft
+    `.../images/vuelta/2026/stage-19-times.htm` een 404 en is de map van de
+    Vuelta `vuelta-spain`. De slug blijft erachter staan als terugval, want
+    voor de meeste koersen zijn ze wél gelijk.
+
+    Dat het tijdschema in diezelfde map staat als de GPX is een aanname —
+    de etappepagina linkt er niet naar, dus er valt niets af te lezen. Hij
+    kost niets: staat het er niet, dan is de uitkomst dezelfde lege lijst
+    als nu.
+    """
+    if not idx:
         return []
-    basis = f"{BASIS}/images/{slug}/{jaar}"
-    return [f"{basis}/stage-{idx}-times.htm", f"{basis}/etappe-{idx}-times.htm"]
+    uit: list[str] = []
+    for mp in (map_, slug):
+        if not mp:
+            continue
+        basis = f"{BASIS}/images/{mp}/{jaar}"
+        for naam in (f"stage-{idx}-times.htm", f"etappe-{idx}-times.htm"):
+            adres = f"{basis}/{naam}"
+            if adres not in uit:
+                uit.append(adres)
+    return uit
 
 
 # ── uitslagen en klassementen ───────────────────────────────────────

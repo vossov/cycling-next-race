@@ -960,11 +960,22 @@ Vuelta**: de koersslug is `vuelta`, maar de map van de plaatjes heet
 volledig op de terugval via de overzichtspagina. Op 7 september 2026
 nagemeten met `images/vuelta/2026/stage-19-times.htm` — bestaat niet.
 
-**Dat raakt ook het tijdschema.** `times_url()` bouwt zijn adres op dezelfde
-manier en is dus voor de Vuelta net zo fout; de tussensprint komt daar niet
-binnen. De etappepagina noemt geen `times.htm`-link, dus daar is die
-oplossing niet te herhalen. Wie dit wil repareren heeft de juiste map nodig
-— vermoedelijk `vuelta-spain`, maar dat is niet nagekeken.
+**Dat raakt ook het tijdschema, en sinds 0.27.1 leent het mee.**
+`times_url()` bouwde zijn adres op dezelfde manier en was voor de Vuelta dus
+net zo fout: `images/vuelta/2026/stage-19-times.htm` bestaat niet en de
+tussensprint kwam daar nooit binnen. De etappepagina noemt geen
+`times.htm`-link, dus het adres zelf valt niet af te lezen — de **map** wel.
+`map_uit_gpx()` haalt hem uit een GPX-adres dat de site zélf noemt
+(`.../images/vuelta-spain/2026/stage-4-route.gpx` → `vuelta-spain`),
+`_onthoud_img_map` bewaart hem per koers in `_IMG_MAP`, en `times_url()` zet
+dat adres vooraan met de slug erachter als terugval. Kost geen verzoek: dat
+GPX-adres was er al, en `_gpx_van` draait vóór `_sprints_voor`.
+
+Wat hiervan **niet** nagekeken is: dat het tijdschema in dezelfde map staat
+als de GPX. Dat is de ene overgebleven aanname, en hij kost niets — klopt hij
+niet, dan is de uitkomst dezelfde lege lijst als hiervoor. `times_diag` in de
+attributen laat zien welke adressen het geworden zijn. Er is geen opgeslagen
+`stage-{n}-times.htm` in `tests/fixtures/`; zie `docs/gevraagde-paginas.md`.
 
 **De gebouwde adressen hieronder zijn een aanname over de bestandsnaam én
 over de map, geen bron.** Wijkt
