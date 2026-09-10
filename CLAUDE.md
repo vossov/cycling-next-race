@@ -669,6 +669,53 @@ benoemen in de kaart.
 De status blijft wel op `LIVE` staan — die komt uit de starttijd, en die
 heeft cyclingstage.
 
+### Een uitslag die pas later op de dag verschijnt (0.29.2)
+
+Op 10 september 2026: etappe 18 van de Vuelta (de tijdrit) was om vijf uur
+gefinisht, en om negen uur 's avonds stond zijn profiel nog op de tegel met
+"VANDAAG" op de badge en geen uitslag eronder.
+
+**Eén oorzaak verklaart beide symptomen.** De tegel rolt door naar de
+volgende etappe zodra `today_finished` waar is, en dat hangt volledig aan
+`_fetch_stage(...)["finished"]`, wat weer aan een gevonden uitslag hangt.
+Komt die uitslag niet binnen, dan blijft de tegel op een gereden etappe
+staan — en dat ziet eruit als twee fouten.
+
+Twee dingen gerepareerd, plus één om het volgende keer meteen te kunnen zien:
+
+**1. Het uitslagoverzicht kon niets bijleren binnen de dag.** `_uitslagindex`
+haalde de resultatenpagina van een koers één keer per dag op en bewaarde de
+uitkomst. Een overzicht dat 's ochtends binnenkomt kent de etappe van die
+middag nog niet, dus stond die uitslag er tot de volgende dag niet in — ook
+niet nadat cyclingstage hem had gepubliceerd. `_uitslagindex(slug, jaar, wil)`
+haalt het overzicht daarom opnieuw op zodra de gevraagde etappe er niet in
+staat. **Alleen als het overzicht zélf iets opleverde**: een lege uitkomst
+betekent dat de pagina niet werkt, en die hoort niet elke ronde opnieuw te
+worden opgevraagd (dat was de reden dat die dagcache er in 0.24 kwam).
+
+**2. Er was geen status tussen "vandaag" en "gereden".** `_gereden_nu()` zegt
+wat we wél weten wanneer de uitslag ontbreekt: de klok is voorbij de
+verwachte finishtijd plus `LIVE_MARGE_MIN`, dus de koers is voorbij. De badge
+leest dan "GEREDEN" in plaats van "VANDAAG". Zonder finishtijd blijft het
+"Vandaag" — dat de starttijd verstreken is zegt niet dat de koers klaar is.
+`_live_nu` en `_gereden_nu` kunnen nooit tegelijk waar zijn; daar is een test
+voor, want de badge hangt eraan.
+
+**3. `result_url` en `result_diag`.** Welk resultatenadres de uitslag
+opleverde (leeg = geen van de twee wegen gaf iets), en welk adres
+`uitslag_url` uit het etappeadres afleidt. Dat laatste is een pure functie en
+kost dus niets. Zonder deze twee was een uitslag die niet binnenkwam alleen
+in het debuglogboek te zien, en dat is precies de situatie waarin je hem niet
+aan hebt staan.
+
+**Wat hiervan niet vastgesteld is:** waaróm het afgeleide adres
+`/vuelta-2026-results/stage-18-spain-results-2026/` op 10 september niets gaf.
+De proxy hier laat cyclingstage niet door (403 op de CONNECT), dus dat is van
+hieruit niet na te kijken. Twee mogelijkheden staan open: cyclingstage
+publiceerde de uitslag later dan gewoonlijk, of een tijdrit krijgt een ander
+adres. `result_diag` op de sensor geeft het antwoord bij de volgende
+gelegenheid.
+
 ### De getoonde etappe had geen starttijd (gerepareerd in 0.29.1)
 
 Toen de stip niet verscheen bleek de oorzaak dieper te liggen dan de stip:
@@ -1479,8 +1526,8 @@ te halen.
 ## Diagnose-attributen
 
 Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:
-`gpx_diag`, `gpx_used`, `times_diag`, `names_diag`, `levels_diag`,
-`elevation_source`.
+`gpx_diag`, `gpx_used`, `times_diag`, `result_diag`, `names_diag`,
+`levels_diag`, `elevation_source`.
 
 ## Dashboard
 

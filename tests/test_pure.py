@@ -333,3 +333,46 @@ def test_starttijd_van_de_getoonde_etappe_komt_van_de_etappepagina(wt, monkeypat
     km, pct, model = wt._schema_positie(meta["start_time"], meta["finish_time"],
                                         181.1, _klok(16, 3))
     assert km is not None and 0 < km < 181.1 and model == "tijd"
+
+
+def test_gereden_nu_kent_het_verschil_tussen_klaar_en_vandaag(wt):
+    """Na de verwachte finish plus de marge is de etappe voorbij.
+
+    De tegel rolt normaal door zodra er een uitslag is. Komt die niet binnen,
+    dan bleef er "VANDAAG" staan bij een etappe die om vijf uur al gefinisht
+    was — dat gebeurde op 10 september 2026 bij etappe 18 van de Vuelta.
+    """
+    from datetime import date, timedelta
+    vandaag = date(2026, 9, 10)
+
+    # tijdens de koers: niet voorbij
+    assert not wt._gereden_nu(vandaag, vandaag, "13:10", "17:25", _klok(15, 0))
+    # net na de verwachte finish: nog binnen de marge, dus nog niet voorbij
+    assert not wt._gereden_nu(vandaag, vandaag, "13:10", "17:25", _klok(18, 0))
+    # ruim erna: voorbij
+    assert wt._gereden_nu(vandaag, vandaag, "13:10", "17:25", _klok(21, 6))
+    # een andere dag telt niet mee
+    assert not wt._gereden_nu(vandaag - timedelta(days=1), vandaag, "13:10",
+                              "17:25", _klok(21, 6))
+
+
+def test_gereden_nu_gokt_niet_zonder_finishtijd(wt):
+    """Zonder finishtijd valt niet te zeggen dat de koers klaar is."""
+    from datetime import date
+    vandaag = date(2026, 9, 10)
+    assert not wt._gereden_nu(vandaag, vandaag, "13:10", "", _klok(23, 0))
+    assert not wt._gereden_nu(vandaag, vandaag, "", "17:25", _klok(23, 0))
+    # en een finishtijd vóór de start is onzin, niet "al klaar"
+    assert not wt._gereden_nu(vandaag, vandaag, "17:25", "13:10", _klok(23, 0))
+
+
+def test_live_en_gereden_sluiten_elkaar_uit(wt):
+    """De twee mogen nooit tegelijk waar zijn; daar hangt de badge aan."""
+    from datetime import date
+    vandaag = date(2026, 9, 10)
+    for uur, minuut in [(12, 0), (13, 10), (15, 30), (17, 25), (18, 0),
+                        (18, 11), (21, 6), (23, 59)]:
+        nu = _klok(uur, minuut)
+        live = wt._live_nu(vandaag, vandaag, "13:10", "17:25", nu)
+        klaar = wt._gereden_nu(vandaag, vandaag, "13:10", "17:25", nu)
+        assert not (live and klaar), f"{uur}:{minuut:02d} is live én gereden"

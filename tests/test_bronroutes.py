@@ -356,3 +356,65 @@ def test_datums_alleen_als_ze_sluitend_zijn(wt):
                                date(2026, 9, 2), date(2026, 9, 8)) == []
     assert wt._datums_verdelen([], date(2026, 9, 2), date(2026, 9, 6)) == []
     assert wt._datums_verdelen([dict(r) for r in rijen], None, None) == []
+
+
+def test_het_overzicht_leert_een_etappe_bij_die_er_vanmorgen_nog_niet_stond(
+        wt, monkeypatch):
+    """Een uitslag verschijnt in de loop van de dag.
+
+    Het overzicht wordt één keer per dag opgehaald. Stond de etappe van
+    vanmiddag er vanmorgen nog niet in, dan bleef hij met alleen die dagcache
+    tot de volgende dag onvindbaar — en bleef het dashboard de hele avond op
+    een gereden etappe staan. Dat was etappe 18 van de Vuelta op
+    10 september 2026.
+    """
+    index = "https://www.cyclingstage.com/tour-of-britain-2026-results/"
+    echt = index + "stage-2-gb-results-2026/"
+    # 's ochtends: het overzicht kent alleen etappe 1
+    ochtend = f'<a href="/tour-of-britain-2026-results/stage-1-gb-results-2026/">1</a>'
+    middag = ochtend + f'<a href="/tour-of-britain-2026-results/stage-2-gb-results-2026/">2</a>'
+    pagina = {index: ochtend}
+    opgevraagd = _pagina(wt, monkeypatch, pagina)
+
+    wt._UITSLAGINDEX.clear()
+    assert wt._uitslagindex("tour-of-britain", 2026, 1) == {
+        1: index + "stage-1-gb-results-2026/"}
+    # etappe 2 staat er niet in: opnieuw ophalen, en nu staat hij er wél
+    pagina[index] = middag
+    assert 2 in wt._uitslagindex("tour-of-britain", 2026, 2)
+    assert opgevraagd.count(index) == 2
+    # en daarna niet nog een keer
+    wt._uitslagindex("tour-of-britain", 2026, 2)
+    assert opgevraagd.count(index) == 2
+
+
+def test_een_overzicht_dat_niets_geeft_wordt_niet_elke_ronde_opnieuw_gehaald(
+        wt, monkeypatch):
+    """Een lege uitkomst betekent dat de pagina zelf niet werkt.
+
+    Dan is opnieuw ophalen zinloos en zou het elke ronde een verzoek kosten
+    aan een adres dat niets oplevert.
+    """
+    index = "https://www.cyclingstage.com/tour-of-britain-2026-results/"
+    opgevraagd = _pagina(wt, monkeypatch, {index: ""})
+    wt._UITSLAGINDEX.clear()
+    for nummer in (1, 2, 3):
+        assert wt._uitslagindex("tour-of-britain", 2026, nummer) == {}
+    assert opgevraagd.count(index) == 1
+
+
+def test_de_uitslag_zegt_welk_adres_het_werd(wt, monkeypatch):
+    """`result_url` is het aanknopingspunt als een uitslag niet binnenkomt."""
+    afgeleid = ("https://www.cyclingstage.com/tour-of-britain-2026-results/"
+                "stage-1-gb-results-2026/")
+    _pagina(wt, monkeypatch, {afgeleid: UITSLAG})
+    wt._UITSLAGINDEX.clear()
+    d = wt._fetch_stage(_etappe())
+    assert d["result_url"] == afgeleid
+
+    # en leeg blijft leeg, niet afwezig
+    _pagina(wt, monkeypatch, {})
+    wt._UITSLAGINDEX.clear()
+    leeg = wt._fetch_stage(_etappe())
+    assert leeg["result_url"] == ""
+    assert leeg["results"] == []

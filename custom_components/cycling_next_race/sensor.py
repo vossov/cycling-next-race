@@ -401,6 +401,30 @@ def _km_bij_tijddeel(verdeling, deel: float) -> float:
     return verdeling[-1][0]
 
 
+def _gereden_nu(sd, today, start_time, finish_time, nu=None) -> bool:
+    """Is deze etappe volgens de klok voorbij, zonder dat er een uitslag is?
+
+    Alleen op de dag zelf en alleen als beide tijden bekend zijn. Zonder
+    finishtijd valt er niets te zeggen en is het antwoord nee — dat de klok
+    verder is dan de starttijd zegt niet dat de koers klaar is.
+
+    Waarom dit bestaat: de tegel rolt door naar de volgende etappe zodra er
+    een uitslag ís (`today_finished`). Komt die uitslag niet binnen — de
+    pagina heet anders, cyclingstage is laat, het overzicht kende de etappe
+    nog niet — dan bleef de tegel de hele avond "VANDAAG" melden bij een
+    etappe die om vijf uur al gefinisht was. Dit is wat we wél weten: de
+    koers is voorbij, de uitslag hebben we niet.
+    """
+    if sd != today:
+        return False
+    begin = _minuten(_parse_start_hhmm(start_time))
+    eind = _minuten(_parse_start_hhmm(finish_time))
+    if begin is None or eind is None or eind <= begin:
+        return False
+    nu = nu if nu is not None else dt_util.now()
+    return (nu.hour * 60 + nu.minute) > eind + LIVE_MARGE_MIN
+
+
 def _schema_positie(start_time, finish_time, distance_km, nu=None,
                     elevation=None):
     """Waar de koers volgens het schema ongeveer zou moeten rijden.
@@ -809,8 +833,20 @@ _UITSLAGINDEX: dict[str, dict] = {}
 _UITSLAGINDEX_DAG = None
 
 
-def _uitslagindex(slug: str, jaar: int) -> dict:
-    """`{etappenummer: adres}` van een koers, hoogstens één verzoek per dag."""
+def _uitslagindex(slug: str, jaar: int, wil=None) -> dict:
+    """`{etappenummer: adres}` van een koers, in principe één verzoek per dag.
+
+    `wil` is het etappenummer waar de aanroeper naar op zoek is. Staat dat er
+    niet in, dan wordt het overzicht opnieuw opgehaald. Dat is nodig omdat een
+    uitslag in de loop van de dag verschijnt: een overzicht dat vanmorgen is
+    binnengehaald kent de etappe van vanmiddag nog niet, en met alleen de
+    dagcache bleef die uitslag tot de volgende dag onvindbaar — een dashboard
+    dat de hele avond op een gereden etappe blijft staan.
+
+    Alleen als het overzicht zélf iets opleverde. Een lege uitkomst betekent
+    dat de pagina niet werkt of niet bestaat, en die hoort niet elke ronde
+    opnieuw te worden opgevraagd.
+    """
     global _UITSLAGINDEX_DAG
 
     from . import cyclingstage as cs
@@ -820,10 +856,15 @@ def _uitslagindex(slug: str, jaar: int) -> dict:
         _UITSLAGINDEX.clear()
         _UITSLAGINDEX_DAG = vandaag
     sleutel = f"{slug}-{jaar}"
-    if sleutel not in _UITSLAGINDEX:
+    bekend = _UITSLAGINDEX.get(sleutel)
+    opnieuw = bool(bekend) and wil is not None and int(wil) not in bekend
+    if bekend is None or opnieuw:
         url = cs.uitslag_index_url(slug, jaar)
         _UITSLAGINDEX[sleutel] = cs.parse_uitslag_index(
             _haal_html(url, "uitslagoverzicht"), slug, jaar) if url else {}
+        if opnieuw:
+            _LOGGER.debug("Uitslagoverzicht %s opnieuw gelezen voor etappe %s: "
+                          "%s etappes", slug, wil, len(_UITSLAGINDEX[sleutel]))
     return _UITSLAGINDEX[sleutel]
 
 
@@ -871,7 +912,7 @@ def _uitslagpagina(stage: dict) -> tuple:
     idx = stage.get("idx")
     if not idx or not slug or not jaar:
         return "", ""
-    url = _uitslagindex(slug, jaar).get(int(idx), "")
+    url = _uitslagindex(slug, jaar, idx).get(int(idx), "")
     if not url or url == afgeleid:
         return "", ""
     _LOGGER.debug("Uitslagadres van etappe %s (%s) via het overzicht: %s",
@@ -901,6 +942,7 @@ def _cs_fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,
 
     data = _lege_uitslag(stage)
     url, html = _uitslagpagina(stage)
+    data["result_url"] = url
     if not html:
         return data
     uit = cs.parse_uitslag(html)
@@ -979,6 +1021,9 @@ def _lege_uitslag(stage: dict) -> dict:
         "profile_icon": "", "profile_score": None,
         "stage_type": stage.get("stage_type") or "",
         "start_time": "", "climbs_raw": [],
+        # welk resultatenadres de uitslag opleverde; leeg betekent dat geen
+        # van de twee wegen in `_uitslagpagina` iets gaf
+        "result_url": "",
         "results": [], "gc": [], "points_leader": "", "kom_leader": "",
         "youth_leader": "", "points_top": [], "kom_top": [], "youth_top": [],
         "startlist_quality": None,
@@ -1510,6 +1555,18 @@ def _times_urls(stage: dict) -> list[str]:
     return cs.times_url(stage.get("race_slug") or "", stage["date"].year,
                         stage.get("idx"),
                         _IMG_MAP.get(_img_map_sleutel(stage), ""))
+
+
+def _uitslag_afgeleid(stage: dict) -> str:
+    """Het resultatenadres dat uit het etappeadres volgt; puur, geen verzoek."""
+    from . import cyclingstage as cs
+
+    return cs.uitslag_url(stage.get("stage_url") or "")
+
+
+def _cs_uitslag_pad(url) -> str:
+    """Alleen het pad, want de host is elke keer dezelfde en kost bytes."""
+    return (url or "").split("cyclingstage.com", 1)[-1]
 
 
 def _parse_times(html):
@@ -2605,10 +2662,15 @@ class CyclingCoordinator(DataUpdateCoordinator):
         if sd == today and not today_finished:
             # `finish_est` staat verderop pas; de verwachte finishtijd van
             # cyclingstage is wat hier telt en die hebben we al
-            show_state = ("LIVE" if _live_nu(sd, today,
-                                             shown_data.get("start_time"),
-                                             finish_bron)
-                          else "Vandaag")
+            if _live_nu(sd, today, shown_data.get("start_time"), finish_bron):
+                show_state = "LIVE"
+            elif _gereden_nu(sd, today, shown_data.get("start_time"),
+                             finish_bron):
+                # gefinisht volgens de klok, maar er is geen uitslag: dat is
+                # iets anders dan "vandaag" en hoort niet als zoiets te lezen
+                show_state = "Gereden"
+            else:
+                show_state = "Vandaag"
         elif sd == today + timedelta(days=1):
             show_state = "Morgen"
         else:
@@ -2711,7 +2773,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self.update_interval = (self._live_scan_interval if show_state == "LIVE"
                                 else self._scan_interval)
         # voor de conditionele dashboardkaart
-        today_or_tomorrow = show_state in ("LIVE", "Vandaag", "Morgen")
+        today_or_tomorrow = show_state in ("LIVE", "Vandaag", "Gereden", "Morgen")
         days_until = max(0, (shown["date"] - today).days)
         # echte finishtijd van cyclingstage; anders de schatting
         finish_est = finish_bron or _finish_est(
@@ -2788,6 +2850,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
                     shown["stage_url"], "").split("/images/")[-1],
                 "times_diag": [u.split("/images/")[-1] for u in
                                _times_urls(shown)],
+                # welk resultatenadres de uitslag opleverde, en welk adres
+                # `uitslag_url` eruit afleidt. Zonder dit was een uitslag die
+                # niet binnenkwam alleen in het debuglogboek te zien.
+                "result_diag": [p for p in dict.fromkeys(
+                    (_cs_uitslag_pad(shown_data.get("result_url")),
+                     _cs_uitslag_pad(_uitslag_afgeleid(shown)))) if p],
                 "elevation_source": elev_bron,
                 "sprints": sprints,
                 **ander,
