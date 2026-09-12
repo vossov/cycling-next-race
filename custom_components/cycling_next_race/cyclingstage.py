@@ -610,6 +610,46 @@ def route_kandidaten(html: str, koers_url: str) -> list[str]:
     return voor + na
 
 
+def uitslag_kandidaten(html: str, koers_url: str) -> list[str]:
+    """Subpagina's van een koers die zijn uitslag kunnen dragen.
+
+    Voor een **eendaagse** koers is dit de enige weg. `uitslag_index_url`
+    bouwt `/{slug}-{jaar}-results/` en dat is voor een rittenkoers goed
+    (`/vuelta-2026-results/` staat er echt), maar een eendaagse koers zet
+    zijn uitslag een niveau dieper onder een onraadbare afkorting:
+    `/gp-quebec-2026/results-gpq-2026`. Op 12 september 2026 gemeten in de
+    echte resultatenindex van de Vuelta, waar die link met
+    `title="GP Quebéc 2026 Results"` in de menubalk staat; het gebouwde
+    `/gp-quebec-2026-results/` gaf een 404.
+
+    Dezelfde aanpak als `route_kandidaten` en `startlijst_kandidaten`: de
+    koerspagina linkt er zelf naar, dus wordt het daar opgezocht in plaats
+    van geraden. Wat "result" in de naam heeft komt vooraan.
+    """
+    map_naam = _map_van(koers_url)
+    if not map_naam:
+        return []
+    voor, na = [], []
+    for u in _HREF.findall(html or ""):
+        # cyclingstage laat in deze menubalk een spatie in de href staan
+        # (`href="/gp-quebec-2026/results-gpq-2026 "`); zonder strippen
+        # levert dat een adres op dat niet bestaat
+        pad = _pad_van(u.strip())
+        if not pad:
+            continue
+        delen = pad.strip("/").split("/")
+        if len(delen) != 2 or delen[0].lower() != map_naam.lower():
+            continue
+        if _ETAPPEPAGINA.match(delen[1]):
+            continue          # een etappe-uitslag, niet die van de koers
+        if "result" not in delen[1].lower():
+            continue
+        adres = f"{BASIS}/{delen[0]}/{delen[1]}/"
+        if adres not in voor:
+            voor.append(adres)
+    return voor + na
+
+
 def _map_van(url: str) -> str:
     """Het eerste padsegment van een cyclingstage-adres."""
     pad = _pad_van(url).strip("/")

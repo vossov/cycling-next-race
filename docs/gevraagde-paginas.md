@@ -13,7 +13,7 @@ sjablonen. Wat al binnen is staat verderop afgestreept.
 ### Deze week, want de Vuelta eindigt op 13 september
 
 ```
-https://www.cyclingstage.com/vuelta-2026-results/
+~~https://www.cyclingstage.com/vuelta-2026-results/~~ (binnen, 12 september 2026)
 https://www.cyclingstage.com/vuelta-2026-gpx/
 https://www.cyclingstage.com/images/vuelta-spain/2026/stage-19-times.htm
 https://www.cyclingstage.com/vuelta-2026-points-classification/
@@ -22,7 +22,13 @@ https://www.cyclingstage.com/vuelta-2026-favourites/
 https://www.cyclingstage.com/vuelta-2026/vuelta-2026-withdrawals/
 ```
 
-### Eendaagse koers — GP Québec rijdt 11 september
+### ~~Eendaagse koers — GP Québec~~ — opgelost 12 september 2026
+
+Het echte adres is `/gp-quebec-2026/results-gpq-2026` en dat stond in de
+menubalk van de resultatenindex van de Vuelta. Gerepareerd in 0.29.3 met
+`uitslag_kandidaten()`; er is geen pagina meer nodig.
+
+#### Oorspronkelijke vraag
 
 ```
 https://www.cyclingstage.com/gp-quebec-2026/

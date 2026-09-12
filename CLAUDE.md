@@ -504,13 +504,36 @@ Vandaar ook de eis dat er `stage-N` in de bestandsnaam staat voordat er iets
 wordt afgeleid: zonder die eis leverde `/paris-roubaix-2026/route-pr-2026/`
 elke ronde een verzoek op naar een adres dat niet kan bestaan.
 
-**Wat hiervan niet geverifieerd is:** de opmaak van de resultatenindexpagina
-zelf — de proxy laat cyclingstage niet door. Wat wél vaststaat is de vórm van
-zo'n link: `/vuelta-2026-results/stage-2-spain-results-2026/` staat letterlijk
-in de opgeslagen Vuelta-routepagina, en `parse_uitslag_index` vindt hem daar.
-De herkenning is daarom zo ruim mogelijk gehouden (elk adres onder de
-resultatenmap van déze koers met `stage-N` in het pad). Werkt het niet, zoek
-dan in het debuglogboek op "Uitslagoverzicht".
+**Sinds 12 september 2026 is die pagina wél nagekeken.**
+`cyclingstage_vuelta_2026_results_index_2026-09-12.html` is de echte pagina;
+`parse_uitslag_index` leest er alle twintig etappes correct uit. Belangrijker:
+**wat `uitslag_url` afleidt staat er letterlijk**, voor alle twintig. Dat sluit
+de verklaring uit dat een tijdrit een afwijkend adres krijgt — etappe 18 van
+de Vuelta was een tijdrit en staat gewoon als
+`/vuelta-2026-results/stage-18-spain-results-2026/`.
+
+De herkenning is ruim gehouden (elk adres onder de resultatenmap van déze
+koers met `stage-N` in het pad). Werkt het niet, zoek dan in het debuglogboek
+op "Uitslagoverzicht".
+
+**Een eendaagse koers zet zijn uitslag onder een onraadbare afkorting
+(gerepareerd in 0.29.3).** `uitslag_index_url` bouwt
+`/{slug}-{jaar}-results/`, en dat klopt voor een rittenkoers maar niet voor
+een eendaagse: die staat als `/gp-quebec-2026/results-gpq-2026`. Het gebouwde
+adres gaf een 404 — op 7 september door de eigenaar gemeld, op 12 september
+verklaard toen het echte adres in de menubalk van deze indexpagina bleek te
+staan, met `title="GP Quebéc 2026 Results"`.
+
+Daarmee bleef **élke eendaagse koers** stil zonder uitslag: alle monumenten,
+alle klassiekers, Québec, Montréal, Lombardije, Parijs-Tours. Geen fout in het
+log, gewoon een leeg veld. Hetzelfde patroon als de tv-gids, de live-stip en
+de starttijd op de tegel.
+
+`uitslag_kandidaten()` leest het adres nu van de koerspagina, net als
+`route_kandidaten` en `startlijst_kandidaten`. Let op de spatie binnen de
+`href` op de site (`href="/gp-quebec-2026/results-gpq-2026 "`): zonder
+strippen bestaat het adres niet. `_uitslag_eendaags` probeert eerst het
+gebouwde adres — dat kost niets — en valt dan terug op de link.
 
 ### Terugbladeren: hoe ver, en wat het kost
 
@@ -708,13 +731,18 @@ kost dus niets. Zonder deze twee was een uitslag die niet binnenkwam alleen
 in het debuglogboek te zien, en dat is precies de situatie waarin je hem niet
 aan hebt staan.
 
-**Wat hiervan niet vastgesteld is:** waaróm het afgeleide adres
-`/vuelta-2026-results/stage-18-spain-results-2026/` op 10 september niets gaf.
-De proxy hier laat cyclingstage niet door (403 op de CONNECT), dus dat is van
-hieruit niet na te kijken. Twee mogelijkheden staan open: cyclingstage
-publiceerde de uitslag later dan gewoonlijk, of een tijdrit krijgt een ander
-adres. `result_diag` op de sensor geeft het antwoord bij de volgende
-gelegenheid.
+**Nagekomen op 12 september 2026: het lag niet aan het adres.** De echte
+resultatenindex (`cyclingstage_vuelta_2026_results_index_2026-09-12.html`)
+noemt `/vuelta-2026-results/stage-18-spain-results-2026/` letterlijk — precies
+wat de code bouwt — en de uitslag bestaat, want de kop "Küng storms to glory,
+Mas retains lead" staat op diezelfde pagina. Een tijdrit krijgt dus géén
+afwijkend adres.
+
+Wat overblijft is het **moment**: om negen uur 's avonds stond die uitslag er
+nog niet, of nog niet in de vorm die `parse_uitslag` leest. Dat is precies het
+geval dat punt 1 hierboven repareert — het overzicht mag nu binnen de dag
+bijleren. Van hieruit valt het niet verder na te kijken; de proxy laat
+cyclingstage niet door (403 op de CONNECT).
 
 ### De getoonde etappe had geen starttijd (gerepareerd in 0.29.1)
 

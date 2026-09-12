@@ -893,10 +893,7 @@ def _uitslagpagina(stage: dict) -> tuple:
     jaar = stage["date"].year if stage.get("date") else 0
 
     if stage.get("one_day"):
-        url = cs.uitslag_index_url(slug, jaar)
-        if not url:
-            return "", ""
-        return url, _haal_html(url, "uitslag")
+        return _uitslag_eendaags(stage, slug, jaar)
 
     afgeleid = cs.uitslag_url(stage.get("stage_url") or "")
     if afgeleid:
@@ -918,6 +915,48 @@ def _uitslagpagina(stage: dict) -> tuple:
     _LOGGER.debug("Uitslagadres van etappe %s (%s) via het overzicht: %s",
                   idx, slug, url)
     return url, _haal_html(url, "uitslag")
+
+
+def _uitslag_eendaags(stage: dict, slug: str, jaar: int) -> tuple:
+    """`(adres, html)` van de uitslag van een eendaagse koers.
+
+    Twee wegen, net als bij een etappe:
+
+    1. **Het gebouwde adres** `/{slug}-{jaar}-results/`. Dat klopt voor een
+       rittenkoers (`/vuelta-2026-results/` staat er echt) en kost niets.
+    2. **De link op de koerspagina.** Een eendaagse koers zet zijn uitslag
+       een niveau dieper onder een onraadbare afkorting:
+       `/gp-quebec-2026/results-gpq-2026`. Op 12 september 2026 in de echte
+       resultatenindex van de Vuelta gezien, met `title="GP Quebéc 2026
+       Results"`; het gebouwde `/gp-quebec-2026-results/` gaf een 404.
+
+    Dat betekent dat élke eendaagse koers — alle monumenten, alle
+    klassiekers, Québec, Montréal, Lombardije, Parijs-Tours — tot nu toe stil
+    zonder uitslag bleef. Geen fout in het log, gewoon een lege uitslag.
+    """
+    from . import cyclingstage as cs
+
+    gebouwd = cs.uitslag_index_url(slug, jaar)
+    if gebouwd:
+        html = _haal_html(gebouwd, "uitslag")
+        if cs.parse_uitslag(html)["results"]:
+            return gebouwd, html
+
+    # de koerspagina zelf noemt het adres; hoogstens
+    # `MAX_ROUTE_KANDIDATEN` worden er echt opgehaald, want de menubalk van
+    # cyclingstage noemt élke koers van de site
+    koers_url = stage.get("race_url") or stage.get("stage_url") or ""
+    kandidaten = cs.uitslag_kandidaten(_haal_html(koers_url, "koerspagina"),
+                                       koers_url)
+    for kandidaat in kandidaten[:MAX_ROUTE_KANDIDATEN]:
+        if kandidaat == gebouwd:
+            continue
+        html = _haal_html(kandidaat, "uitslag")
+        if cs.parse_uitslag(html)["results"]:
+            _LOGGER.debug("Uitslag van de eendaagse %s via de koerspagina: %s",
+                          slug, kandidaat)
+            return kandidaat, html
+    return "", ""
 
 
 def _cs_fetch_stage(stage: dict, result_n: int = DEFAULT_RESULT_N,

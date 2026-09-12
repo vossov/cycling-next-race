@@ -973,3 +973,58 @@ def test_tekstvorm_slaat_niet_aan_op_een_gewone_routepagina(cs):
     # "Stage 3" zonder 1 en 2 is geen etappelijst
     assert cs.parse_etappes_tekst(
         "<em>Stage 3</em> – <small>10 kilometres</small>") == []
+
+
+# ── de resultatenindex, op de echte pagina ──────────────────────────
+
+def _index_12sep():
+    import pathlib
+    return (pathlib.Path(__file__).parent / "fixtures" /
+            "cyclingstage_vuelta_2026_results_index_2026-09-12.html"
+            ).read_text(errors="replace")
+
+
+def test_resultatenindex_op_de_echte_pagina(cs):
+    """De opmaak van deze pagina was tot 12 september 2026 niet nagekeken."""
+    idx = cs.parse_uitslag_index(_index_12sep(), "vuelta", 2026)
+    assert sorted(idx) == list(range(1, 21))
+    assert idx[16].endswith("/stage-16-spain-results-2026/")
+
+
+def test_het_afgeleide_adres_klopt_met_de_echte_index(cs):
+    """Etappe 18 was een tijdrit en leverde op 10 september geen uitslag op.
+
+    Deze pagina laat zien dat het niet aan het adres lag: wat `uitslag_url`
+    afleidt staat er letterlijk. Een tijdrit krijgt dus geen afwijkend adres.
+    """
+    idx = cs.parse_uitslag_index(_index_12sep(), "vuelta", 2026)
+    etappe = "https://www.cyclingstage.com/vuelta-2026-route/stage-18-spain-2026/"
+    assert cs.uitslag_url(etappe) == idx[18]
+    # en dat geldt voor alle twintig, niet alleen voor deze
+    for nummer, adres in idx.items():
+        gebouwd = ("https://www.cyclingstage.com/vuelta-2026-route/"
+                   f"stage-{nummer}-spain-2026/")
+        assert cs.uitslag_url(gebouwd) == adres, f"etappe {nummer}"
+
+
+def test_uitslag_van_een_eendaagse_koers_staat_onder_een_afkorting(cs):
+    """`/gp-quebec-2026-results/` gaf een 404; dit is het echte adres.
+
+    Dezelfde onraadbare afkorting als bij de routepagina en de startlijst,
+    en dus dezelfde oplossing: de koerspagina noemt hem zelf.
+    """
+    kandidaten = cs.uitslag_kandidaten(
+        _index_12sep(), "https://www.cyclingstage.com/gp-quebec-2026/")
+    assert kandidaten == [
+        "https://www.cyclingstage.com/gp-quebec-2026/results-gpq-2026/"]
+    # de href op de site heeft een spatie binnenin; die hoort eraf
+    assert " " not in kandidaten[0]
+
+
+def test_uitslag_kandidaten_laat_etappes_en_andere_koersen_liggen(cs):
+    doc = _index_12sep()
+    # etappe-uitslagen zijn niet de uitslag van de koers zelf
+    assert cs.uitslag_kandidaten(
+        doc, "https://www.cyclingstage.com/vuelta-2026-results/") == []
+    # en zonder koersmap valt er niets te zoeken
+    assert cs.uitslag_kandidaten(doc, "") == []
