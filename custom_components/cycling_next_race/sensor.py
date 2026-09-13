@@ -2470,6 +2470,40 @@ class CyclingCoordinator(DataUpdateCoordinator):
             out.append(rij)
         return out
 
+    async def _kies_etappe(self, stages: list, today) -> dict:
+        """Welke etappe van déze koers op de tegel hoort, en wat erbij hoort.
+
+        Geeft alles wat aan die keuze vastzit: de getoonde etappe, de laatste
+        gereden etappe (voor de uitslag en het klassement), de gereden en de
+        komende etappes. `shown` is `None` als deze koers niets meer te tonen
+        heeft — dan rolt de aanroeper door naar de volgende koers.
+
+        Dit stond tot 0.29.5 los in `_async_update_data` en werd bij het
+        doorrollen **niet** opnieuw gedaan. Zie "De tegel rolde half door"
+        in CLAUDE.md: de helft van de tegel bleef dan bij de vorige koers.
+        """
+        fin = [s for s in stages if s["date"] < today]
+        vandaag = next((s for s in stages if s["date"] == today), None)
+        later = [s for s in stages if s["date"] > today]
+        uit = {
+            "shown": None, "shown_data": None,
+            "last_fin": fin[-1] if fin else None, "last_fin_data": None,
+            "today_finished": False,
+            "finished": fin, "today_st": vandaag, "future": later,
+        }
+        if vandaag:
+            td = await self._job(_fetch_stage, vandaag,
+                                 self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
+            if td.get("finished"):
+                uit["today_finished"] = True
+                uit["last_fin"], uit["last_fin_data"] = vandaag, td
+                uit["shown"] = later[0] if later else None
+            else:
+                uit["shown"], uit["shown_data"] = vandaag, td   # live/vandaag
+        else:
+            uit["shown"] = later[0] if later else None          # rustdag/pre-race
+        return uit
+
     async def _build_upcoming(self, cur_idx: int, shown: dict,
                               future: list[dict], today: date,
                               getoond: set | None = None) -> list[dict]:
@@ -2627,39 +2661,46 @@ class CyclingCoordinator(DataUpdateCoordinator):
             stages = await self._stages_for(cur, today)
             andere_koersen = []
 
-        finished = [s for s in stages if s["date"] < today]
-        today_st = next((s for s in stages if s["date"] == today), None)
-        future = [s for s in stages if s["date"] > today]
-
-        shown = None
+        keuze = await self._kies_etappe(stages, today)
         shown_event = cur
-        shown_data = None
-        last_fin = finished[-1] if finished else None
-        last_fin_data = None
-        today_finished = False
-
-        if today_st:
-            td = await self._job(_fetch_stage, today_st,
-                                 self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
-            if td.get("finished"):
-                today_finished = True
-                last_fin, last_fin_data = today_st, td
-                shown = future[0] if future else None
-            else:
-                shown, shown_data = today_st, td  # live/vandaag
-        else:
-            shown = future[0] if future else None  # rustdag / pre-race
 
         # Voorbij de laatste etappe van deze koers -> volgende koers die op
-        # de tegel mag staan
-        if shown is None:
-            for volgende in self._calendar[cur_idx + 1:]:
+        # de tegel mag staan.
+        #
+        # Hier gaat de héle tegel mee, niet alleen `shown`. Tot 0.29.5 bleven
+        # `cur`, `stages`, `finished` en `last_fin` bij de oude koers staan,
+        # en dan stond de uitslag van de Vuelta onder de naam van de Tour of
+        # Britain — met een "Algemeen klassement" dat van een andere koers
+        # was. Zie "De tegel rolde half door" in CLAUDE.md.
+        if keuze["shown"] is None:
+            for i, volgende in enumerate(self._calendar[cur_idx + 1:],
+                                         cur_idx + 1):
+                # een koers die al helemaal gereden is kost geen verzoek om
+                # over te slaan; de kalender staat op begindatum, dus een
+                # afgelopen koers kan verderop in de lijst staan dan een die
+                # nog moet komen
+                if volgende.get("end") and volgende["end"] < today:
+                    continue
                 if not self._mag_op_tegel(volgende):
                     continue
                 nstages = await self._stages_for(volgende, today)
-                if nstages:
-                    shown, shown_event = nstages[0], volgende
+                if not nstages:
+                    continue
+                nkeuze = await self._kies_etappe(nstages, today)
+                if nkeuze["shown"] is not None:
+                    keuze = nkeuze
+                    cur_idx, cur, stages = i, volgende, nstages
+                    shown_event = volgende
                     break
+
+        shown = keuze["shown"]
+        shown_data = keuze["shown_data"]
+        last_fin = keuze["last_fin"]
+        last_fin_data = keuze["last_fin_data"]
+        today_finished = keuze["today_finished"]
+        finished = keuze["finished"]
+        today_st = keuze["today_st"]
+        future = keuze["future"]
 
         if shown is None:
             return {"state": "Seizoen afgelopen", "attributes": {"show_state": "Klaar"}}

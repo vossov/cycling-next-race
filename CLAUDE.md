@@ -212,6 +212,62 @@ Zo'n blok geeft hetzelfde beeld als de tegelkoers:
 - Het profiel komt uit `upcoming` (zie hieronder), inclusief `start_time`,
   `finish_est` en de tussensprint.
 
+### De tegel rolde half door (gerepareerd in 0.29.5)
+
+Op 13 september 2026, de avond dat de Vuelta eindigde, stond er op de tegel
+een mengsel van twee koersen:
+
+| onderdeel | wat er stond |
+|---|---|
+| profiel en eyebrow | **Etappe 1 · Tour of Britain**, Lincoln → Lincoln, badge "WO 2 SEP" |
+| uitslag en klassement | **etappe 21 van de Vuelta**, met Enric Mas bovenaan het "Algemeen klassement" |
+| naam, datums, aftelling | **de Vuelta**: "22 aug – 13 sep · Etappekoers", "Bezig — dag 23/23" |
+
+Twee fouten tegelijk, allebei in de doorrol naar de volgende koers.
+
+**1. De doorrol keek niet naar de einddatum.** De lus liep
+`self._calendar[cur_idx + 1:]` af en nam de eerste koers met etappes, plus
+`nstages[0]` — de eerste etappe van die koers. De kalender staat op
+**begindatum**, dus een koers die al gereden is kan verderop in de lijst
+staan dan een die nog moet komen: de Tour of Britain begint op 2 september en
+staat daarmee ná de Vuelta (22 augustus), terwijl hij op 7 september al klaar
+was. Zo belandde etappe 1 van 2 september op de tegel.
+
+`cur_idx` zelf had die controle wél (`r["end"] >= today`); de doorrol niet.
+Nu slaat hij een koers met `end < today` over — dat kost geen verzoek — en
+neemt hij niet `nstages[0]` maar de uitkomst van dezelfde keuze die de
+hoofdweg ook maakt.
+
+**2. Alleen `shown` en `shown_event` rolden mee.** `cur`, `stages`,
+`finished`, `last_fin` en `cur_idx` bleven bij de oude koers staan. En daar
+hangt de halve tegel aan: `race_name`, `countdown`, `date`, `is_live`, `type`
+en `highlights_url` komen van `cur`, en `last_result`, `gc_top`,
+`last_stage_label` en `past` van `last_fin`/`finished`.
+
+Dat is dezelfde soort fout als de startlijst in 0.26.1 ("`shown_event` en
+niet `cur`"), maar die is toen alleen voor de startlijst gerepareerd. Nu rolt
+de héle context mee: `cur_idx`, `cur`, `stages` én alles wat `_kies_etappe`
+teruggeeft.
+
+**`_kies_etappe(stages, today)`** is daarvoor uit `_async_update_data`
+gelicht. Het geeft in één keer terug welke etappe getoond wordt, welke de
+laatst gereden is, en de gereden en komende etappes — zodat de doorrol
+letterlijk dezelfde keuze maakt als de hoofdweg in plaats van een eigen,
+simpelere versie.
+
+`tests/test_doorrollen.py` speelt het schermbeeld na: de Vuelta eindigt
+vandaag, de Tour of Britain is zes dagen eerder afgelopen, GP Montréal is
+vandaag verreden en Lombardije komt nog. Drie van de vier tests falen op de
+code van vóór 0.29.5, met als foutmelding letterlijk `'22 aug – 13 sep'` op
+een tegel die een andere koers toont.
+
+**Wat hiervan niet gedekt is:** de doorrol kijkt nog steeds alleen vooruit in
+de lijst (`cur_idx + 1:`). Een koers die eerder begon dan de huidige maar nog
+doorloopt, staat op een lagere index en wordt dus overgeslagen. In de
+kalender van 2026 komt dat niet voor bij een koers die op de tegel mag; de
+hele lijst aflopen zou een etappelijst per koers kosten en dat is het niet
+waard. Wie dit tegenkomt, begint hier.
+
 ### Terugbladeren door de uitslagen
 
 `_build_past` levert het attribuut `past`: de laatst gereden etappes van de
