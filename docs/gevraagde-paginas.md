@@ -24,9 +24,12 @@ https://www.cyclingstage.com/vuelta-2026/vuelta-2026-withdrawals/
 
 ### ~~Eendaagse koers — GP Québec~~ — opgelost 12 september 2026
 
-Het echte adres is `/gp-quebec-2026/results-gpq-2026` en dat stond in de
+Het echte adres is `/gp-quebec-2026/results-gpq-2026/` en dat stond in de
 menubalk van de resultatenindex van de Vuelta. Gerepareerd in 0.29.3 met
-`uitslag_kandidaten()`; er is geen pagina meer nodig.
+`uitslag_kandidaten()`, en op 13 september 2026 helemaal afgemaakt: de echte
+uitslagpagina staat als `cyclingstage_gp_quebec_2026_results.html` in
+`tests/fixtures/` en `parse_uitslag` leest hem (tien renners, geen
+klassement). Er is niets meer nodig.
 
 #### Oorspronkelijke vraag
 

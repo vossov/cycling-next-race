@@ -535,6 +535,33 @@ de starttijd op de tegel.
 strippen bestaat het adres niet. `_uitslag_eendaags` probeert eerst het
 gebouwde adres — dat kost niets — en valt dan terug op de link.
 
+**De hele keten is op 13 september 2026 nagemeten** met
+`cyclingstage_gp_quebec_2026_results.html`, de echte uitslagpagina van GP
+Québec. Dat sluit de twee vragen die 0.29.3 open liet:
+
+| vraag | antwoord |
+|---|---|
+| is het adres uit de koerspagina het echte adres? | ja, tot en met de slash: `/gp-quebec-2026/results-gpq-2026/` |
+| kan `parse_uitslag` zo'n pagina lezen? | ja — tien renners, met land en tijd |
+
+De kop is `Results 2026 GP Quebec` en dus niet "Stage N Results", maar hij
+bevat "result" en valt daarmee in `results`. `gc`, `points`, `kom` en `youth`
+komen op nul uit: een eendaagse koers heeft geen klassement, en dat blijft
+leeg.
+
+**Twee dagcaches, want die twee verouderen niet hetzelfde** (0.29.4). Zonder
+ze kostte een eendaagse koers drie verzoeken per ronde: de 404 van het
+gebouwde adres, de koerspagina en de uitslag.
+
+- `_EENDAAGS_KANDIDATEN` — de lijst uit de menubalk. Die verandert binnen een
+  dag niet, dus die pagina hoeft maar één keer.
+- `_EENDAAGS_GOED` — het adres dat werkelijk een uitslag gaf. Daarna gaat het
+  er rechtstreeks heen: één verzoek, hetzelfde als vóór 0.29.3.
+
+Een lege uitkomst wordt **niet** bewaard: zolang er geen uitslag staat wordt
+de uitslagpagina elke ronde opnieuw gelezen. Dat is dezelfde les als bij het
+uitslagoverzicht in 0.29.2 — een uitslag verschijnt in de loop van de dag.
+
 ### Terugbladeren: hoe ver, en wat het kost
 
 `past_n` mag sinds 0.24 tot 21 — een hele grote ronde. Het was 10, en de

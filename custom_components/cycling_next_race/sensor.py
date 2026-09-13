@@ -917,6 +917,28 @@ def _uitslagpagina(stage: dict) -> tuple:
     return url, _haal_html(url, "uitslag")
 
 
+# De uitslagadressen van een eendaagse koers, per dag. Twee aparte caches,
+# want ze verouderen niet hetzelfde:
+#
+# - `_EENDAAGS_KANDIDATEN` is de lijst uit de menubalk van de koerspagina.
+#   Die verandert binnen een dag niet, dus die pagina hoeft maar één keer.
+# - `_EENDAAGS_GOED` is het adres dat werkelijk een uitslag gaf. Zolang dat er
+#   niet is wordt er elke ronde opnieuw gekeken — een uitslag verschijnt in de
+#   loop van de dag, en dat is precies de les van 0.29.2.
+_EENDAAGS_KANDIDATEN: dict[str, list] = {}
+_EENDAAGS_GOED: dict[str, str] = {}
+_EENDAAGS_DAG = None
+
+
+def _eendaags_dag_bij(vandaag) -> None:
+    global _EENDAAGS_DAG
+
+    if _EENDAAGS_DAG != vandaag:
+        _EENDAAGS_KANDIDATEN.clear()
+        _EENDAAGS_GOED.clear()
+        _EENDAAGS_DAG = vandaag
+
+
 def _uitslag_eendaags(stage: dict, slug: str, jaar: int) -> tuple:
     """`(adres, html)` van de uitslag van een eendaagse koers.
 
@@ -936,25 +958,37 @@ def _uitslag_eendaags(stage: dict, slug: str, jaar: int) -> tuple:
     """
     from . import cyclingstage as cs
 
+    sleutel = f"{slug}-{jaar}"
+    _eendaags_dag_bij(date.today())
+
+    # het adres van een eerdere ronde: dan hoeft de 404 en de koerspagina niet
+    # nog een keer
+    bekend = _EENDAAGS_GOED.get(sleutel)
+    if bekend:
+        return bekend, _haal_html(bekend, "uitslag")
+
     gebouwd = cs.uitslag_index_url(slug, jaar)
     if gebouwd:
         html = _haal_html(gebouwd, "uitslag")
         if cs.parse_uitslag(html)["results"]:
+            _EENDAAGS_GOED[sleutel] = gebouwd
             return gebouwd, html
 
     # de koerspagina zelf noemt het adres; hoogstens
     # `MAX_ROUTE_KANDIDATEN` worden er echt opgehaald, want de menubalk van
     # cyclingstage noemt élke koers van de site
     koers_url = stage.get("race_url") or stage.get("stage_url") or ""
-    kandidaten = cs.uitslag_kandidaten(_haal_html(koers_url, "koerspagina"),
-                                       koers_url)
-    for kandidaat in kandidaten[:MAX_ROUTE_KANDIDATEN]:
+    if sleutel not in _EENDAAGS_KANDIDATEN:
+        _EENDAAGS_KANDIDATEN[sleutel] = cs.uitslag_kandidaten(
+            _haal_html(koers_url, "koerspagina"), koers_url)
+    for kandidaat in _EENDAAGS_KANDIDATEN[sleutel][:MAX_ROUTE_KANDIDATEN]:
         if kandidaat == gebouwd:
             continue
         html = _haal_html(kandidaat, "uitslag")
         if cs.parse_uitslag(html)["results"]:
             _LOGGER.debug("Uitslag van de eendaagse %s via de koerspagina: %s",
                           slug, kandidaat)
+            _EENDAAGS_GOED[sleutel] = kandidaat
             return kandidaat, html
     return "", ""
 

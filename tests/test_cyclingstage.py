@@ -1028,3 +1028,127 @@ def test_uitslag_kandidaten_laat_etappes_en_andere_koersen_liggen(cs):
         doc, "https://www.cyclingstage.com/vuelta-2026-results/") == []
     # en zonder koersmap valt er niets te zoeken
     assert cs.uitslag_kandidaten(doc, "") == []
+
+
+# ── de uitslag van een eendaagse koers, op de echte pagina ──────────
+
+def _gpq():
+    import pathlib
+    return (pathlib.Path(__file__).parent / "fixtures" /
+            "cyclingstage_gp_quebec_2026_results.html").read_text(errors="replace")
+
+
+def test_uitslag_van_een_eendaagse_koers_wordt_gelezen(cs):
+    """De kop is "Results 2026 GP Quebec", niet "Stage N Results".
+
+    Dat was de openstaande vraag bij 0.29.3: het adres klopte, maar of
+    `parse_uitslag` zo'n pagina kan lezen was niet vastgesteld.
+    """
+    uit = cs.parse_uitslag(_gpq())
+    assert len(uit["results"]) == 10
+    assert uit["results"][0] == {"rank": 1, "rider": "Remco Evenepoel",
+                                 "country": "bel", "time": "4:40:21"}
+    assert uit["results"][1]["rider"] == "Giulio Ciccone"
+    assert uit["results"][2]["time"] == "+0:15"
+
+
+def test_een_eendaagse_koers_heeft_geen_klassement(cs):
+    """En dan blijven die velden leeg in plaats van gevuld met de uitslag."""
+    uit = cs.parse_uitslag(_gpq())
+    for sleutel in ("gc", "points", "kom", "youth"):
+        assert uit[sleutel] == [], sleutel
+
+
+def test_het_adres_uit_de_koerspagina_is_het_echte_adres(cs):
+    """Tot en met de slash gelijk aan waar de pagina werkelijk staat."""
+    echt = "https://www.cyclingstage.com/gp-quebec-2026/results-gpq-2026/"
+    # elke pagina onder de koersmap draagt de link, ook deze uitslagpagina
+    assert cs.uitslag_kandidaten(
+        _gpq(), "https://www.cyclingstage.com/gp-quebec-2026/") == [echt]
+    # en wat we ervoor bouwden was een ander adres, dat een 404 gaf
+    assert cs.uitslag_index_url("gp-quebec", 2026) != echt
+
+
+def test_de_hele_keten_van_een_eendaagse_koers(wt, monkeypatch):
+    """Van de koerspagina tot de gelezen uitslag, met de echte HTML.
+
+    De koerspagina van Québec zelf is niet opgeslagen; hier dient de
+    uitslagpagina als leverancier van de link, en die draagt hem echt — de
+    menubalk staat op elke pagina onder die koersmap. Wat de test bewijst is
+    de keten: gebouwd adres eerst, dan de link, dan de uitslag.
+    """
+    from datetime import date
+
+    koers = "https://www.cyclingstage.com/gp-quebec-2026/"
+    echt = koers + "results-gpq-2026/"
+    gevraagd = []
+
+    def nep(url, wat=""):
+        gevraagd.append(url)
+        # het gebouwde adres bestaat niet (404 -> lege string)
+        if url == "https://www.cyclingstage.com/gp-quebec-2026-results/":
+            return ""
+        return _gpq()
+
+    monkeypatch.setattr(wt, "_haal_html", nep)
+    etappe = {"date": date(2026, 9, 11), "idx": None, "one_day": True,
+              "race_slug": "gp-quebec", "stage_url": koers, "race_url": koers}
+    d = wt._fetch_stage(etappe)
+
+    assert d["result_url"] == echt
+    assert d["finished"] is True
+    assert d["results"][0]["rider"] == "Remco Evenepoel"
+    assert d["gc"] == []
+    # het gebouwde adres wordt eerst geprobeerd, want dat kost geen verzoek extra
+    assert gevraagd[0] == "https://www.cyclingstage.com/gp-quebec-2026-results/"
+    # drie verzoeken de eerste ronde: de 404, de koerspagina, de uitslag
+    assert len(gevraagd) == 3
+
+    # en de volgende ronde alleen de uitslag zelf: het adres is bekend
+    gevraagd.clear()
+    d = wt._fetch_stage(etappe)
+    assert gevraagd == [echt]
+    assert d["results"][0]["rider"] == "Remco Evenepoel"
+
+
+def test_een_eendaagse_zonder_uitslag_blijft_het_proberen(wt, monkeypatch):
+    """Een uitslag verschijnt in de loop van de dag — dezelfde les als 0.29.2.
+
+    De koerspagina hoeft niet elke ronde opnieuw (de menubalk verandert niet),
+    maar de uitslagpagina wel, zolang er geen uitslag op staat.
+    """
+    from datetime import date
+
+    koers = "https://www.cyclingstage.com/gp-quebec-2026/"
+    echt = koers + "results-gpq-2026/"
+    gevraagd = []
+    uitslag_er = [False]
+
+    def nep(url, wat=""):
+        gevraagd.append(url)
+        if url == koers:
+            return _gpq()                 # de menubalk met de link
+        if url == echt and uitslag_er[0]:
+            return _gpq()
+        return ""                         # nog geen uitslag, of een 404
+
+    monkeypatch.setattr(wt, "_haal_html", nep)
+    wt._EENDAAGS_KANDIDATEN.clear()
+    wt._EENDAAGS_GOED.clear()
+    etappe = {"date": date(2026, 9, 11), "idx": None, "one_day": True,
+              "race_slug": "gp-quebec", "stage_url": koers, "race_url": koers}
+
+    assert wt._fetch_stage(etappe)["results"] == []
+    assert gevraagd.count(koers) == 1
+
+    # tweede ronde: de koerspagina niet opnieuw, de uitslagpagina wel
+    gevraagd.clear()
+    assert wt._fetch_stage(etappe)["results"] == []
+    assert koers not in gevraagd
+    assert echt in gevraagd
+
+    # en zodra de uitslag er staat, komt hij binnen
+    uitslag_er[0] = True
+    d = wt._fetch_stage(etappe)
+    assert d["result_url"] == echt
+    assert len(d["results"]) == 10
