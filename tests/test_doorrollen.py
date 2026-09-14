@@ -12,7 +12,8 @@ from datetime import date, datetime
 
 import pytest
 
-VANDAAG = date(2026, 9, 13)
+VANDAAG = date(2026, 9, 13)      # de dag dat de Vuelta eindigt
+DAG_ERNA = date(2026, 9, 14)
 
 
 def _koers(naam, slug, start, eind):
@@ -63,20 +64,30 @@ def _leeg(stage):
 @pytest.fixture
 def co(wt, monkeypatch):
     """Een coordinator waarin alleen de koerskeuze echt draait."""
-    monkeypatch.setattr(wt.dt_util, "now",
-                        lambda: datetime(2026, 9, 13, 22, 31))
+    return _maak_co(wt, monkeypatch, datetime(2026, 9, 13, 22, 31))
+
+
+@pytest.fixture
+def co_erna(wt, monkeypatch):
+    """Dezelfde kalender, maar de ochtend na de slotetappe."""
+    return _maak_co(wt, monkeypatch, datetime(2026, 9, 14, 9, 0))
+
+
+def _maak_co(wt, monkeypatch, nu):
+    monkeypatch.setattr(wt.dt_util, "now", lambda: nu)
+    today = nu.date()
     c = wt.CyclingCoordinator(None)
     c._calendar = [VUELTA, BRITAIN, MONTREAL, LOMBARDIJE]
-    c._calendar_fetched = VANDAAG
+    c._calendar_fetched = today
     c._levels_diag, c._kalenderfouten = {}, []
 
     etappes = {
-        # etappe 21 valt op vandaag; de Vuelta is daarmee uitgereden
-        VUELTA["url"]: [_etappe(VUELTA, n, VANDAAG - _dag(21 - n), 21)
+        # etappe 21 valt op 13 september; de Vuelta is daarna uitgereden
+        VUELTA["url"]: [_etappe(VUELTA, n, VUELTA["end"] - _dag(21 - n), 21)
                         for n in range(1, 22)],
         BRITAIN["url"]: [_etappe(BRITAIN, n, date(2026, 9, 1) + _dag(n), 6)
                          for n in range(1, 7)],
-        MONTREAL["url"]: [_etappe(MONTREAL, None, VANDAAG)],
+        MONTREAL["url"]: [_etappe(MONTREAL, None, MONTREAL["start"])],
         LOMBARDIJE["url"]: [_etappe(LOMBARDIJE, None, date(2026, 10, 10))],
     }
 
@@ -87,13 +98,22 @@ def co(wt, monkeypatch):
         if fn is wt._fetch_stage:
             stage = args[0]
             # alles tot en met vandaag is gereden en heeft een uitslag
-            return (dict(VUELTA_UITSLAG) if stage["date"] <= VANDAAG
+            return (dict(VUELTA_UITSLAG) if stage["date"] <= today
                     else _leeg(stage))
         raise AssertionError(f"onverwachte job: {fn}")
 
+    # de koersblokken worden niet echt gebouwd, maar wel vastgelegd: welke
+    # koersen er in de pop-up terechtkomen is precies wat hier telt
+    c.blokken = []
+
+    async def races_block(primair, andere, dag):
+        c.blokken.append((primair.get("race_name", ""),
+                          [k[-2]["name"] for k in andere]))
+        return {}
+
     c._stages_for = stages_for
     c._job = job
-    c._races_block = _nep_async({})
+    c._races_block = races_block
     c._build_upcoming = _nep_async([])
     c._build_past = _nep_async([])
     c._gpx_for = _nep_async(([], []))
@@ -183,3 +203,56 @@ def test_zonder_doorrol_verandert_er_niets(co, wt):
     # en de uitslag die erbij staat is die van de Vuelta, van etappe 20
     assert a["last_stage_label"].startswith("Etappe 20")
     assert a["gc_top"][0]["rider"] == "Enric Mas"
+
+
+# ── de dag erna: de uitslag blijft bereikbaar ───────────────────────
+
+def _andere(co):
+    """De koersen die als blok in de pop-up staan."""
+    return co.blokken[-1][1]
+
+
+def test_een_afgelopen_koers_blijft_een_dag_in_de_pop_up(co_erna):
+    """De ochtend na de slotetappe wil je de einduitslag nog kunnen zien.
+
+    Tot 0.30 viel een koers weg zodra zijn einddatum voorbij was — op de
+    tegel én in de pop-up. De uitslag van gisteren was daarmee nergens meer
+    te vinden, terwijl dat juist het moment is dat je hem opzoekt.
+    """
+    a = _attributen(co_erna)
+    # de tegel gaat wél naar de eerstvolgende koers; daar hoort een
+    # afgelopen koers niet
+    assert a["race_name"] == LOMBARDIJE["name"]
+    # maar de Vuelta staat er nog als blok, met zijn eindklassement
+    assert VUELTA["name"] in _andere(co_erna)
+
+
+def test_de_koers_van_gisteren_staat_vooraan(co_erna):
+    """De net afgelopen koers is het meest relevant van de blokken."""
+    _attributen(co_erna)
+    assert _andere(co_erna)[0] == VUELTA["name"]
+
+
+def test_een_koers_van_vorige_week_blijft_weg(co_erna):
+    """De naloop is één dag, geen open einde.
+
+    De Tour of Britain was op 7 september klaar; die hoort nergens meer te
+    staan. Zonder die grens zou elke afgelopen koers blijven hangen.
+    """
+    _attributen(co_erna)
+    assert BRITAIN["name"] not in _andere(co_erna)
+
+
+def test_de_tegel_zelf_toont_geen_uitslag_van_een_andere_koers(co_erna):
+    """De reparatie van 0.29.5 mag door de naloop niet terugkomen."""
+    a = _attributen(co_erna)
+    assert a["last_result"] == []
+    assert a["gc_top"] == []
+    assert "okt" in a["date"]
+
+
+def test_op_de_dag_zelf_verandert_er_niets(co):
+    """De naloop mag de keuze op de dag van de koers niet verstoren."""
+    a = _attributen(co)
+    assert a["race_name"] == LOMBARDIJE["name"]
+    assert BRITAIN["name"] not in _andere(co)

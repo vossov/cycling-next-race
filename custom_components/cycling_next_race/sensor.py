@@ -89,6 +89,12 @@ MAX_ANDERE_KOERSEN = DEFAULT_MAX_OTHER
 # de tegel komt en welke er in de pop-up naast passen. Alles daarboven kost
 # alleen maar verzoeken: er staan er toch maar 1 + `max_other` in beeld.
 MAX_ACTIEVE_KOERSEN = 6
+# Hoe lang een afgelopen koers nog in de pop-up blijft staan. Een koers die
+# gisteren eindigde heeft geen etappe meer, maar zijn uitslag en
+# eindklassement zijn dan juist het interessantst — de avond van de laatste
+# etappe kijk je er misschien niet meer naar, de volgende ochtend wel.
+# Hij komt nooit op de tegel: daar hoort de eerstvolgende koers.
+NALOOP_DAGEN = 1
 
 # Hoeveel subpagina's van een koerspagina er hoogstens worden geprobeerd als
 # de kalender geen routeadres geeft. Een koerspagina linkt naar een handvol
@@ -2627,7 +2633,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # Volgorde: eerstvolgende etappe, dan koersen met hoogteprofiel, dan mannen.
         venster = today + timedelta(days=self._opt(CONF_UPCOMING_DAYS))
         actief = [(i, r) for i, r in enumerate(self._calendar)
-                  if r["end"] >= today and r["start"] <= venster]
+                  if r["end"] >= today - timedelta(days=NALOOP_DAGEN)
+                  and r["start"] <= venster]
         # koersen die op de tegel mogen eerst: staat er een niveau aan dat
         # alleen in de pop-up hoort, dan mag een druk weekend daarvan de
         # WorldTour niet uit de lijst duwen
@@ -2639,24 +2646,37 @@ class CyclingCoordinator(DataUpdateCoordinator):
         kandidaten = []
         for i, ev in actief:
             st = await self._stages_for(ev, today)
-            nxt = next((s for s in st if s["date"] >= today), None)
-            if nxt is None:
+            if not st:
                 continue
-            kandidaten.append(self._keuzesleutel(ev, nxt, i) + (ev, st))
+            nxt = next((s for s in st if s["date"] >= today), None)
+            # Een koers die net is afgelopen heeft geen etappe meer, maar
+            # houdt nog `NALOOP_DAGEN` zijn blok in de pop-up: de uitslag en
+            # het eindklassement zijn dan het enige dat er nog van te zien
+            # is. De vlag staat vóór de rest van de sleutel, zodat zo'n
+            # koers nooit vóór een koers komt die nog rijdt — en dus niet
+            # op de tegel belandt zolang er iets anders is.
+            klaar = nxt is None
+            kandidaten.append((1 if klaar else 0,)
+                              + self._keuzesleutel(ev, st[-1] if klaar else nxt, i)
+                              + (ev, st))
         if kandidaten:
-            kandidaten.sort(key=lambda k: k[:5])
-            op_tegel = [k for k in kandidaten if self._mag_op_tegel(k[5])]
+            # van achteren lezen, zoals `_races_block`: er staat nu een
+            # sleutel vóór die van `_keuzesleutel`, en de volgende uitbreiding
+            # hoort hier niets meer te breken
+            kandidaten.sort(key=lambda k: k[:6])
+            op_tegel = [k for k in kandidaten if self._mag_op_tegel(k[-2])]
             gekozen = (op_tegel or kandidaten)[0]
-            cur_idx, cur, stages = gekozen[4], gekozen[5], gekozen[6]
+            cur_idx, cur, stages = gekozen[-3], gekozen[-2], gekozen[-1]
             # in de pop-up ook eerst de niveaus van het dashboard, daarna de
             # niveaus die er alleen in de pop-up bij staan
             andere_koersen = sorted(
                 (k for k in kandidaten if k is not gekozen),
-                key=lambda k: (0 if self._mag_op_tegel(k[5]) else 1,) + tuple(k[:5]))
+                key=lambda k: (0 if self._mag_op_tegel(k[-2]) else 1,) + tuple(k[:6]))
             if len(kandidaten) > 1:
                 _LOGGER.debug("Koerskeuze: %s (uit %s kandidaten)",
                               cur["name"], len(kandidaten))
         else:
+            gekozen = None
             cur = self._calendar[cur_idx]
             stages = await self._stages_for(cur, today)
             andere_koersen = []
@@ -2688,6 +2708,14 @@ class CyclingCoordinator(DataUpdateCoordinator):
                     continue
                 nkeuze = await self._kies_etappe(nstages, today)
                 if nkeuze["shown"] is not None:
+                    # De koers die we verlaten houdt zijn blok in de pop-up:
+                    # zijn uitslag is het enige dat er van die dag nog te
+                    # zien is. En de koers die nu op de tegel komt hoort er
+                    # niet nog een tweede keer als blok bij te staan.
+                    andere_koersen = [k for k in andere_koersen
+                                      if k[-2] is not volgende]
+                    if gekozen is not None:
+                        andere_koersen.insert(0, gekozen)
                     keuze = nkeuze
                     cur_idx, cur, stages = i, volgende, nstages
                     shown_event = volgende

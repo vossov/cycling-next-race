@@ -212,6 +212,43 @@ Zo'n blok geeft hetzelfde beeld als de tegelkoers:
 - Het profiel komt uit `upcoming` (zie hieronder), inclusief `start_time`,
   `finish_est` en de tussensprint.
 
+### Een afgelopen koers blijft nog een dag staan (0.30)
+
+Wens van de eigenaar op 14 september 2026, de ochtend na de Vuelta: *"Een
+koers mag de volgende dag ook nog in het overzicht staan ivm de uitslagen."*
+Terecht — de avond van de slotetappe kijk je er misschien niet meer naar, de
+volgende ochtend wel, en dan was hij helemaal weg.
+
+Dat was een gevolg van 0.29.5. Dáárvoor bleef de tegel op een afgelopen koers
+hangen (met de verkeerde gegevens erbij); daarna viel zo'n koers meteen om
+middernacht weg, op de tegel én in de pop-up.
+
+**`NALOOP_DAGEN` (1) is nu de grens.** Een koers telt mee in `actief` zolang
+`end >= today - NALOOP_DAGEN`, en krijgt dus nog één dag een blok in de
+pop-up met zijn uitslag en eindklassement.
+
+**Op de tegel komt hij niet.** Daar hoort de eerstvolgende koers. Dat wordt
+afgedwongen met een `klaar`-vlag vóór de sleutel van `_keuzesleutel`: een
+koers zonder komende etappe sorteert altijd achter een koers die nog rijdt.
+Alleen als er helemaal niets meer rijdt wint hij, en dan rolt
+`_kies_etappe` alsnog door naar de volgende koers met etappes.
+
+**Bij het doorrollen houdt de verlaten koers zijn blok.** `andere_koersen`
+wordt vóór de doorrol samengesteld en bevat de gekozen koers juist níét; die
+wordt er daarom alsnog vooraan in gezet, en de koers die nu op de tegel komt
+wordt eruit gehaald zodat hij er niet dubbel staat.
+
+**Let op de indexen.** De kandidaat-tuples hebben er een sleutel bij
+gekregen, dus `cur_idx`, `ev` en `stages` worden nu van achteren gelezen
+(`k[-3]`, `k[-2]`, `k[-1]`) — net als `_races_block` al deed. Dat was precies
+de reden dat dat daar zo staat; het is nu overal zo.
+
+**Wat het kost:** niets extra's in de attributen. `max_other` (standaard 2)
+begrenst het aantal blokken; de naloop verandert alleen wélke koersen die
+plekken vullen. Wel een `_stages_for` en een `_stage_uitslag` voor die koers,
+allebei per dag gecached, en de uitslag van een gereden etappe blijft in
+`_other_cache` staan.
+
 ### De tegel rolde half door (gerepareerd in 0.29.5)
 
 Op 13 september 2026, de avond dat de Vuelta eindigde, stond er op de tegel
