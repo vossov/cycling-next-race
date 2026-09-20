@@ -240,11 +240,27 @@ wordt niets bij verzonnen:
 
 | ontbreekt | waarom |
 |---|---|
+| het **EK** | staat niet in de kalender van cyclingstage; zie hieronder |
 | de **UCI-ploegcode** achter een renner | cyclingstage geeft alleen een landcode, en een land is geen ploeg |
 | **dagwinst en -verlies** in de klassementen | daarvoor is de vorige stand per rij nodig; die geeft cyclingstage niet |
 | de **categorie** van een col (HC, 1, 2 …) | cyclingstage publiceert geen bergklassement |
 | het **punten-, berg- en jongerenklassement** | staan (nog) niet op de resultatenpagina; de herkenning staat klaar voor als ze verschijnen |
 | de **live-positie** in de koers | zie hieronder |
+
+#### Kampioenschappen
+
+Het **WK** doet sinds 0.31 mee, met al zijn onderdelen: de tijdrit van de
+vrouwen en die van de mannen, de gemengde estafette en beide wegritten, elk
+met datum, route, afstand en hoogtemeters. Het geslacht staat op de pagina
+van cyclingstage letterlijk bij elk onderdeel, dus elk onderdeel krijgt zijn
+eigen niveau.
+
+Wat er bij een kampioenschap **niet** is: een uitslag en een hoogteprofiel
+per onderdeel. Cyclingstage geeft die onderdelen geen eigen pagina, dus er is
+geen adres om ze mee op te halen. Die velden blijven leeg.
+
+Het **EK** zit er niet in: dat staat niet in de kalender van cyclingstage. Er
+is geen parser die dat oplost — daar is een andere bron voor nodig.
 
 Tot en met 0.24 werd hiervoor nog procyclingstats bevraagd. Die site zit
 sinds 23 augustus 2026 achter een Cloudflare-uitdaging die geen enkele

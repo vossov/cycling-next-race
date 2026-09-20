@@ -274,7 +274,7 @@ def _noemt_dames(naam):
     """Bevat de koersnaam zelf al een aanduiding dat het de vrouwenkoers is?"""
     return bool(re.search(
         r"\b(we|femmes|f[e\u00e9]minin\w*|femenina|feminas?|women|women's|donne|"
-        r"ladies|dames)\b", (naam or "").lower()))
+        r"ladies|dames|vrouwen)\b", (naam or "").lower()))
 
 
 def _short_race(name: str, n: int = 20) -> str:
@@ -675,7 +675,18 @@ def _cs_event_stages(event: dict) -> list[dict]:
                               race_url, kandidaat)
                 break
         if not rijen:
-            # Derde vorm: een routepagina zonder tabel, met de etappes als
+            # Derde vorm: een **programmatabel** van een kampioenschap.
+            # Zelfde aantal kolommen als een etappetabel, andere betekenis:
+            # de datum staat vooraan in plaats van een etappenummer. Zie
+            # `parse_programma`.
+            for html in opgehaald:
+                rijen = cs.parse_programma(html, jaar)
+                if rijen:
+                    _LOGGER.debug("Programma van %s: %s onderdelen",
+                                  race_url, len(rijen))
+                    break
+        if not rijen:
+            # Vierde vorm: een routepagina zonder tabel, met de etappes als
             # lopende tekst (`<em>Stage 1</em> - <small>182.5 kilometres,
             # 1,393 metres of elevation gain</small>`). Zo staat de Tour of
             # Britain erop. Die noemt geen datum per etappe; `_datums_verdelen`
@@ -693,27 +704,51 @@ def _cs_event_stages(event: dict) -> list[dict]:
             _LOGGER.debug("Geen etappelijst gevonden voor %s", race_url)
             return []
 
-    return [{
-        "date": r["date"],
-        "stage_url": r["url"] or race_url,
-        "profile_icon": "",
-        "name": r["name"],
-        "idx": r["idx"],
-        "one_day": False,
-        "race_url": race_url,
-        "race_name": event["name"],
-        "race_slug": slug,
-        "women": bool(event.get("women")),
-        "level": str(event.get("level", "")),
-        # uit de etappelijst, dus zonder extra verzoek
-        "distance_km": r["distance_km"],
-        "stage_type": r["stage_type"],
-        "departure": r["departure"],
-        "arrival": r["arrival"],
-        # alleen de tekstvorm geeft dit; uit een tabel komt het van de
-        # etappepagina zelf
-        **({"vertical_m": r["vertical_m"]} if r.get("vertical_m") else {}),
-    } for r in rijen]
+    uit = []
+    for r in rijen:
+        # Een programmatabel zegt per onderdeel of het de mannen of de
+        # vrouwen zijn; dat staat er letterlijk (`ITT (v)`), dus dat is
+        # aflezen en geen gok. Staat het er niet — de gemengde estafette —
+        # dan houdt het onderdeel het geslacht van de koers zelf.
+        vrouwen = (bool(event.get("women")) if r.get("women") is None
+                   else bool(r["women"]))
+        # Een onderdeel heeft geen eigen pagina, dus zonder meer zouden alle
+        # onderdelen dezelfde `stage_url` krijgen — en daar hangt te veel
+        # aan: de ontdubbeling in `_build_upcoming`, `_elev_cache`,
+        # `_meta_cache`, `_names_cache` en `_upcoming_cache` gebruiken hem
+        # allemaal als sleutel. Vijf onderdelen zouden er dan één worden.
+        # Het onderdeel komt daarom als **fragment** achter het adres.
+        # `urllib` knipt een fragment eraf vóór het verzoek (nagemeten:
+        # `Request.selector` houdt het pad zonder `#...` over), dus er wordt
+        # nog steeds gewoon de koerspagina opgehaald.
+        adres = r["url"] or race_url
+        if not r["url"] and r.get("onderdeel"):
+            adres += "#" + re.sub(r"[^a-z0-9]+", "-", r["onderdeel"].lower()).strip("-")
+        uit.append({
+            "date": r["date"],
+            "stage_url": adres,
+            "profile_icon": "",
+            "name": r["name"],
+            "idx": r["idx"],
+            "one_day": False,
+            "race_url": race_url,
+            "race_name": event["name"],
+            "race_slug": slug,
+            "women": vrouwen,
+            "level": ("v" if vrouwen else "m") if r.get("women") is not None
+                     else str(event.get("level", "")),
+            # uit de etappelijst, dus zonder extra verzoek
+            "distance_km": r["distance_km"],
+            "stage_type": r["stage_type"],
+            "departure": r["departure"],
+            "arrival": r["arrival"],
+            # alleen de tekst- en de programmavorm geven dit; uit een
+            # etappetabel komt het van de etappepagina zelf
+            **({"vertical_m": r["vertical_m"]} if r.get("vertical_m") else {}),
+            # hoe dit onderdeel heet als het geen genummerde etappe is
+            **({"onderdeel": r["onderdeel"]} if r.get("onderdeel") else {}),
+        })
+    return uit
 
 
 def _datums_verdelen(rijen: list[dict], start, eind) -> list[dict]:
@@ -1107,6 +1142,25 @@ def _lege_uitslag(stage: dict) -> dict:
         "youth_leader": "", "points_top": [], "kom_top": [], "youth_top": [],
         "startlist_quality": None,
     }
+
+
+def _etappe_label(stage: dict, kort: int = 0) -> str:
+    """Hoe deze etappe heet: "Etappe 7", of de naam van het onderdeel.
+
+    Een kampioenschap heeft geen genummerde etappes maar onderdelen — een
+    tijdrit, een wegrit, een gemengde estafette — en die naam staat in
+    `onderdeel`. Zonder deze functie las de tegel daar letterlijk
+    "Etappe None", want `idx` is er leeg.
+
+    `kort` is de maximale lengte voor de koersnaam die bij een eendaagse
+    koers in de plaats komt; 0 laat hem heel.
+    """
+    if stage.get("onderdeel"):
+        return stage["onderdeel"]
+    if stage.get("one_day") or not stage.get("idx"):
+        naam = stage.get("race_name", "")
+        return _short_race(naam, kort) if kort else naam
+    return f"Etappe {stage['idx']}"
 
 
 def _show_state_for(sd: date, today: date, start_time: str = "",
@@ -2156,8 +2210,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 toon["date"], today, _tijden.get("start_time"),
                 _tijden.get("finish_est"))
             entry["days_until"] = max(0, (toon["date"] - today).days)
-            entry["eyebrow"] = (_short_race(toon["race_name"], 26) if toon.get("one_day")
-                                else f"Etappe {toon['idx']} \u00b7 {_short_race(toon['race_name'])}")
+            entry["eyebrow"] = (_etappe_label(toon, 26) if toon.get("one_day")
+                                or toon.get("onderdeel")
+                                else f"{_etappe_label(toon)} \u00b7 "
+                                     f"{_short_race(toon['race_name'])}")
             if dames:
                 entry["eyebrow"] += " \u00b7 Dames"
             # waar de etappe te zien is; uit dezelfde tv-gids als de tegel
@@ -2167,8 +2223,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
                                  for c in zenders if c.get("name")]
         if data is not None:
             entry["last_stage_label"] = (
-                _short_race(laatst["race_name"], 34) if laatst.get("one_day")
-                else f"Etappe {laatst['idx']} \u00b7 {_short_race(laatst['race_name'], 34)}")
+                _etappe_label(laatst, 34) if laatst.get("one_day")
+                else f"{_etappe_label(laatst)} \u00b7 "
+                     f"{_short_race(laatst['race_name'], 34)}")
             entry["last_result"] = (data.get("results") or [])[:self._opt(CONF_RESULT_N)]
             entry["gc_top"] = (data.get("gc") or [])[:self._opt(CONF_GC_N)]
             entry["points_top"] = data.get("points_top") or []
@@ -2402,10 +2459,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # "Komende dagen" te blijven staan.
         e["level"] = str(s.get("level", ""))
         if s.get("one_day"):
-            e["eyebrow"] = _short_race(s["race_name"], 26)
+            e["eyebrow"] = _etappe_label(s, 26)
         else:
-            e["eyebrow"] = f"Etappe {s['idx']} \u00b7 {_short_race(s['race_name'])}"
-        if s.get("women") and not _noemt_dames(s["race_name"]):
+            e["eyebrow"] = f"{_etappe_label(s)} \u00b7 {_short_race(s['race_name'])}"
+        # de eyebrow en niet alleen de koersnaam: een onderdeel heet al
+        # "Tijdrit vrouwen", en daar hoeft geen "· Dames" meer achter
+        if s.get("women") and not _noemt_dames(e["eyebrow"]):
             e["eyebrow"] += " \u00b7 Dames"
         _tag = _type_tag(e.get("stage_type"))
         if _tag:
@@ -2466,11 +2525,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
                     "results": d["results"],
                 }
                 if s.get("one_day"):
-                    rij["eyebrow"] = _short_race(s["race_name"], 26)
+                    rij["eyebrow"] = _etappe_label(s, 26)
                 else:
-                    rij["eyebrow"] = (f"Etappe {s['idx']} \u00b7 "
+                    rij["eyebrow"] = (f"{_etappe_label(s)} \u00b7 "
                                       f"{_short_race(s['race_name'])}")
-                if s.get("women") and not _noemt_dames(s["race_name"]):
+                if s.get("women") and not _noemt_dames(rij["eyebrow"]):
                     rij["eyebrow"] += " \u00b7 Dames"
                 self._past_cache[url] = rij
             out.append(rij)
@@ -2490,7 +2549,14 @@ class CyclingCoordinator(DataUpdateCoordinator):
         """
         fin = [s for s in stages if s["date"] < today]
         vandaag = next((s for s in stages if s["date"] == today), None)
-        later = [s for s in stages if s["date"] > today]
+        # Wat er nog komt is niet alleen "een latere dag": een kampioenschap
+        # kan twee onderdelen op één dag hebben (de tijdrit van de vrouwen en
+        # die van de mannen). Zonder de rest van vandaag erbij was het tweede
+        # onderdeel nergens te zien — niet op de tegel, niet in "Komende
+        # dagen", en de dag erna is het verleden. Bij een rittenkoers, met
+        # één etappe per dag, verandert dit niets.
+        later = [s for s in stages
+                 if s["date"] > today or (s["date"] == today and s is not vandaag)]
         uit = {
             "shown": None, "shown_data": None,
             "last_fin": fin[-1] if fin else None, "last_fin_data": None,
@@ -2821,11 +2887,11 @@ class CyclingCoordinator(DataUpdateCoordinator):
 
         if shown.get("one_day"):
             stage_label = shown["race_name"]
-            eyebrow = _short_race(shown["race_name"], 26)
+            eyebrow = _etappe_label(shown, 26)
         else:
-            stage_label = f"Etappe {shown['idx']}"
+            stage_label = _etappe_label(shown)
             eyebrow = f"{stage_label} · {_short_race(shown['race_name'])}"
-        if shown.get("women") and not _noemt_dames(shown["race_name"]):
+        if shown.get("women") and not _noemt_dames(eyebrow):
             eyebrow += " · Dames"
         _tag = _type_tag(shown_data.get("stage_type"))
         if _tag:
@@ -2859,7 +2925,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
         elif last_fin.get("one_day"):
             last_stage_label = last_fin["race_name"]
         else:
-            last_stage_label = f"Etappe {last_fin['idx']} · {_short_race(last_fin['race_name'])}"
+            last_stage_label = (f"{_etappe_label(last_fin)} · "
+                                f"{_short_race(last_fin['race_name'])}")
 
         # ── Backward-compat attributen (bestaande kaart) ──────
         cur_live = cur["start"] <= today <= cur["end"]

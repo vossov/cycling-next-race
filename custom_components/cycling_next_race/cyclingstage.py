@@ -211,6 +211,94 @@ def _etapperijen(tabel: str, jaar: int) -> list[dict]:
     return uit
 
 
+# ── programmatabel van een kampioenschap ────────────────────────────
+#
+# Een kampioenschap heeft geen genummerde etappes maar **onderdelen**: twee
+# tijdritten, een gemengde estafette en twee wegraces, verspreid over een
+# week. De tabel ziet er daardoor anders uit dan die van een rittenkoers:
+#
+#   rittenkoers:    nummer | datum | start - finish | km    | type
+#   kampioenschap:  datum  | start - finish | type  | km    | el.gain
+#
+# Even veel kolommen, andere betekenis. `_etapperijen` eist een nummer in de
+# eerste kolom en sloeg daarom elke rij over — daar kwam de conclusie vandaan
+# dat er met deze pagina niets te doen viel.
+#
+# Wat hier wél uit komt: de datum, de route, het onderdeel, de afstand én de
+# hoogtemeters. Wat er niet uit komt is een adres per onderdeel — die staan
+# er niet in, dus de uitslag en het hoogteprofiel van een onderdeel blijven
+# leeg. Het programma tonen kan wel, en dat is waar het om gaat.
+_ONDERDELEN = {
+    "itt": "Tijdrit",
+    "ttt": "Ploegentijdrit",
+    "wegrace": "Wegrit",
+    "road race": "Wegrit",
+    "mixed relay": "Gemengde estafette",
+}
+# "(m)" of "(v)" achter het onderdeel; cyclingstage schrijft het zo bij élk
+# onderdeel behalve de gemengde estafette, die per definitie allebei is.
+_GESLACHT = re.compile(r"\((m|v|w)\)\s*$", re.I)
+
+
+def parse_programma(html: str, jaar: int) -> list[dict]:
+    """De onderdelen van een kampioenschap uit zijn programmatabel.
+
+    Herkent de tabel aan de **eerste kolom**: staat daar een datum
+    (`20-9`) in plaats van een etappenummer, dan is het een programmatabel.
+    Dat onderscheid staat los van de koptekst, die per pagina kan verschillen.
+
+    Per onderdeel komt er terug wat er staat: datum, route, onderdeel
+    (`Tijdrit`, `Wegrit`, `Gemengde estafette`), afstand, hoogtemeters en of
+    het om de mannen of de vrouwen gaat. Een onderdeel dat we niet kennen
+    houdt de tekst van de site — niets verzinnen, en zo is meteen te zien
+    wat er nieuw is.
+    """
+    uit: list[dict] = []
+    for tabel in _TABEL.findall(html or ""):
+        for rij in _RIJ.findall(tabel):
+            if "<th" in rij.lower():
+                continue
+            cellen = _CEL.findall(rij)
+            if len(cellen) < 5:
+                continue
+            m = _DAGMAAND.match(_kaal(cellen[0]))
+            if not m:
+                continue          # geen datum vooraan: geen programmatabel
+            try:
+                dag = date(jaar, int(m.group(2)), int(m.group(1)))
+            except ValueError:
+                _LOGGER.debug("Programmadatum onbruikbaar: %s", _kaal(cellen[0]))
+                continue
+            route = _kaal(cellen[1])
+            soort = _kaal(cellen[2])
+            g = _GESLACHT.search(soort)
+            kaal_soort = _GESLACHT.sub("", soort).strip().lower()
+            onderdeel = _ONDERDELEN.get(kaal_soort, soort.strip())
+            if g:
+                onderdeel += " vrouwen" if g.group(1).lower() in ("v", "w") \
+                    else " mannen"
+            uit.append({
+                "idx": None,
+                "date": dag,
+                "name": route,
+                "departure": _plaats(route, 0),
+                "arrival": _plaats(route, 1),
+                "distance_km": _getal(_kaal(cellen[3])),
+                "vertical_m": _hoogtemeters(_kaal(cellen[4])),
+                "stage_type": _TYPES.get(kaal_soort, ""),
+                "onderdeel": onderdeel,
+                # None = staat er niet bij (de gemengde estafette); dan houdt
+                # het onderdeel het geslacht van de koers zelf
+                "women": None if not g else g.group(1).lower() in ("v", "w"),
+                "url": "",
+            })
+        if uit:
+            break
+    if uit:
+        _LOGGER.debug("Programmatabel: %s onderdelen", len(uit))
+    return uit
+
+
 def _plaats(naam: str, kant: int) -> str:
     """Vertrek of aankomst uit "Start - Finish".
 
@@ -224,6 +312,19 @@ def _plaats(naam: str, kant: int) -> str:
 def _getal(tekst: str):
     try:
         return float(tekst.replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def _hoogtemeters(tekst: str):
+    """Hoogtemeters uit een tabelcel: `2,502` -> 2502.
+
+    De komma is hier een **duizendtalscheiding** en geen decimaalteken —
+    `_getal` zou er 2,502 meter van maken. Dezelfde behandeling als in
+    `parse_etappe_meta`, waar "2,953 metres of elevation gain" staat.
+    """
+    try:
+        return int(float((tekst or "").replace(",", "").replace(".", "")))
     except (TypeError, ValueError):
         return None
 

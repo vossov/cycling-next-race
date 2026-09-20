@@ -553,8 +553,8 @@ Een routepagina kan er op drie manieren uitzien, en alle drie komen voor:
 2. **Een programmatabel zonder nummerkolom** — datum, "start - finish",
    type, km, hoogtemeters. Zo staat het WK erop: het zijn onderdelen (ITT,
    mixed relay, wegrace) en geen genummerde etappes, en er staat geen enkele
-   link in. Daar valt dus niets mee te doen; zie de fixture
-   `cyclingstage_wk_2026_canada.html`.
+   link in. `parse_programma` leest dit sinds 0.31; zie "Kampioenschappen"
+   hieronder en de fixture `cyclingstage_wk_2026_canada.html`.
 3. **Geen tabel, maar lopende tekst** — `<em>Stage 1</em> – <small>182.5
    kilometres, 1,393 metres of elevation gain</small>` gevolgd door een
    alinea. Zo staat de Tour of Britain erop. `parse_etappes_tekst` leest
@@ -570,6 +570,75 @@ Een etappe op de verkeerde dag is erger dan geen etappe.
 Er is bij die vorm ook geen etappe-adres. Dat is minder erg dan het lijkt:
 de uitslag komt via `_uitslagindex` (de resultatenpagina van de koers noemt
 de adressen) en het profiel via de GPX-overzichtspagina.
+
+### Kampioenschappen: onderdelen in plaats van etappes (0.31)
+
+Wens van de eigenaar op 20 september 2026, de dag dat het WK begon: het WK en
+de tijdritten horen er ook in. Het WK **stond** in de kalender van
+cyclingstage — het is een van de 49 koersen — maar viel stil weg omdat zijn
+routepagina vorm 2 heeft en `parse_etappes` daar nul rijen uit haalde.
+
+In de README van de fixture stond tot nu toe dat daar niets mee te doen viel.
+Dat klopte voor de uitslag en het profiel, maar niet voor het programma zelf,
+en dat is precies wat je wilt zien.
+
+**`parse_programma` herkent de tabel aan de eerste kolom:** staat daar een
+datum (`20-9`) in plaats van een etappenummer, dan is het een
+programmatabel. Dat onderscheid staat los van de koptekst, die per pagina
+kan verschillen. Eruit komt per onderdeel: datum, route, onderdeel
+(`Tijdrit`, `Wegrit`, `Gemengde estafette`), afstand, hoogtemeters en het
+geslacht. Een onderdeel dat we niet kennen houdt de tekst van de site —
+niets verzinnen, en zo is meteen te zien wat er nieuw is.
+
+**Het geslacht staat er letterlijk**, als `ITT (v)` en `ITT (m)`. Dat is dus
+aflezen en geen gok, en elk onderdeel krijgt daarmee zijn eigen `level` —
+ook al kent de kalender de hele koers één geslacht toe. De gemengde estafette
+draagt geen aanduiding en houdt het niveau van de koers zelf.
+
+Drie dingen die anders stil misgingen, alle drie met een test op de echte
+pagina:
+
+| | wat er misging |
+|---|---|
+| `2,502` hoogtemeters | de komma is een duizendtalscheiding; `_getal` maakte er 2,502 meter van. `_hoogtemeters` doet het goed |
+| twee onderdelen op één dag | beide tijdritten zijn op 20 september. "Wat er nog komt" was alleen een látere dag, dus het tweede onderdeel was nergens te zien — niet op de tegel, niet in "Komende dagen", en de dag erna is het verleden |
+| geen adres per onderdeel | vijf onderdelen deelden één `stage_url`, en dat is de sleutel van de ontdubbeling in `_build_upcoming` én van `_elev_cache`, `_meta_cache`, `_names_cache` en `_upcoming_cache`. Ze zouden er één worden |
+
+Dat laatste is opgelost met een **fragment**: `...-canada/#tijdrit-vrouwen`.
+`urllib` knipt een fragment eraf vóór het verzoek (nagemeten:
+`Request.selector` houdt het pad zonder `#...` over), dus er wordt gewoon de
+koerspagina opgehaald en de vijf onderdelen blijven uit elkaar. Het is een
+interne sleutel, geen adres dat ergens op de site bestaat.
+
+**`_etappe_label(stage)`** is het gedeelde antwoord op "hoe heet deze
+etappe": `Etappe 7`, of de naam van het onderdeel. Zonder dat las de tegel
+letterlijk "Etappe None", want `idx` is bij een onderdeel leeg. Alle zes
+plekken die dat label bouwden gebruiken hem nu.
+
+**Wat hier níét uit komt:** een uitslag en een hoogteprofiel per onderdeel.
+Daar is een adres per onderdeel voor nodig en dat staat nergens op de pagina.
+Die velden blijven leeg — netjes leeg, zoals overal in dit project.
+
+**Wat nog een beperking is:** `_mag_op_tegel` en de blokken in `races` gaan
+op het niveau van de **koers**, en de kalender geeft het WK één geslacht.
+Een dashboardkaart die alleen vrouwen toont, ziet het WK-blok dus niet, ook
+al zitten er vrouwenonderdelen in. De etappes in `upcoming` dragen wél hun
+eigen niveau en worden daar correct gefilterd. Wie dit wil oplossen moet een
+kampioenschap als twee kalenderregels opvoeren, en dat raakt `cur_idx` en de
+hele koerskeuze.
+
+### Het EK staat niet in de kalender van cyclingstage
+
+Ook gevraagd op 20 september 2026. Nagekeken op de opgeslagen kalenderpagina
+van 2026: van de 49 koersen is er precies één kampioenschap, het WK
+(`World Championships`, 20–27 september, Canada). "European", "EK" en
+"championships" leveren verder niets op.
+
+Het EK is dus niet met een parser op te lossen — de bron heeft het niet. Wie
+het wil toevoegen heeft een **andere bron** nodig en daarmee een regel in
+`bronnen.py`, met opgeslagen HTML in `tests/fixtures/` zoals elke andere
+bron hier. Dat is geen middag werk en het hoort niet als "misschien werkt
+het" in de code te belanden.
 
 ### Uitslagen buiten de grote rondes (sinds 0.24)
 
