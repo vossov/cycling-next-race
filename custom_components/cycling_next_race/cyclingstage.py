@@ -280,6 +280,7 @@ def _programmakolommen(tekst: list[str]) -> dict:
         route_i = next((i for i in woorden if i != soort_i), None)
     return {
         "route": tekst[route_i] if route_i is not None else "",
+        "route_i": route_i,
         "soort": tekst[soort_i] if soort_i is not None else "",
         "km": tekst[getallen[0]] if getallen else "",
         "hoogte": tekst[getallen[1]] if len(getallen) > 1 else "",
@@ -337,7 +338,12 @@ def parse_programma(html: str, jaar: int) -> list[dict]:
                 # None = staat er niet bij (de gemengde estafette); dan houdt
                 # het onderdeel het geslacht van de koers zelf
                 "women": None if not g else g.group(1).lower() in ("v", "w"),
-                "url": "",
+                # De pagina van 20 september linkt per onderdeel naar zijn
+                # eigen routepagina (`route-itt-wc-2026`); die van 7
+                # september deed dat niet. Staat er geen link, dan blijft
+                # dit leeg en valt het terug op de koerspagina.
+                "url": _adres(cellen[kolom["route_i"]])
+                       if kolom["route_i"] is not None else "",
             })
         if uit:
             break

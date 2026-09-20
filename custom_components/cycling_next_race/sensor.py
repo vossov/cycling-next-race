@@ -734,10 +734,13 @@ def _cs_event_stages(event: dict) -> list[dict]:
         # nog steeds gewoon de koerspagina opgehaald.
         adres = r["url"] or race_url
         eigen_pagina = bool(r["url"])
-        if not eigen_pagina:
-            merk = r.get("onderdeel") or (f"etappe-{r['idx']}" if r.get("idx") else "")
-            if merk:
-                adres += "#" + re.sub(r"[^a-z0-9]+", "-", merk.lower()).strip("-")
+        # Ook mét een eigen adres kan het fragment nodig zijn: de twee
+        # tijdritten van het WK rijden dezelfde route en delen daarom één
+        # routepagina. Zonder fragment vallen ze alsnog samen.
+        merk = r.get("onderdeel") or (
+            "" if eigen_pagina else (f"etappe-{r['idx']}" if r.get("idx") else ""))
+        if merk:
+            adres += "#" + re.sub(r"[^a-z0-9]+", "-", merk.lower()).strip("-")
         uit.append({
             "date": r["date"],
             "stage_url": adres,
@@ -1243,7 +1246,11 @@ def _fetch_stage_meta(stage: dict) -> dict:
     meta = cs.parse_etappe_meta(html)
     d["start_time"] = meta.get("start_time", "")
     d["finish_time"] = meta.get("finish_time", "")
-    if meta.get("vertical_m") is not None:
+    # Een programmatabel noemt de hoogtemeters per onderdeel; die gaan vóór
+    # op wat de pagina in lopende tekst zegt. Twee onderdelen kunnen één
+    # pagina delen (de tijdritten van het WK rijden dezelfde route), en dan
+    # is de tabel de enige die ze uit elkaar houdt.
+    if meta.get("vertical_m") is not None and stage.get("vertical_m") is None:
         d["vertical"] = meta["vertical_m"]
     return d
 

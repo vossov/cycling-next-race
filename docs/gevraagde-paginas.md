@@ -5,22 +5,33 @@ racecenter-sites van ASO — de egress-proxy blokkeert ze. Elke parser die hier
 gebouwd wordt moet daarom op HTML draaien die met de hand is opgeslagen.
 Deze lijst staat op volgorde van wat het meest oplevert.
 
-## Bovenaan: de WK-pagina van nu
+## ~~De WK-pagina van nu~~ — binnen op 20 september 2026
+
+Die staat als `cyclingstage_wk_2026_montreal.html` in `tests/fixtures/`, en
+hij gaf meteen antwoord op beide vragen: de koers is verhuisd naar
+`/world-championships-2026-montreal/` (het oude adres geeft een 404), de
+kolommen `type` en `route` zijn omgedraaid met een kolom `riders` erbij, en
+de "3,800 metres of elevation gain" staat er in de lopende tekst — over de
+wegrit van de mannen, terwijl alle vijf de onderdelen hem kregen.
+
+## Nu bovenaan: de routepagina's per WK-onderdeel
 
 ```
-https://www.cyclingstage.com/world-championships-2026-canada/
+https://www.cyclingstage.com/world-championships-2026-montreal/route-itt-wc-2026/
+https://www.cyclingstage.com/world-championships-2026-montreal/route-road-race-wc-2026-women/
+https://www.cyclingstage.com/world-championships-2026-montreal/route-road-race-wc-2026/
 ```
 
-De opgeslagen versie is van 7 september 2026. Op 20 september las de tegel
-"Montreal" waar "Tijdrit mannen" hoorde te staan, en dat kan alleen als de
-kolommen van de programmatabel op de live pagina anders staan. 0.31.1 leest
-die tabel daarom op inhoud in plaats van op volgorde, maar **hoe die pagina
-er nu uitziet is van hieruit niet te zien**. Met deze pagina erbij is dat te
-controleren in plaats van af te leiden, en is meteen te zien waar de
-"3,800 metres of elevation gain" op die pagina staat die alle vijf
-onderdelen kregen.
+Nieuw op de pagina van 20 september: elk onderdeel linkt naar zijn eigen
+routepagina. Die adressen worden sinds 0.31.2 gebruikt, maar wat erop staat
+is niet nagekeken — een starttijd (en daarmee LIVE), colnamen en een
+GPX-adres zouden er kunnen staan. Zonder die pagina's blijven die velden
+gewoon leeg.
 
-## De adressen, kopieerbaar
+De tabel heeft ook een kolom `riders` met een startlijst per onderdeel
+(`riders-itt-wc-2026-women`). Daar is nog niets mee gedaan.
+
+## De adressen, kopieerbaar## De adressen, kopieerbaar
 
 Stand 7 september 2026. Alles hieronder is een volledig adres — geen
 sjablonen. Wat al binnen is staat verderop afgestreept.

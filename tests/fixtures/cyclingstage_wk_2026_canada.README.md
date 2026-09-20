@@ -52,18 +52,19 @@ Een **uitslag** en een **hoogteprofiel** per onderdeel. Daar is een adres per
 onderdeel voor nodig en dat staat er niet in. Die velden blijven dus leeg —
 het programma tonen kan wel, en dat is waar het om ging.
 
-## Deze pagina is van 7 september, en de live pagina wijkt af (0.31.1)
+## Deze pagina bestaat niet meer — en blijft juist daarom staan
 
-Op 20 september 2026 las de tegel "Montreal · World Championships" waar
-"Tijdrit mannen" hoorde te staan. Met déze HTML komt er "Tijdrit vrouwen" en
-"Tijdrit mannen" uit — nagemeten — dus de kolommen op de live pagina staan
-anders dan hier. Hoe precies is van hieruit niet te zien; `parse_programma`
-leest de kolommen daarom sinds 0.31.1 op inhoud in plaats van op volgorde.
+Het adres hierboven geeft sinds ongeveer 20 september 2026 een 404: het WK is
+verhuisd naar `/world-championships-2026-montreal/`. Die pagina staat als
+`cyclingstage_wk_2026_montreal.html` ernaast.
 
-Op de live pagina staat bovendien ergens "3,800 metres of elevation gain".
-Die zin staat in deze versie niet, en kwam via `_fetch_stage_meta` op álle
-vijf de onderdelen terecht — een tijdrit van 39 km met 3800 hoogtemeters.
-Een onderdeel zonder eigen pagina leest die pagina niet meer.
+Deze versie blijft staan omdat de twee samen de test zijn voor het lezen van
+de programmatabel: dezelfde vijf onderdelen, twee echte kolomvolgordes.
 
-Een nieuwe kopie van deze pagina staat bovenaan in
-`docs/gevraagde-paginas.md`.
+```
+ 7 september (hier):  datum | route | type  | km | el.gain
+20 september:         datum | type  | route | km | el.gain | riders
+```
+
+Op de tegel van 20 september stond daardoor "Montreal" waar "Tijdrit mannen"
+hoorde te staan. Sinds 0.31.1 worden de kolommen op inhoud gelezen.

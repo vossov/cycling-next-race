@@ -627,10 +627,10 @@ is. En de hm lijken mij ook te veel."* Op de tegel stond
 | onderdeel | wat er stond | wat het hoort te zijn |
 |---|---|---|
 | eyebrow | `MONTREAL · WORLD CHAMPIONSHIPS` | `Tijdrit mannen · World Championships` |
-| hoogtemeters | `3800 hm` — ook bij de wegrit van 180 km | 195 bij de tijdrit, 2502 bij de wegrit |
+| hoogtemeters | `3800 hm` — ook bij de wegrit van 180 km | 220 bij de tijdrit, 2570 bij de wegrit |
 | terrein | `Bergrit` (want 3800 ≥ 3000) | vlak |
 
-Twee oorzaken, allebei met dezelfde kern: **vijf onderdelen delen één
+Twee oorzaken, allebei met dezelfde kern: **vijf onderdelen deelden één
 pagina.**
 
 **1. Alles wat van die pagina komt hoort bij één onderdeel.** `stage_url` is
@@ -657,23 +657,53 @@ fragment (`#etappe-3`), want zonder dat vielen al hun etappes op één
 `stage_url` samen — dezelfde ontdubbelingsval als bij de onderdelen.
 
 **2. De kolomvolgorde lag vast en dat hield geen stand.** `parse_programma`
-las kolom 2 als de route en kolom 3 als het onderdeel. Op de tegel stond de
-**route** waar het onderdeel hoort, dus op de live pagina staan die kolommen
-anders dan op de versie die op 7 september is opgeslagen. **Wélke volgorde
-het daar is, is van hieruit niet na te gaan** — de proxy laat cyclingstage
-niet door — dus wordt er op geen enkele volgorde meer gerekend:
-`_programmakolommen` leest op inhoud. Het onderdeel is de cel die een
-onderdeel nóemt (`ITT (v)`, `mixed relay`), afstand en hoogtemeters zijn de
-getalcellen, en de route is wat er aan tekst overblijft. Herkent geen enkele
-cel een onderdeel, dan geldt de oude lezing — eerst de route, dan het
-onderdeel zoals de site het schrijft — zodat een discipline die we niet
-kennen zijn eigen tekst houdt.
+las kolom 2 als de route en kolom 3 als het onderdeel. Dat het misging was
+duidelijk; waaróm werd pas duidelijk toen de eigenaar diezelfde ochtend de
+live pagina aanleverde. **De koers is verhuisd:**
+`/world-championships-2026-canada/` geeft nu een 404 en het WK staat op
+`/world-championships-2026-montreal/`. De kalender wijst er zelf naar, dus
+daar hoefde niets voor te veranderen — maar het is een andere pagina, met
+een andere tabel:
 
-**Wat hiervan niet geverifieerd is:** de live pagina zelf. De test draait op
-de opgeslagen pagina (waar de uitkomst gelijk blijft) en op dezelfde echte
-cellen in een andere volgorde. Zolang die pagina niet als fixture binnen is,
-staat vast dát de kolommen zijn verschoven en niet hoe. Hij staat bovenaan in
-`docs/gevraagde-paginas.md`.
+```
+ 7 september:  datum | route | type  | km | el.gain
+20 september:  datum | type  | route | km | el.gain | riders
+```
+
+Kolom 2 en 3 omgedraaid en een kolom erbij. Daarom leest
+`_programmakolommen` sinds 0.31.1 **op inhoud**: het onderdeel is de cel die
+een onderdeel nóemt (`ITT (w)`, `road race (m)`, `mixed relay`), de afstand
+en de hoogtemeters zijn de getalcellen, en de route is wat er aan tekst
+overblijft. Herkent geen enkele cel een onderdeel, dan geldt de oude lezing
+— eerst de route, dan het onderdeel zoals de site het schrijft — zodat een
+discipline die we niet kennen zijn eigen tekst houdt.
+
+Beide pagina's staan als fixture in `tests/fixtures/`
+(`..._wk_2026_canada.html` en `..._wk_2026_montreal.html`) en de test draait
+op allebei. Dat is meteen het bewijs dat de oude pagina daar niet voor niets
+blijft staan: twee echte kolomvolgordes van dezelfde tabel.
+
+**3. Wat de nieuwe pagina erbij heeft: een adres per onderdeel (0.31.2).**
+De routekolom linkt nu per onderdeel (`route-itt-wc-2026`,
+`route-road-race-wc-2026-women`), en er is een kolom `riders` met een
+startlijst per onderdeel. `parse_programma` leest dat adres mee, dus die
+onderdelen hebben wél een eigen pagina en daarmee een starttijd, colnamen en
+misschien een GPX. De gemengde estafette heeft er nog geen ("to follow") en
+houdt de koerspagina.
+
+Twee dingen die daarbij horen:
+
+- **Het fragment blijft nodig, ook mét adres.** De twee tijdritten rijden
+  dezelfde route en delen dus één routepagina. Zonder fragment vallen ze
+  alsnog samen tot één etappe.
+- **De tabel wint van de lopende tekst.** `_fetch_stage_meta` neemt de
+  hoogtemeters van de pagina alleen over als de etappe ze niet zelf al
+  draagt. De tabel is per onderdeel; een gedeelde pagina is dat niet.
+
+**Wat hiervan niet geverifieerd is:** wat er op `route-itt-wc-2026` en de
+twee wegritpagina's staat. Die zijn niet opgehaald, dus of daar een
+starttijd, colnamen of een GPX-adres op staan is nog open — het degradeert
+netjes naar leeg. Ze staan in `docs/gevraagde-paginas.md`.
 
 Nog een kleinigheid uit dezelfde melding: `_eyebrow_tag` laat de tag "TT"
 weg zodra er een onderdeel is — "Tijdrit mannen · WK · TT" zegt het twee

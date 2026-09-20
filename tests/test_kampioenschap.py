@@ -24,6 +24,17 @@ def wk():
     return _fixture("cyclingstage_wk_2026_canada.html")
 
 
+@pytest.fixture
+def wk_live():
+    """De pagina zoals hij op 20 september 2026 was, op een nieuw adres.
+
+    `/world-championships-2026-canada/` geeft inmiddels een 404; de koers
+    staat nu op `/world-championships-2026-montreal/`. De kalender wijst er
+    zelf naar, dus daar hoeft niets voor geraden te worden.
+    """
+    return _fixture("cyclingstage_wk_2026_montreal.html")
+
+
 # ── de programmatabel ───────────────────────────────────────────────
 
 def test_programma_van_het_echte_wk(cs, wk):
@@ -185,39 +196,77 @@ def test_een_rittenkoers_merkt_er_niets_van(wt):
 
 # ── de koerspagina gaat over een ánder onderdeel (0.31.1) ───────────
 
-def _rij_volgorde(cs_mod, html, volgorde):
-    """Dezelfde echte cellen, in een andere kolomvolgorde.
-
-    Geen verzonnen tabel: de inhoud komt regel voor regel van de opgeslagen
-    pagina en alleen de volgorde verandert. Dat is precies wat er op 20
-    september 2026 misging — de tegel las de route waar het onderdeel hoort.
-    """
-    def rij(m):
-        cellen = cs_mod._CEL.findall(m.group(0))
-        if len(cellen) != 5:
-            return m.group(0)
-        return "<tr>" + "".join("<td>%s</td>" % cellen[i] for i in volgorde) + "</tr>"
-    return cs_mod._RIJ.sub(rij, html)
-
-
-def test_de_kolommen_worden_op_inhoud_gelezen(cs, wk):
-    """Het onderdeel is de cel die een onderdeel nóemt, niet kolom 3.
+def test_de_kolommen_worden_op_inhoud_gelezen(cs, wk, wk_live):
+    """Twee échte pagina's, twee kolomvolgordes.
 
     Op de tegel van 20 september stond "Montreal · World Championships" waar
-    "Tijdrit mannen" hoorde te staan. Dat kan alleen als de kolommen op de
-    live pagina anders staan dan op de opgeslagen versie van 7 september.
-    Welke volgorde het daar is, is van hieruit niet na te gaan — dus wordt er
-    op geen enkele volgorde meer gerekend.
+    "Tijdrit mannen" hoorde te staan. De eigenaar leverde diezelfde ochtend
+    de live pagina, en daar staat het:
+
+        7 september:  datum | route | type  | km | el.gain
+        20 september: datum | type  | route | km | el.gain | riders
+
+    Kolom 2 en 3 zijn omgedraaid en er is een kolom bij gekomen. Vandaar dat
+    er op geen enkele volgorde meer wordt gerekend: het onderdeel is de cel
+    die een onderdeel nóemt, de getalcellen zijn de afstand en de
+    hoogtemeters, en de route is wat er aan tekst overblijft.
     """
-    gewoon = {r["onderdeel"]: r for r in cs.parse_programma(wk, 2026)}
-    gedraaid = {r["onderdeel"]: r
-                for r in cs.parse_programma(_rij_volgorde(cs, wk, [0, 2, 1, 3, 4]), 2026)}
-    assert set(gedraaid) == set(gewoon)
-    for naam, r in gewoon.items():
-        assert gedraaid[naam]["name"] == r["name"]
-        assert gedraaid[naam]["distance_km"] == r["distance_km"]
-        assert gedraaid[naam]["vertical_m"] == r["vertical_m"]
-        assert gedraaid[naam]["women"] is r["women"]
+    for html in (wk, wk_live):
+        rijen = cs.parse_programma(html, 2026)
+        assert [r["onderdeel"] for r in rijen] == [
+            "Tijdrit vrouwen", "Tijdrit mannen", "Gemengde estafette",
+            "Wegrit vrouwen", "Wegrit mannen"]
+        assert [r["name"] for r in rijen[:2]] == ["Montreal", "Montreal"]
+        assert rijen[4]["name"] == "Brossard - Montreal"
+        assert [r["women"] for r in rijen] == [True, False, None, True, False]
+
+
+def test_de_live_pagina_schrijft_road_race_en_w(cs, wk_live):
+    """`road race (w)` in plaats van `wegrace (v)` — allebei herkend."""
+    rijen = cs.parse_programma(wk_live, 2026)
+    assert rijen[0]["stage_type"] == "itt"
+    assert rijen[3]["onderdeel"] == "Wegrit vrouwen"
+    # en de getallen van die dag, met de duizendtalscheiding
+    assert rijen[4]["distance_km"] == 273.4
+    assert rijen[4]["vertical_m"] == 3808
+
+
+def test_de_live_pagina_geeft_een_adres_per_onderdeel(cs, wk_live):
+    """Nieuw op 20 september: de routekolom linkt per onderdeel.
+
+    De gemengde estafette heeft er nog geen ("to follow"), en de twee
+    tijdritten delen er één — ze rijden dezelfde route.
+    """
+    per_naam = {r["onderdeel"]: r["url"] for r in cs.parse_programma(wk_live, 2026)}
+    assert per_naam["Tijdrit vrouwen"].endswith("/route-itt-wc-2026/")
+    assert per_naam["Tijdrit mannen"] == per_naam["Tijdrit vrouwen"]
+    assert per_naam["Wegrit vrouwen"].endswith("/route-road-race-wc-2026-women/")
+    assert per_naam["Gemengde estafette"] == ""
+
+
+def test_de_tijdritten_delen_een_pagina_maar_geen_sleutel(wt, monkeypatch, wk_live):
+    """Eén routepagina voor twee onderdelen; het fragment houdt ze uit elkaar."""
+    st = _wk_etappes(wt, monkeypatch, wk_live)
+    assert len({s["stage_url"] for s in st}) == 5
+    assert st[0]["stage_url"].endswith("/route-itt-wc-2026/#tijdrit-vrouwen")
+    assert st[1]["stage_url"].endswith("/route-itt-wc-2026/#tijdrit-mannen")
+    import urllib.request
+    assert urllib.request.Request(st[0]["stage_url"]).selector == \
+        "/world-championships-2026-montreal/route-itt-wc-2026/"
+
+
+def test_de_tabel_wint_van_de_lopende_tekst(wt, monkeypatch, wk_live):
+    """Op de koerspagina staat "3,800 metres of elevation gain".
+
+    Die zin gaat over de wegrit van de mannen en stond op 20 september bij
+    álle vijf de onderdelen — ook bij de tijdrit van 39 km, die daarmee
+    "Bergrit" heette. De tabel zegt 220.
+    """
+    st = _wk_etappes(wt, monkeypatch, wk_live)
+    monkeypatch.setattr(wt, "_etappe_html",
+                        lambda url: "<p>3,800 metres of elevation gain</p>")
+    assert wt._fetch_stage_meta(st[1])["vertical"] == 220
+    assert wt._fetch_stage_meta(st[4])["vertical"] == 3808
 
 
 def test_een_onderdeel_weet_dat_het_geen_eigen_pagina_heeft(wt, monkeypatch, wk):
