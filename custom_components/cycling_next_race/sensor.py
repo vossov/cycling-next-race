@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
@@ -160,6 +160,87 @@ def _type_tag(stage_type):
     if "ITT" in s or "TIME TRIAL" in s or s == "TT":
         return "TT"
     return ""
+
+
+# Cyclingstage zet de tijdzone bij de tijden: "both are local times (EDT)".
+# Voor een Europese koers is dat dezelfde klok als thuis, voor het WK in
+# Montreal zes uur eerder — daar begint de wegrit om 9:00 EDT, oftewel 15:00
+# bij ons. Zonder omrekening meldt de tegel LIVE terwijl er nog niemand
+# gereden heeft, en staat de geschatte stip zes uur vooruit.
+#
+# Alleen de afkortingen hieronder worden omgerekend; iets anders laat de tijd
+# staan zoals hij er staat (en logt op debug), want een verkeerde omrekening
+# is erger dan een tijd zonder zone. `TDE` is geen tijdzone maar de typefout
+# die cyclingstage op de tijdritpagina van 2026 maakt — net als `hils` voor
+# `hills` in de Vuelta-tabel.
+TIJDZONES = {
+    "UTC": 0, "GMT": 0, "WET": 0, "WEST": 1, "BST": 1,
+    "CET": 1, "CEST": 2, "EET": 2, "EEST": 3,
+    "EST": -5, "EDT": -4, "TDE": -4,
+    "CST": -6, "CDT": -5, "MST": -7, "MDT": -6, "PST": -8, "PDT": -7,
+}
+
+
+def _naar_lokale_klok(tijd: str, zone: str, dag) -> str:
+    """"9:00" in EDT → "15:00" hier. Onbekende zone: onveranderd.
+
+    De verschuiving is het verschil tussen de offset van de bron en die van
+    Home Assistant op de **dag van de etappe** — niet die van vandaag, want
+    daartussen kan de zomertijd liggen.
+    """
+    m = re.match(r"\s*(\d{1,2}):(\d{2})", tijd or "")
+    if not m or not zone:
+        return tijd or ""
+    bron = TIJDZONES.get(zone.upper())
+    if bron is None:
+        _LOGGER.debug("Onbekende tijdzone op de etappepagina: %s", zone)
+        return tijd
+    # De offset van Home Assistant zelf, en niet die van de machine: die
+    # twee lopen uiteen als de gebruiker in HA een andere tijdzone instelt.
+    hier = None
+    try:
+        zone_ha = getattr(dt_util, "DEFAULT_TIME_ZONE", None)
+        middag = datetime.combine(dag, dtime(12, 0))
+        hier = (middag.replace(tzinfo=zone_ha) if zone_ha is not None
+                else middag.astimezone()).utcoffset()
+    except (TypeError, ValueError, OSError, AttributeError):
+        return tijd
+    if hier is None:
+        return tijd
+    verschil = hier.total_seconds() / 3600.0 - bron
+    if not verschil:
+        return tijd
+    minuten = int(m.group(1)) * 60 + int(m.group(2)) + round(verschil * 60)
+    minuten %= 24 * 60
+    return f"{minuten // 60}:{minuten % 60:02d}"
+
+
+def _profiel_past(stage: dict, elev) -> bool:
+    """Hoort dit profiel bij dit onderdeel?
+
+    Alleen voor een onderdeel van een kampioenschap, en alleen als de
+    programmatabel een afstand gaf. Die onderdelen delen één map bij
+    cyclingstage: de wegrit van de mannen staat er als `route.gpx`, het
+    bestand dat ook een eendaagse koers zou hebben. Een profiel van 273 km
+    onder een tijdrit van 39 km is precies de verwisseling die dit project
+    tweemaal op één dag heeft gemaakt, dus de lengte wordt nagemeten.
+
+    Geen afstand of geen onderdeel: dan valt er niets te toetsen en is het
+    antwoord ja — dit is een vangnet en geen filter.
+    """
+    if not stage.get("onderdeel"):
+        return True
+    verwacht = _num(stage.get("distance_km"))
+    if not verwacht or not elev:
+        return True
+    gemeten = _num(elev[-1][0])
+    if not gemeten:
+        return True
+    if abs(gemeten - verwacht) <= 0.1 * verwacht:
+        return True
+    _LOGGER.debug("Profiel van %s km hoort niet bij %s (%s km); overgeslagen",
+                  round(gemeten), stage.get("onderdeel"), verwacht)
+    return False
 
 
 def _eyebrow_tag(stage, stage_type):
@@ -1244,8 +1325,12 @@ def _fetch_stage_meta(stage: dict) -> dict:
         return d
     d["ok"] = True
     meta = cs.parse_etappe_meta(html)
-    d["start_time"] = meta.get("start_time", "")
-    d["finish_time"] = meta.get("finish_time", "")
+    # De tijden staan in de lokale tijd van de koers; voor het WK in Montreal
+    # is dat EDT en dus niet onze klok. Zie `_naar_lokale_klok`.
+    zone = meta.get("tz", "")
+    dag = stage.get("date") or date.today()
+    d["start_time"] = _naar_lokale_klok(meta.get("start_time", ""), zone, dag)
+    d["finish_time"] = _naar_lokale_klok(meta.get("finish_time", ""), zone, dag)
     # Een programmatabel noemt de hoogtemeters per onderdeel; die gaan vóór
     # op wat de pagina in lopende tekst zegt. Twee onderdelen kunnen één
     # pagina delen (de tijdritten van het WK rijden dezelfde route), en dan
@@ -2367,14 +2452,26 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # de etappepagina noemt het volledige adres, en daarin staat de map
         # onder /images/ die het tijdschema ook nodig heeft
         _onthoud_img_map(s, gelezen)
-        kandidaten = gelezen + [u for u in _gpx_urls(s) if u not in gelezen]
+        if s.get("onderdeel") and not s.get("idx"):
+            # Een onderdeel van een kampioenschap heeft geen etappenummer,
+            # dus `_gpx_urls` bouwt het adres van een **eendaagse** koers
+            # (`route.gpx`) — en dat is in dezelfde map het bestand van de
+            # wegrit. De tijdrit zou daarmee het profiel van 273 km krijgen.
+            # Alleen wat de pagina van dit onderdeel zelf noemt telt.
+            kandidaten = list(gelezen)
+        else:
+            kandidaten = gelezen + [u for u in _gpx_urls(s) if u not in gelezen]
         # één voor één en niet de hele lijst aan `_fetch_gpx`, want dan is
         # achteraf te zeggen wélk adres het werd (`gpx_used`)
         for kandidaat in kandidaten:
             elev, climbs = await self._job(_fetch_gpx, kandidaat, n_out)
+            if elev and not _profiel_past(s, elev):
+                continue
             if elev:
                 self._gpx_gebruikt[s["stage_url"]] = kandidaat
                 return elev, climbs
+        if s.get("onderdeel") and not s.get("idx"):
+            return [], []   # zie hierboven: sleutel 0 is de wegrit
         alt = (await self._gpx_index(s)).get(s.get("idx") or 0)
         _onthoud_img_map(s, [alt] if alt else [])
         if not alt or alt in kandidaten:

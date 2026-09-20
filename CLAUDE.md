@@ -700,10 +700,41 @@ Twee dingen die daarbij horen:
   hoogtemeters van de pagina alleen over als de etappe ze niet zelf al
   draagt. De tabel is per onderdeel; een gedeelde pagina is dat niet.
 
-**Wat hiervan niet geverifieerd is:** wat er op `route-itt-wc-2026` en de
-twee wegritpagina's staat. Die zijn niet opgehaald, dus of daar een
-starttijd, colnamen of een GPX-adres op staan is nog open — het degradeert
-netjes naar leeg. Ze staan in `docs/gevraagde-paginas.md`.
+**4. Wat op die routepagina's staat (0.31.3).** De eigenaar leverde ze
+dezelfde ochtend: de tijdrit en de wegrit van de mannen. Zie
+`tests/fixtures/cyclingstage_wk_2026_routepaginas.README.md`. Drie dingen
+kwamen daar voor het eerst uit:
+
+- **De tijden staan in de tijd van de kóérs.** "The World Championship road
+  race starts at 9:00 and is expected to finish at 15:40 — both are local
+  times (EDT)." Dat is 15:00 en 21:40 bij ons. Zonder omrekenen meldt de
+  tegel LIVE terwijl er nog niemand gereden heeft, en staat de geschatte
+  stip zes uur vooruit — op elke koers buiten onze tijdzone, niet alleen
+  deze. `parse_etappe_meta` geeft daarom `tz` terug (de pagina zegt het
+  zelf, dus aflezen) en `_naar_lokale_klok` rekent het om naar de tijdzone
+  die in Home Assistant is ingesteld, op de dag van de etappe zelf — daar
+  kan een zomertijdgrens tussen liggen. Alleen de afkortingen in
+  `TIJDZONES` worden omgerekend; een onbekende laat de tijd staan en logt
+  op debug, want een verkeerde omrekening is erger dan een tijd zonder
+  zone. `TDE` staat er als tijdzone in omdat de tijdritpagina die typefout
+  voor `EDT` maakt, net als `hils` voor `hills` in de Vuelta-tabel.
+  De testtijdzone staat in `conftest.py` vast op Europe/Amsterdam; de
+  testmachine draait op UTC en anders hangt de uitkomst daarvan af.
+- **"expected to finish at" naast "around".** De Vuelta schrijft "around",
+  deze pagina "at". Met alleen "around" bleef de finishtijd hier leeg.
+- **De GPX van de wegrit heet `route.gpx`**, in de map die álle onderdelen
+  delen — precies het adres dat `gpx_urls` bouwt voor een eendáágse koers.
+  De tijdrit van 39 km zou daarmee het profiel van 273 km krijgen, dezelfde
+  verwisseling als bij de hoogtemeters. Voor een onderdeel zonder nummer
+  telt daarom alleen het adres dat zijn eigen pagina noemt: geen gebouwde
+  adressen en geen terugval op de overzichtspagina (waar `route.gpx` onder
+  sleutel 0 belandt, en `idx or 0` is bij een onderdeel altijd 0).
+  `_profiel_past` meet daarbovenop de lengte na tegen de afstand uit de
+  programmatabel en laat een profiel vallen dat er meer dan 10% naast zit.
+
+**Wat hiervan niet geverifieerd is:** de routepagina van de wegrit voor
+vrouwen. Of die een eigen GPX noemt of diezelfde `route.gpx`, is niet
+bekend — daar is `_profiel_past` het vangnet voor.
 
 Nog een kleinigheid uit dezelfde melding: `_eyebrow_tag` laat de tag "TT"
 weg zodra er een onderdeel is — "Tijdrit mannen · WK · TT" zegt het twee

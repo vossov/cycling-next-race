@@ -72,7 +72,14 @@ def _installeer_stubs():
                   setattr(self, "coordinator", coordinator)}),
           UpdateFailed=type("UpdateFailed", (Exception,), {}))
     _stub("homeassistant.util")
-    _stub("homeassistant.util.dt", now=lambda: None)
+    # `DEFAULT_TIME_ZONE` is de tijdzone die in Home Assistant is ingesteld.
+    # Hij staat hier vast op Europe/Amsterdam, zodat het omrekenen van de
+    # tijden op een etappepagina ("local times (EDT)") op elke machine
+    # dezelfde uitkomst geeft — de testmachine draait op UTC.
+    from zoneinfo import ZoneInfo
+
+    _stub("homeassistant.util.dt", now=lambda: None,
+          DEFAULT_TIME_ZONE=ZoneInfo("Europe/Amsterdam"))
 
 
 @pytest.fixture(scope="session")

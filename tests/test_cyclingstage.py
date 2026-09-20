@@ -199,7 +199,7 @@ def test_meta_uit_de_etappetekst(cs):
     """
     meta = cs.parse_etappe_meta(ETAPPE4.read_text())
     assert meta == {"start_time": "14:40", "finish_time": "17:30",
-                    "vertical_m": 2953}
+                    "vertical_m": 2953, "tz": "CEST"}
 
 
 def test_meta_verzint_niets(cs):

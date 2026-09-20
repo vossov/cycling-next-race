@@ -313,3 +313,96 @@ def test_de_eyebrow_herhaalt_de_tijdrit_niet(wt, monkeypatch, wk):
     assert wt._eyebrow_tag(st[1], "itt") == ""
     # een gewone etappe houdt zijn tag
     assert wt._eyebrow_tag({"idx": 18}, "itt") == "TT"
+
+
+# ── de routepagina's per onderdeel (0.31.3) ─────────────────────────
+
+@pytest.fixture
+def wk_itt():
+    """`/world-championships-2026-montreal/route-itt-wc-2026/`, 20 september."""
+    return _fixture("cyclingstage_wk_2026_route_itt.html")
+
+
+@pytest.fixture
+def wk_wegrit():
+    """`/world-championships-2026-montreal/route-road-race-wc-2026/`."""
+    return _fixture("cyclingstage_wk_2026_route_wegrit.html")
+
+
+def test_de_routepagina_van_de_tijdrit_geeft_zijn_eigen_getallen(cs, wk_itt):
+    """220 hoogtemeters — dezelfde als in de programmatabel, niet 3 800."""
+    meta = cs.parse_etappe_meta(wk_itt)
+    assert meta["vertical_m"] == 220
+    assert meta["start_time"] == "9:19"
+    assert meta["tz"] == "TDE"       # de typefout van de site voor EDT
+
+
+def test_de_wegrit_zegt_finish_at_en_niet_finish_around(cs, wk_wegrit):
+    """"expected to finish at 15:40" — de Vuelta schrijft "around"."""
+    meta = cs.parse_etappe_meta(wk_wegrit)
+    assert meta["start_time"] == "9:00"
+    assert meta["finish_time"] == "15:40"
+    assert meta["tz"] == "EDT"
+    # de lopende tekst zegt 3 800 waar de tabel 3 808 zegt; allebei echt
+    assert meta["vertical_m"] == 3800
+
+
+def test_de_tijden_worden_naar_onze_klok_gerekend(wt, monkeypatch, wk_live, wk_wegrit):
+    """9:00 EDT is 15:00 hier.
+
+    Zonder omrekening meldt de tegel LIVE terwijl er nog niemand gereden
+    heeft, en staat de geschatte stip zes uur vooruit. De pagina zegt zelf
+    welke tijdzone het is; dat is aflezen en geen aanname.
+    """
+    st = _wk_etappes(wt, monkeypatch, wk_live)
+    monkeypatch.setattr(wt, "_etappe_html", lambda url: wk_wegrit)
+    meta = wt._fetch_stage_meta(st[4])       # Wegrit mannen
+    assert meta["start_time"] == "15:00"
+    assert meta["finish_time"] == "21:40"
+    # de hoogtemeters blijven die van de tabel
+    assert meta["vertical"] == 3808
+
+
+def test_een_europese_koers_merkt_niets_van_het_omrekenen(wt):
+    """CEST is onze eigen klok; die tijd mag niet verschuiven."""
+    assert wt._naar_lokale_klok("14:40", "CEST", date(2026, 9, 8)) == "14:40"
+    # en een zone die we niet kennen laat de tijd staan zoals hij er staat
+    assert wt._naar_lokale_klok("14:40", "XYZ", date(2026, 9, 8)) == "14:40"
+    assert wt._naar_lokale_klok("14:40", "", date(2026, 9, 8)) == "14:40"
+
+
+def test_de_tijdrit_krijgt_niet_het_profiel_van_de_wegrit(wt, monkeypatch, wk_live):
+    """`route.gpx` in die map ís de wegrit van 273 km.
+
+    Een onderdeel heeft geen etappenummer, dus `_gpx_urls` bouwt het adres
+    van een eendaagse koers. Alleen wat de pagina van dít onderdeel noemt
+    telt — en de tijdritpagina noemt geen GPX.
+    """
+    st = _wk_etappes(wt, monkeypatch, wk_live)
+    c = wt.CyclingCoordinator(None)
+    gevraagd = []
+
+    async def job(fn, *args):
+        if fn is wt._gpx_uit_etappe:
+            return []            # de tijdritpagina noemt er geen
+        gevraagd.append(args[0])
+        return [], []
+
+    c._job = job
+    c._gpx_index = lambda s: _leeg()
+    assert asyncio.run(c._gpx_van(st[1], 45)) == ([], [])
+    assert gevraagd == []        # geen enkel gebouwd adres geprobeerd
+
+
+async def _leeg():
+    return {}
+
+
+def test_een_profiel_van_de_verkeerde_lengte_valt_af(wt):
+    """Vangnet: 273 km onder een tijdrit van 39 km kan niet kloppen."""
+    tijdrit = {"onderdeel": "Tijdrit mannen", "distance_km": 39.2}
+    assert wt._profiel_past(tijdrit, [(0, 10), (39.0, 20)])
+    assert not wt._profiel_past(tijdrit, [(0, 10), (273.4, 20)])
+    # zonder afstand valt er niets te toetsen, en een gewone etappe raakt dit niet
+    assert wt._profiel_past({"onderdeel": "Wegrit mannen"}, [(0, 1), (273.4, 2)])
+    assert wt._profiel_past({"idx": 7, "distance_km": 39.2}, [(0, 1), (273.4, 2)])

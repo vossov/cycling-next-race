@@ -14,24 +14,25 @@ kolommen `type` en `route` zijn omgedraaid met een kolom `riders` erbij, en
 de "3,800 metres of elevation gain" staat er in de lopende tekst — over de
 wegrit van de mannen, terwijl alle vijf de onderdelen hem kregen.
 
-## Nu bovenaan: de routepagina's per WK-onderdeel
+## ~~De routepagina's per WK-onderdeel~~ — twee binnen op 20 september 2026
+
+De tijdrit en de wegrit van de mannen staan als fixture in
+`tests/fixtures/`. Ze gaven de starttijd (en daarmee LIVE), de
+hoogtemeters per onderdeel en het GPX-adres van de wegrit — plus de
+ontdekking dat de tijden in de tijdzone van de koers staan.
+
+Nog wél gewenst, en het laatste gaatje in dit onderdeel:
 
 ```
-https://www.cyclingstage.com/world-championships-2026-montreal/route-itt-wc-2026/
 https://www.cyclingstage.com/world-championships-2026-montreal/route-road-race-wc-2026-women/
-https://www.cyclingstage.com/world-championships-2026-montreal/route-road-race-wc-2026/
 ```
 
-Nieuw op de pagina van 20 september: elk onderdeel linkt naar zijn eigen
-routepagina. Die adressen worden sinds 0.31.2 gebruikt, maar wat erop staat
-is niet nagekeken — een starttijd (en daarmee LIVE), colnamen en een
-GPX-adres zouden er kunnen staan. Zonder die pagina's blijven die velden
-gewoon leeg.
+De vraag is precies één ding: noemt die pagina een eigen GPX, of diezelfde
+`route.gpx` als de mannen? In dat tweede geval zou de wegrit van 180 km het
+profiel van 273 km krijgen. `_profiel_past` vangt dat nu af, maar dan
+blijft het profiel leeg terwijl het er misschien is.
 
-De tabel heeft ook een kolom `riders` met een startlijst per onderdeel
-(`riders-itt-wc-2026-women`). Daar is nog niets mee gedaan.
-
-## De adressen, kopieerbaar## De adressen, kopieerbaar
+## De adressen, kopieerbaar## De adressen, kopieerbaar## De adressen, kopieerbaar
 
 Stand 7 september 2026. Alles hieronder is een volledig adres — geen
 sjablonen. Wat al binnen is staat verderop afgestreept.

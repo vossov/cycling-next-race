@@ -388,7 +388,13 @@ def _hoogtemeters(tekst: str):
 # sensor.py gehaald; die code is beproefd en blijft. Hier staat alleen wat
 # daar níét uit kwam en wat we tot nu toe bij procyclingstats haalden.
 _START_TIJD = re.compile(r"starts?\s+at\s+(\d{1,2}[:.]\d{2})", re.I)
-_FINISH_TIJD = re.compile(r"expected\s+to\s+finish\s+around\s+(\d{1,2}[:.]\d{2})", re.I)
+_FINISH_TIJD = re.compile(
+    r"expected\s+to\s+finish\s+(?:around|at)\s+(\d{1,2}[:.]\d{2})", re.I)
+# "both are local times (EDT)", "both local times (CEST)". Cyclingstage zet
+# er de tijdzone bij, en die is niet altijd de onze: het WK in Montreal
+# staat in EDT, zes uur achter op Nederland. Zonder deze aanduiding zou de
+# tegel om 9:00 LIVE melden terwijl de koers pas om 15:00 begint.
+_TIJDZONE = re.compile(r"local\s+times?\s*\(([A-Z]{2,5})\)", re.I)
 # "2,953 metres of elevation gain" — de komma is een duizendtalscheiding.
 _HOOGTE = re.compile(
     r"([\d.,]+)\s*(?:metres|meters|m)\s+of\s+(?:elevation|climbing|vertical)", re.I)
@@ -422,6 +428,9 @@ def parse_etappe_meta(html: str) -> dict:
             uit["vertical_m"] = int(float(m.group(1).replace(",", "")))
         except ValueError:
             pass
+    m = _TIJDZONE.search(tekst)
+    if m and ("start_time" in uit or "finish_time" in uit):
+        uit["tz"] = m.group(1).upper()
     return uit
 
 
