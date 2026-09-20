@@ -5,6 +5,21 @@ racecenter-sites van ASO — de egress-proxy blokkeert ze. Elke parser die hier
 gebouwd wordt moet daarom op HTML draaien die met de hand is opgeslagen.
 Deze lijst staat op volgorde van wat het meest oplevert.
 
+## Bovenaan: de WK-pagina van nu
+
+```
+https://www.cyclingstage.com/world-championships-2026-canada/
+```
+
+De opgeslagen versie is van 7 september 2026. Op 20 september las de tegel
+"Montreal" waar "Tijdrit mannen" hoorde te staan, en dat kan alleen als de
+kolommen van de programmatabel op de live pagina anders staan. 0.31.1 leest
+die tabel daarom op inhoud in plaats van op volgorde, maar **hoe die pagina
+er nu uitziet is van hieruit niet te zien**. Met deze pagina erbij is dat te
+controleren in plaats van af te leiden, en is meteen te zien waar de
+"3,800 metres of elevation gain" op die pagina staat die alle vijf
+onderdelen kregen.
+
 ## De adressen, kopieerbaar
 
 Stand 7 september 2026. Alles hieronder is een volledig adres — geen

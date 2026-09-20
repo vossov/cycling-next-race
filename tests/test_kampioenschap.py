@@ -181,3 +181,86 @@ def test_een_rittenkoers_merkt_er_niets_van(wt):
     assert keuze["shown"]["idx"] == 2
     assert [s["idx"] for s in keuze["future"]] == [3]
     assert [s["idx"] for s in keuze["finished"]] == [1]
+
+
+# ── de koerspagina gaat over een ánder onderdeel (0.31.1) ───────────
+
+def _rij_volgorde(cs_mod, html, volgorde):
+    """Dezelfde echte cellen, in een andere kolomvolgorde.
+
+    Geen verzonnen tabel: de inhoud komt regel voor regel van de opgeslagen
+    pagina en alleen de volgorde verandert. Dat is precies wat er op 20
+    september 2026 misging — de tegel las de route waar het onderdeel hoort.
+    """
+    def rij(m):
+        cellen = cs_mod._CEL.findall(m.group(0))
+        if len(cellen) != 5:
+            return m.group(0)
+        return "<tr>" + "".join("<td>%s</td>" % cellen[i] for i in volgorde) + "</tr>"
+    return cs_mod._RIJ.sub(rij, html)
+
+
+def test_de_kolommen_worden_op_inhoud_gelezen(cs, wk):
+    """Het onderdeel is de cel die een onderdeel nóemt, niet kolom 3.
+
+    Op de tegel van 20 september stond "Montreal · World Championships" waar
+    "Tijdrit mannen" hoorde te staan. Dat kan alleen als de kolommen op de
+    live pagina anders staan dan op de opgeslagen versie van 7 september.
+    Welke volgorde het daar is, is van hieruit niet na te gaan — dus wordt er
+    op geen enkele volgorde meer gerekend.
+    """
+    gewoon = {r["onderdeel"]: r for r in cs.parse_programma(wk, 2026)}
+    gedraaid = {r["onderdeel"]: r
+                for r in cs.parse_programma(_rij_volgorde(cs, wk, [0, 2, 1, 3, 4]), 2026)}
+    assert set(gedraaid) == set(gewoon)
+    for naam, r in gewoon.items():
+        assert gedraaid[naam]["name"] == r["name"]
+        assert gedraaid[naam]["distance_km"] == r["distance_km"]
+        assert gedraaid[naam]["vertical_m"] == r["vertical_m"]
+        assert gedraaid[naam]["women"] is r["women"]
+
+
+def test_een_onderdeel_weet_dat_het_geen_eigen_pagina_heeft(wt, monkeypatch, wk):
+    st = _wk_etappes(wt, monkeypatch, wk)
+    assert all(s["eigen_pagina"] is False for s in st)
+
+
+def test_de_hoogtemeters_komen_van_de_programmatabel(wt, monkeypatch, wk):
+    """Niet van de koerspagina: die gaat over een ánder onderdeel.
+
+    Op 20 september 2026 las de tegel bij de tijdrit van 39 km "3800 hm" en
+    daarmee "Bergrit" — de hoogtemeters van de wegrit, want alle vijf
+    onderdelen delen één pagina. De tabel zegt 195.
+    """
+    st = _wk_etappes(wt, monkeypatch, wk)
+
+    def nooit(*a, **kw):                       # er hoort niets opgehaald te worden
+        raise AssertionError("de koerspagina hoort hier niet gelezen te worden")
+
+    monkeypatch.setattr(wt, "_etappe_html", nooit)
+    meta = wt._fetch_stage_meta(st[1])         # Tijdrit mannen
+    assert meta["vertical"] == 195
+    assert meta["distance"] == 39.9
+    assert meta["start_time"] == ""            # de tabel noemt er geen
+    assert meta["ok"] is True                  # compleet, niets bij te leren
+    assert wt._fetch_stage_meta(st[4])["vertical"] == 3720
+
+
+def test_zonder_eigen_pagina_geen_profiel(wt, monkeypatch, wk):
+    """Het GPX-adres op de koerspagina hoort bij een ander onderdeel."""
+    st = _wk_etappes(wt, monkeypatch, wk)
+    c = wt.CyclingCoordinator(None)
+
+    async def job(fn, *args):
+        raise AssertionError("er hoort geen GPX opgehaald te worden")
+
+    c._job = job
+    assert asyncio.run(c._gpx_van(st[0], 45)) == ([], [])
+
+
+def test_de_eyebrow_herhaalt_de_tijdrit_niet(wt, monkeypatch, wk):
+    """"Tijdrit mannen" zegt het al; daar hoeft geen "· TT" meer achter."""
+    st = _wk_etappes(wt, monkeypatch, wk)
+    assert wt._eyebrow_tag(st[1], "itt") == ""
+    # een gewone etappe houdt zijn tag
+    assert wt._eyebrow_tag({"idx": 18}, "itt") == "TT"

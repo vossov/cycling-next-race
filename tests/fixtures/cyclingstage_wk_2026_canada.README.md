@@ -51,3 +51,19 @@ Drie dingen om op te letten, alle drie hier nagemeten:
 Een **uitslag** en een **hoogteprofiel** per onderdeel. Daar is een adres per
 onderdeel voor nodig en dat staat er niet in. Die velden blijven dus leeg —
 het programma tonen kan wel, en dat is waar het om ging.
+
+## Deze pagina is van 7 september, en de live pagina wijkt af (0.31.1)
+
+Op 20 september 2026 las de tegel "Montreal · World Championships" waar
+"Tijdrit mannen" hoorde te staan. Met déze HTML komt er "Tijdrit vrouwen" en
+"Tijdrit mannen" uit — nagemeten — dus de kolommen op de live pagina staan
+anders dan hier. Hoe precies is van hieruit niet te zien; `parse_programma`
+leest de kolommen daarom sinds 0.31.1 op inhoud in plaats van op volgorde.
+
+Op de live pagina staat bovendien ergens "3,800 metres of elevation gain".
+Die zin staat in deze versie niet, en kwam via `_fetch_stage_meta` op álle
+vijf de onderdelen terecht — een tijdrit van 39 km met 3800 hoogtemeters.
+Een onderdeel zonder eigen pagina leest die pagina niet meer.
+
+Een nieuwe kopie van deze pagina staat bovenaan in
+`docs/gevraagde-paginas.md`.

@@ -619,6 +619,66 @@ plekken die dat label bouwden gebruiken hem nu.
 Daar is een adres per onderdeel voor nodig en dat staat nergens op de pagina.
 Die velden blijven leeg — netjes leeg, zoals overal in dit project.
 
+### De koerspagina gaat over een ánder onderdeel (0.31.1)
+
+Diezelfde ochtend, met 0.31.0 draaiend: *"Het is niet duidelijk dat het de tt
+is. En de hm lijken mij ook te veel."* Op de tegel stond
+
+| onderdeel | wat er stond | wat het hoort te zijn |
+|---|---|---|
+| eyebrow | `MONTREAL · WORLD CHAMPIONSHIPS` | `Tijdrit mannen · World Championships` |
+| hoogtemeters | `3800 hm` — ook bij de wegrit van 180 km | 195 bij de tijdrit, 2502 bij de wegrit |
+| terrein | `Bergrit` (want 3800 ≥ 3000) | vlak |
+
+Twee oorzaken, allebei met dezelfde kern: **vijf onderdelen delen één
+pagina.**
+
+**1. Alles wat van die pagina komt hoort bij één onderdeel.** `stage_url` is
+de koerspagina met een fragment, en `urllib` knipt dat fragment eraf — dat
+was de bedoeling, maar het betekent ook dat `_fetch_stage_meta`,
+`_fetch_stage_names` en `_gpx_uit_etappe` voor álle vijf dezelfde tekst
+lezen. Staat daar "3,800 metres of elevation gain" (over de wegrit van de
+mannen), dan krijgt de tijdrit van 39 km die hoogtemeters, en met hen de
+badge "Bergrit" en een watchscore die nergens op slaat. De hoogtemeters uit
+de programmatabel stonden al op de etappe (`vertical_m`) maar werden
+weggegooid: `_fetch_stage_meta` begon met `"vertical": None` en vulde alleen
+vanaf de pagina.
+
+Sinds 0.31.1 draagt elke etappe **`eigen_pagina`**. Staat die op `False`, dan
+wordt de pagina niet gelezen en is wat de programmatabel gaf het hele
+antwoord: afstand, terreintype, vertrek, aankomst en hoogtemeters. `_gpx_van`
+geeft dan meteen `[], []` terug — het GPX-adres op die pagina hoort bij een
+ander onderdeel, en de gebouwde adressen leunen op een etappenummer dat er
+niet is. Liever geen profiel dan het profiel van een andere koers.
+
+Datzelfde geldt voor de **tekstvorm** (de Tour of Britain): die rijen dragen
+ook hoogtemeters en hebben ook geen eigen pagina. Ze krijgen nu bovendien een
+fragment (`#etappe-3`), want zonder dat vielen al hun etappes op één
+`stage_url` samen — dezelfde ontdubbelingsval als bij de onderdelen.
+
+**2. De kolomvolgorde lag vast en dat hield geen stand.** `parse_programma`
+las kolom 2 als de route en kolom 3 als het onderdeel. Op de tegel stond de
+**route** waar het onderdeel hoort, dus op de live pagina staan die kolommen
+anders dan op de versie die op 7 september is opgeslagen. **Wélke volgorde
+het daar is, is van hieruit niet na te gaan** — de proxy laat cyclingstage
+niet door — dus wordt er op geen enkele volgorde meer gerekend:
+`_programmakolommen` leest op inhoud. Het onderdeel is de cel die een
+onderdeel nóemt (`ITT (v)`, `mixed relay`), afstand en hoogtemeters zijn de
+getalcellen, en de route is wat er aan tekst overblijft. Herkent geen enkele
+cel een onderdeel, dan geldt de oude lezing — eerst de route, dan het
+onderdeel zoals de site het schrijft — zodat een discipline die we niet
+kennen zijn eigen tekst houdt.
+
+**Wat hiervan niet geverifieerd is:** de live pagina zelf. De test draait op
+de opgeslagen pagina (waar de uitkomst gelijk blijft) en op dezelfde echte
+cellen in een andere volgorde. Zolang die pagina niet als fixture binnen is,
+staat vast dát de kolommen zijn verschoven en niet hoe. Hij staat bovenaan in
+`docs/gevraagde-paginas.md`.
+
+Nog een kleinigheid uit dezelfde melding: `_eyebrow_tag` laat de tag "TT"
+weg zodra er een onderdeel is — "Tijdrit mannen · WK · TT" zegt het twee
+keer.
+
 **Wat nog een beperking is:** `_mag_op_tegel` en de blokken in `races` gaan
 op het niveau van de **koers**, en de kalender geeft het WK één geslacht.
 Een dashboardkaart die alleen vrouwen toont, ziet het WK-blok dus niet, ook

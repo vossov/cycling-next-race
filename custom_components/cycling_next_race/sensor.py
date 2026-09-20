@@ -162,6 +162,17 @@ def _type_tag(stage_type):
     return ""
 
 
+def _eyebrow_tag(stage, stage_type):
+    """"TT"/"TTT" achter de eyebrow, behalve als het onderdeel het al zegt.
+
+    Een onderdeel van een kampioenschap heet al "Tijdrit mannen"; daar hoeft
+    geen "· TT" meer achter.
+    """
+    if stage.get("onderdeel"):
+        return ""
+    return _type_tag(stage_type)
+
+
 def _finish_est(start_time, distance, sc, vm, stage_type):
     """Grove schatting finishtijd 'HH:MM' (start + afstand/gem. snelheid). Niet bij tijdritten."""
     if _type_tag(stage_type):          # tijdrit: verspreide starts, geen zinnige finish
@@ -722,8 +733,11 @@ def _cs_event_stages(event: dict) -> list[dict]:
         # `Request.selector` houdt het pad zonder `#...` over), dus er wordt
         # nog steeds gewoon de koerspagina opgehaald.
         adres = r["url"] or race_url
-        if not r["url"] and r.get("onderdeel"):
-            adres += "#" + re.sub(r"[^a-z0-9]+", "-", r["onderdeel"].lower()).strip("-")
+        eigen_pagina = bool(r["url"])
+        if not eigen_pagina:
+            merk = r.get("onderdeel") or (f"etappe-{r['idx']}" if r.get("idx") else "")
+            if merk:
+                adres += "#" + re.sub(r"[^a-z0-9]+", "-", merk.lower()).strip("-")
         uit.append({
             "date": r["date"],
             "stage_url": adres,
@@ -742,6 +756,11 @@ def _cs_event_stages(event: dict) -> list[dict]:
             "stage_type": r["stage_type"],
             "departure": r["departure"],
             "arrival": r["arrival"],
+            # Heeft dit onderdeel een eigen pagina? Zo niet, dan wijst
+            # `stage_url` naar de koerspagina, en die gaat over een ánder
+            # onderdeel: wat daar staat (starttijd, hoogtemeters, GPX) hoort
+            # niet bij deze. Zie `_fetch_stage_meta`.
+            "eigen_pagina": eigen_pagina,
             # alleen de tekst- en de programmavorm geven dit; uit een
             # etappetabel komt het van de etappepagina zelf
             **({"vertical_m": r["vertical_m"]} if r.get("vertical_m") else {}),
@@ -1197,11 +1216,24 @@ def _fetch_stage_meta(stage: dict) -> dict:
         "departure": stage.get("departure") or "",
         "arrival": stage.get("arrival") or "",
         "distance": stage.get("distance_km"),
-        "vertical": None,
+        # de programmatabel van een kampioenschap en de tekstvorm van een
+        # routepagina noemen de hoogtemeters per etappe; dan hoeft de
+        # etappepagina er niet aan te pas te komen
+        "vertical": _int(stage.get("vertical_m")),
         "profile_score": None,
         "stage_type": stage.get("stage_type") or "",
         "start_time": "",
     }
+    if not stage.get("eigen_pagina", True):
+        # Een onderdeel van een kampioenschap heeft geen eigen pagina: zijn
+        # adres is de koerspagina met het onderdeel als fragment. Wat daar
+        # in lopende tekst staat gaat over een ánder onderdeel — op 20
+        # september 2026 kreeg de tijdrit van 39 km zo de 3 800
+        # hoogtemeters van de wegrit, en met hem de badge "Bergrit". Wat de
+        # programmatabel zélf geeft staat hierboven al; verder is er niets
+        # te halen, dus ook niets op te halen.
+        d["ok"] = True          # compleet, er valt morgen niets bij te leren
+        return d
     # dezelfde pagina die `_fetch_stage_names` leest; `_etappe_html` haalt
     # hem hoogstens één keer per dag op
     html = _etappe_html(stage.get("stage_url"))
@@ -2316,6 +2348,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         enkel adres iets op, dan wordt het adres opgezocht op de
         GPX-overzichtspagina van die koers - de bron, dus geen gokwerk.
         """
+        if not s.get("eigen_pagina", True):
+            # Geen eigen pagina, dus ook geen eigen profiel: het GPX-adres
+            # dat de koerspagina noemt hoort bij een ander onderdeel, en de
+            # gebouwde adressen leunen op een etappenummer dat er niet is.
+            # Liever geen profiel dan het profiel van een andere koers.
+            return [], []
         # eerst wat de etappepagina zélf noemt, dan pas de gebouwde adressen
         gelezen = await self._job(_gpx_uit_etappe, s)
         gelezen = list(gelezen) if isinstance(gelezen, (list, tuple)) else []
@@ -2466,7 +2504,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # "Tijdrit vrouwen", en daar hoeft geen "· Dames" meer achter
         if s.get("women") and not _noemt_dames(e["eyebrow"]):
             e["eyebrow"] += " \u00b7 Dames"
-        _tag = _type_tag(e.get("stage_type"))
+        _tag = _eyebrow_tag(s, e.get("stage_type"))
         if _tag:
             e["eyebrow"] += f" \u00b7 {_tag}"
         # de tussensprint alleen bij de etappe die als profiel getekend
@@ -2893,7 +2931,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             eyebrow = f"{stage_label} · {_short_race(shown['race_name'])}"
         if shown.get("women") and not _noemt_dames(eyebrow):
             eyebrow += " · Dames"
-        _tag = _type_tag(shown_data.get("stage_type"))
+        _tag = _eyebrow_tag(shown, shown_data.get("stage_type"))
         if _tag:
             eyebrow += f" · {_tag}"
 

@@ -238,6 +238,52 @@ _ONDERDELEN = {
 # "(m)" of "(v)" achter het onderdeel; cyclingstage schrijft het zo bij élk
 # onderdeel behalve de gemengde estafette, die per definitie allebei is.
 _GESLACHT = re.compile(r"\((m|v|w)\)\s*$", re.I)
+# een cel die alleen een getal is (`39.9`, `2,502`); de komma is daar een
+# duizendtalscheiding, zie `_hoogtemeters`
+_ALLEEN_GETAL = re.compile(r"^[\d.,]+$")
+
+
+def _programmakolommen(tekst: list[str]) -> dict:
+    """Welke cel is de route, welke het onderdeel, welke de getallen.
+
+    **Op inhoud en niet op volgorde.** Op de pagina van 7 september 2026
+    staat het als `datum | route | type | km | el.gain`, maar op 20
+    september — de dag van beide tijdritten — las de tegel "Montreal" waar
+    "Tijdrit mannen" hoorde te staan. Dat kan alleen als de kolommen op de
+    live pagina anders staan dan in de opgeslagen versie. Wélke volgorde het
+    daar is, is van hieruit niet na te gaan (de proxy laat cyclingstage niet
+    door), dus wordt er niet op een volgorde gerekend: het onderdeel is de
+    cel die een onderdeel nóemt (`ITT (v)`, `mixed relay`), de afstand en de
+    hoogtemeters zijn de getalcellen, en de route is wat er aan tekst
+    overblijft.
+
+    Herkent geen enkele cel een onderdeel, dan blijft de oude lezing staan:
+    eerst de route, daarna het onderdeel zoals de site het schrijft. Een
+    onderdeel dat we niet kennen houdt zo zijn eigen tekst.
+    """
+    getallen = [i for i in range(1, len(tekst))
+                if tekst[i] and _ALLEEN_GETAL.match(tekst[i])]
+    woorden = [i for i in range(1, len(tekst))
+               if tekst[i] and i not in getallen]
+    soort_i = None
+    for i in woorden:
+        kaal = _GESLACHT.sub("", tekst[i]).strip().lower()
+        if kaal in _ONDERDELEN or _GESLACHT.search(tekst[i]):
+            soort_i = i
+            break
+    if soort_i is None:
+        # niets herkenbaars: de eerste tekstkolom is de route, de volgende
+        # het onderdeel — precies zoals de pagina van 7 september het heeft
+        route_i = woorden[0] if woorden else None
+        soort_i = woorden[1] if len(woorden) > 1 else None
+    else:
+        route_i = next((i for i in woorden if i != soort_i), None)
+    return {
+        "route": tekst[route_i] if route_i is not None else "",
+        "soort": tekst[soort_i] if soort_i is not None else "",
+        "km": tekst[getallen[0]] if getallen else "",
+        "hoogte": tekst[getallen[1]] if len(getallen) > 1 else "",
+    }
 
 
 def parse_programma(html: str, jaar: int) -> list[dict]:
@@ -269,8 +315,9 @@ def parse_programma(html: str, jaar: int) -> list[dict]:
             except ValueError:
                 _LOGGER.debug("Programmadatum onbruikbaar: %s", _kaal(cellen[0]))
                 continue
-            route = _kaal(cellen[1])
-            soort = _kaal(cellen[2])
+            kolom = _programmakolommen([_kaal(c) for c in cellen])
+            route = kolom["route"]
+            soort = kolom["soort"]
             g = _GESLACHT.search(soort)
             kaal_soort = _GESLACHT.sub("", soort).strip().lower()
             onderdeel = _ONDERDELEN.get(kaal_soort, soort.strip())
@@ -283,8 +330,8 @@ def parse_programma(html: str, jaar: int) -> list[dict]:
                 "name": route,
                 "departure": _plaats(route, 0),
                 "arrival": _plaats(route, 1),
-                "distance_km": _getal(_kaal(cellen[3])),
-                "vertical_m": _hoogtemeters(_kaal(cellen[4])),
+                "distance_km": _getal(kolom["km"]),
+                "vertical_m": _hoogtemeters(kolom["hoogte"]),
                 "stage_type": _TYPES.get(kaal_soort, ""),
                 "onderdeel": onderdeel,
                 # None = staat er niet bij (de gemengde estafette); dan houdt
