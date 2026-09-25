@@ -78,7 +78,12 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
   `_gpxindex_cache` (de GPX-adressen die cyclingstage zelf op een rij zet,
   per koers; alleen gevuld als de vaste adressen falen),
   `_other_cache` (dict
-  per etappe van de andere koersen; alleen afgeronde etappes komen erin).
+  per etappe; alleen een complete uitslag komt erin — met klassement, behalve
+  bij een eendaagse koers of een kampioenschapsonderdeel. Sinds 0.31.4 ook
+  voor de tegel: de uitslag van gisteren en die van vandaag na de finish),
+  `_gpx_mis` (etappes van een látere dag zonder GPX, vandaag al geprobeerd)
+  en `_meta_cache` (die sinds 0.31.4 ook een lege uitkomst bewaart, maar
+  alleen voor een latere dag). Zie "Verzoeken per ronde" verderop.
   `_tv_cache` bewaart de tv-gids als HTML — op die pagina staan álle koersen
   van de dag, dus één verzoek bedient de tegel en de pop-up samen.
   `_sprints_cache` is een dict per etappe en geen enkele plek, want de
@@ -248,6 +253,33 @@ begrenst het aantal blokken; de naloop verandert alleen wélke koersen die
 plekken vullen. Wel een `_stages_for` en een `_stage_uitslag` voor die koers,
 allebei per dag gecached, en de uitslag van een gereden etappe blijft in
 `_other_cache` staan.
+
+### Eén finishtijd, op onze klok (0.31.4)
+
+De verwachte finishtijd werd twee keer gelezen: door `parse_etappe_meta`
+(met "around" én "at", omgerekend naar de tijdzone van Home Assistant) en
+door `_fetch_stage_names` (alleen "around", niet omgerekend). De tegel gaf de
+tweede voorrang, en `_upcoming_entry` gebruikte hem alleen als er cols waren
+— anders de schatting `_finish_est`. Twee gevolgen, allebei zonder fout in
+het log:
+
+| | wat er stond | wat de pagina zegt |
+|---|---|---|
+| WK-wegrit mannen in "Komende dagen" | 15:00–**22:36** (schatting) | 15:00–21:40 |
+| Vuelta met HA op Europe/London | 13:40–**17:30** (start omgerekend, finish niet) | 13:40–16:30 |
+
+Bij een koers buiten onze tijdzone met "around" ging het nog verder mis: de
+finish viel vóór de start, en `_live_nu` meldt dan LIVE tot middernacht.
+
+**`_meta_voor` is nu de enige bron** voor start en finish, op de tegel en in
+`upcoming`. `_fetch_stage_names` leest alleen nog cols en vertrek/aankomst.
+`tests/test_tijden.py` draait op de echte WK- en Vuelta-pagina's.
+
+Uit dezelfde ronde: de WK-tijdritpagina zegt "The women start at 9:19 and the
+men at 12:45 local time (TDE)". `_START_TIJD` pakte de eerste tijd, dus de
+tijdrit van de mannen stond op 20 september vanaf 15:19 op LIVE — anderhalf
+uur te vroeg. `parse_etappe_meta` geeft nu `start_per_geslacht`, en
+`_fetch_stage_meta` kiest die van het onderdeel.
 
 ### De tegel rolde half door (gerepareerd in 0.29.5)
 
@@ -1512,6 +1544,19 @@ PCS-resten in 0.25). Tot die tijd kost het vier 404's per etappe per dag,
 gedempt door `_sprints_cache`. `times_diag` in de attributen laat zien welke
 adressen het geworden zijn.
 
+**Tot 0.31.4 werd het tijdschema nooit opgevraagd.** `_sprints_voor` gaf
+`(race_url, idx, one_day)` door aan `_fetch_times`, dat sinds 0.19 één etappe
+verwacht; de TypeError werd stil afgevangen. De vier 404's hierboven waren
+dus een aanname over code die niet draaide, en `times_diag` toonde adressen
+alsof ze geprobeerd waren. De proeftests stubden `_sprints_voor` weg. Sinds
+0.31.4 gaat het verzoek er echt uit (`tests/test_sprints.py`), zodat een
+Giro- of Tour-etappe in 2027 kan uitwijzen of het adres ergens bestaat.
+
+Wat de etappepagina wél zegt, als tekst: "at the intermediate sprint atop the
+Alto de La Comella, 6, 4 and 2 seconds are up for grabs" (Vuelta-etappe 4).
+Een plaatsnaam, geen kilometer. Valt die samen met een benoemde col, dan is
+de plek af te lezen; dat is nog niet gebouwd.
+
 **De gebouwde adressen hieronder zijn een aanname over de bestandsnaam én
 over de map, geen bron.** Wijkt
 cyclingstage er voor één koers van af, dan blijft het profiel leeg zonder dat
@@ -1624,16 +1669,33 @@ niet bereiken**. Verifieer daarom zo:
 - JS-templates: brace-matching de functie `P` uit de YAML halen en met Node
   draaien tegen synthetische attributen; controleren op `NaN`, `undefined` en
   of de uitvoer met `<svg` begint en op `</svg>` eindigt.
+- De browsertests (`tests/browser/*.mjs`) draaien **niet** in CI. Lokaal:
+  `npm install --no-save acorn` en Playwright bereikbaar maken — in de
+  ontwikkelomgeving met `ln -s /opt/node22/lib/node_modules/playwright
+  node_modules/playwright` (beide in `.gitignore`). `kaart_test.mjs` faalde
+  van 0.26 tot 0.31.4 op verouderde verwachtingen (de PCS-startlijst) zonder
+  dat iemand het zag; draai hem na elke kaartwijziging.
+- Verzoeken tellen: `python3 tools/meet_verzoeken.py` (zie "Verzoeken per
+  ronde").
 - `python3 -m py_compile` na elke wijziging.
 - Echte verificatie gebeurt pas in een draaiende Home Assistant.
 
 ## Omvang van de attributen
 
-De recorder weigert attributen boven `MAX_STATE_ATTRS_BYTES` (16 kB) en logt
-daarbij bij **elke update** een waarschuwing; de volledige state gaat
-bovendien over de websocket naar élke verbonden client. De sensor en de kaart
-werken gewoon door — de attributen bereiken de kaart wel — maar de recorder
-bewaart ze niet, dus er is geen historie van.
+**Sinds 0.31.4 gaan de attributen niet meer naar de recorder.** De sensor zet
+`_unrecorded_attributes = frozenset({MATCH_ALL})` (HA 2023.9+, zie de
+[developer-blog van 20 september 2023](https://developers.home-assistant.io/blog/2023/09/20/excluding-state-attributes-from-recording/));
+de status — de koersnaam — blijft in de historie. Daarvóór weigerde de
+recorder alles boven `MAX_STATE_ATTRS_BYTES` (16 kB) met een waarschuwing bij
+élke update, en bewaard werd er toch niets. `MATCH_ALL` en geen lijst, zodat
+een attribuut dat er later bij komt er vanzelf buiten valt. Niet beproefd in
+een draaiende Home Assistant; de tests zien alleen de klasse.
+
+Wat de omvang nog wél kost: de volledige state gaat bij elke update over de
+websocket naar élke verbonden client, tijdens een live etappe om de vijf
+minuten. Voor een traag wandpaneel kan dat tellen; daarvoor blijft
+hieronder staan wat welke knop scheelt. De tabellen en de afweging eronder
+stammen van vóór 0.31.4, toen het om de recorder ging.
 
 **Reken het na, schat het niet.** Hier stond jarenlang "ruwweg 4 kB per
 koersblok, in de praktijk zo'n 28 kB". Dat was te laag. `python3
@@ -1695,6 +1757,55 @@ Een niveau erbij kost niets zolang er niet méér koersen in beeld komen:
 `max_other` begrenst het aantal blokken en `upcoming_n` het aantal etappes.
 Wat het wél kost zijn verzoeken bij cyclingstage — een kalenderpagina per
 jaar per dag, en een etappelijst per koers die in het venster valt.
+
+## Verzoeken per ronde (0.31.4)
+
+"Niet vaker ophalen dan nodig" stond in de robots.txt-afweging, maar hoeveel
+dat was had niemand gemeten. `python3 tools/meet_verzoeken.py` draait de
+échte coordinator tegen de fixtures (alles wat er niet ligt is een 404) op
+de dag van Vuelta-etappe 14 en telt per ronde. `-v` toont elk adres.
+
+| ronde | vóór 0.31.4 | sinds 0.31.4 |
+|---|---:|---:|
+| 16:00, eerste ronde van de dag | 35 | 35 |
+| 16:05, tijdens de etappe (LIVE-ritme) | 8 | 3 |
+| 18:30, na de finish | 14 | 9 |
+
+Van de 3 in de LIVE-ronde zijn er 2 de Tour of Britain-koerspagina, die niet
+in de fixtures ligt; in het echt is het er 1: de uitslag van vandaag, want
+daar hangt het doorrollen aan. Wat er wegviel, alle vijf met een test in
+`tests/test_verzoeken.py`:
+
+- **de uitslag van gisteren**, elke ronde opnieuw, terwijl hij niet meer
+  verandert. Nu via `_stage_uitslag` in `_other_cache`.
+- **de uitslag van vandaag na de finish**, de hele avond. Idem.
+- **de "uitslag" van een etappe die nog moet komen** — na de finish rolt de
+  tegel door naar morgen, en daar ging elke ronde een verzoek heen naar een
+  pagina die niet kan bestaan. `_lege_uitslag` volstaat: afstand, vertrek en
+  terrein staan al in de etappelijst.
+- **GPX-adressen die al een 404 gaven**, voor elke latere etappe zonder
+  profiel (`_gpx_mis`), en **een etappepagina die er nog niet is**
+  (`_meta_cache` bewaart dan de lege uitkomst). Allebei alleen voor een
+  latere dag en tot middernacht; de etappe van vandaag wordt elke ronde
+  opnieuw geprobeerd, want daar kan het profiel of de starttijd alsnog
+  verschijnen. Staat de dag om als de kalender niet binnenkwam, dan gelden
+  ze niet meer — zie `_later_dan_vandaag`.
+
+"Compleet" is bij een rittenkoers: uitslag én klassement. Staat alleen de
+uitslag er al, dan wordt hij de volgende ronde opnieuw gelezen; anders bleef
+het klassement tot morgen weg.
+
+Wat er nog elke ronde gaat en niet hoeft:
+
+- de etappe van vandaag zonder GPX (twee à drie 404's per ronde, dus om de
+  vijf minuten tijdens de etappe). Een wachttijd van een paar uur zou dat
+  dempen; niet gedaan, omdat een hikje dan een profiel urenlang weghoudt.
+- een koers waarvan de etappelijst niet te vinden is (`_stages_for` bewaart
+  een lege lijst niet). Om dezelfde reden: een hikje zou de koers uren van de
+  tegel halen.
+- de tweede slug-terugval van het tijdschema (twee zekere 404's per etappe
+  per dag bij de Vuelta, waar de beeldmap bekend is). Bewust laten staan,
+  zie `test_tijdschema_gebruikt_de_echte_beeldmap`.
 
 ## Wat er sinds 0.25 niet meer is
 
@@ -1944,7 +2055,10 @@ de button-card-templates en moet daar letterlijk gelijk aan blijven.
 
 `levels` bepaalt welke niveaus déze kaart laat zien, met dezelfde tabel als
 `NIVEAUS` in `const.py` — die staat nog een keer in de kaart, want die is
-statisch; `tests/test_kaart.py` vergelijkt de twee. Het is een keuze uit wat
+statisch; `tests/test_kaart.py` vergelijkt de twee. Hetzelfde geldt sinds
+0.31.4 voor `OUDE_NIVEAUS`: een kaart met `levels: ['1']` van vóór 0.19 viel
+anders stil terug op alles — en zo stond het tot 0.31.4 als voorbeeld in de
+README. Het is een keuze uit wat
 de sensor levert en géén tweede knop om koersen op te halen. Daarvoor draagt
 elk blok in `races` en elke etappe in `upcoming` een `level`, en elk blok
 bovendien `days_until`.
@@ -2057,6 +2171,24 @@ SVG-conventies: `viewBox` breedte 440, kleuren via `currentColor` zodat het
 thema volgt, categoriekleuren `CAT={HC:'#E4572E','1':'#F2A03D','2':'#EBD24A',
 '3':'#7FB069','4':'#5FA8A0'}`, accent `#E4572E`.
 
+**SVG-tekst breekt niet af (0.31.4).** Een lange eyebrow liep op de tegel
+dwars door de badge "Morgen 12:50-17:12" heen, en in het detailvenster liep
+"Saint-Paul-Trois-Châteaux → Villard-de-Lans" onder de badge door en buiten
+de kaart. Dat gebeurt bij elke breedte, want het SVG schaalt als geheel.
+`PAS` in `svgTegel` en `svgDetail` schat de breedte en krimpt de letter tot
+een ondergrens, daarna volgt "…". De schatting is gemeten in Chromium: vet
+gemengd schrift is 0,42–0,49 em per teken in Roboto en tot 0,53 in de
+terugval DejaVu; de code rekent met 0,53 (vet), 0,48 (normaal) en 0,64 plus
+de letterafstand (de hoofdletters van de eyebrow). In het detailvenster
+staat de badge sindsdien op de rij van de eyebrow, zodat de routenaam de
+volle breedte heeft.
+
+Het label "≈ SCHATTING" stond altijd boven de stip, en de stip staat vaak op
+een klim: dan liep het door de colmarkering. Het kiest nu de eerste vrije
+plek: boven de stip, eronder, of aan de voet van het profiel.
+`tests/browser/kaart_test.mjs` meet beide met `getBBox()`; de oude kaart
+botste daar op drie teksten en op zeven posities van de stip.
+
 In de uitslag en de klassementen staat de ploeg achter de renner
 (`rennerMetPloeg`): de officiële ploegcode als die bekend is (`team_code`),
 anders de volledige naam. Naam en ploeg zitten in hetzelfde vakje (`.naam`
@@ -2101,6 +2233,25 @@ commitbericht (`git log --oneline --grep '^v0\.6\.0'`) of, voor commits van
 vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/const.py`.
 
 ## Openstaande punten
+
+- **De colcategorie op de kaart is een schatting en staat er niet zo bij.**
+  `_detect_climbs` geeft elke col een categorie uit `_cat_from_score` (lengte
+  × stijging), en de kaart tekent die als "HC", "1" of "3" boven het profiel
+  en als kleur in de legenda — alsof het de officiële categorie is. Geen enkele
+  opgeslagen cyclingstage-pagina noemt een categorie (nagezocht op 25
+  september 2026), en het commentaar in `_async_update_data` zegt dat de
+  categorie leeg blijft. Ze voedt ook de watchscore (`top_cat`). Dat botst
+  met "nooit data verzinnen"; de keuze is aan de eigenaar: weglaten (de kaart
+  toont dan nummers), of als schatting markeren zoals de stip.
+- **Tijdzones van de koersen van januari en februari.** `TIJDZONES` kent geen
+  Australische (ACDT) of Golf-tijd (GST). Schrijft cyclingstage die bij de
+  Tour Down Under of de UAE Tour, dan blijven de tijden onomgerekend en staat
+  LIVE uren verkeerd. Toevoegen zodra een echte pagina laat zien welke
+  afkorting er staat.
+- **Buiten het seizoen staat er niets.** Na Parijs-Tours (11 oktober) geeft
+  de sensor "Seizoen afgelopen" en verbergt de kaart zich, ook de
+  aftelweergave, tot de kalender van het nieuwe jaar er op 1 januari is. Een
+  kalender voor 2027 bestond op 25 september 2026 nog niet bij cyclingstage.
 
 **Wat er aan opgeslagen pagina's nodig is staat in
 `docs/gevraagde-paginas.md`**, op volgorde van wat het meest oplevert. Vul die

@@ -398,6 +398,15 @@ _TIJDZONE = re.compile(r"local\s+times?\s*\(([A-Z]{2,5})\)", re.I)
 # "2,953 metres of elevation gain" — de komma is een duizendtalscheiding.
 _HOOGTE = re.compile(
     r"([\d.,]+)\s*(?:metres|meters|m)\s+of\s+(?:elevation|climbing|vertical)", re.I)
+# "The women start at 9:19 and the men at 12:45 local time (TDE)". Zo staan
+# beide WK-tijdritten van 2026 op één routepagina, want ze rijden dezelfde
+# route. `_START_TIJD` pakt de eerste tijd in die zin, en dan kreeg de
+# tijdrit van de mannen de starttijd van de vrouwen: LIVE vanaf 15:19 terwijl
+# de eerste man om 18:45 van de schans rolde. Beide volgordes, want welke
+# van de twee de site eerst noemt staat nergens vast.
+_START_PER_GESLACHT = re.compile(
+    r"\b(women|men)\s+starts?\s+at\s+(\d{1,2}[:.]\d{2})\s+and\s+the\s+"
+    r"(women|men)\s+at\s+(\d{1,2}[:.]\d{2})", re.I)
 
 
 def parse_etappe_meta(html: str) -> dict:
@@ -413,12 +422,22 @@ def parse_etappe_meta(html: str) -> dict:
     er gewoon. De starttijd kwam van procyclingstats en staat hier ook.
 
     Wat niet gevonden wordt blijft weg uit het resultaat; niets schatten.
+
+    Noemt de pagina een aparte starttijd voor de vrouwen en de mannen, dan
+    staan die in `start_per_geslacht` (`{"v": "9:19", "m": "12:45"}`, met de
+    sleutels van `NIVEAUS`). De aanroeper kiest dan die van zijn onderdeel.
     """
     tekst = _plat(html)
     uit: dict = {}
     m = _START_TIJD.search(tekst)
     if m:
         uit["start_time"] = m.group(1).replace(".", ":")
+    m = _START_PER_GESLACHT.search(tekst)
+    if m and m.group(1).lower() != m.group(3).lower():
+        uit["start_per_geslacht"] = {
+            ("v" if m.group(i).lower() == "women" else "m"):
+                m.group(i + 1).replace(".", ":")
+            for i in (1, 3)}
     m = _FINISH_TIJD.search(tekst)
     if m:
         uit["finish_time"] = m.group(1).replace(".", ":")

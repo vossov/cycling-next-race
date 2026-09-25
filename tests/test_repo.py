@@ -180,3 +180,15 @@ def test_geen_enkel_verzoek_gaat_buiten_die_kop_om():
     verzoeken = re.findall(r'urllib\.request\.Request\((.*?)\)\n', bron, re.S)
     assert verzoeken, "geen verzoeken gevonden — is de opzet veranderd?"
     assert all("UA_HEADERS" in v for v in verzoeken), verzoeken
+
+
+def test_de_attributen_gaan_niet_naar_de_recorder(wt):
+    """De recorder weigert attributen boven 16 kB, met een waarschuwing.
+
+    Die kwam bij élke update, want de attributen wegen met de
+    standaardinstellingen ruim 33 kB (`tools/meet_attributen.py`). Bewaard
+    werd er toch niets. `MATCH_ALL` in plaats van een lijst, zodat een
+    attribuut dat er later bij komt er ook buiten valt; de status zelf (de
+    koersnaam) blijft gewoon in de historie.
+    """
+    assert wt.CyclingNextRaceSensor._unrecorded_attributes == frozenset({"*"})

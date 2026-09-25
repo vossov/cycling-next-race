@@ -32,7 +32,7 @@ De vraag is precies één ding: noemt die pagina een eigen GPX, of diezelfde
 profiel van 273 km krijgen. `_profiel_past` vangt dat nu af, maar dan
 blijft het profiel leeg terwijl het er misschien is.
 
-## De adressen, kopieerbaar## De adressen, kopieerbaar## De adressen, kopieerbaar
+## De adressen, kopieerbaar
 
 Stand 7 september 2026. Alles hieronder is een volledig adres — geen
 sjablonen. Wat al binnen is staat verderop afgestreept.
@@ -105,6 +105,12 @@ Weet je niet welk eindpunt: open `https://racecenter.lavuelta.es/en/`,
 F12 -> Netwerk -> filter op `api`, en stuur de namen die voorbijkomen.
 
 ### Later, geen haast
+
+Een etappepagina van de **Tour Down Under** of de **UAE Tour** (januari en
+februari 2027). Daar staat "both local times (…)" met een tijdzone die
+`TIJDZONES` misschien niet kent (ACDT, GST); dan blijven de tijden
+onomgerekend en staat LIVE uren verkeerd. Eén pagina zegt welke afkorting
+cyclingstage schrijft — daarna is het één regel.
 
 ```
 https://www.wielerflits.nl/nieuws/wielrennen-op-tv/

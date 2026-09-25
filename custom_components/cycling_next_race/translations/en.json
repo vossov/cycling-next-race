@@ -31,7 +31,7 @@
           "start_n": "While a race has no result yet, the pop-up shows who is at the start, per team by race number. Cyclingstage does not mark a team leader, so this is not a ranking.",
           "scan_minutes": "How often cyclingstage is queried outside of races.",
           "live_scan_minutes": "During a live stage, so the result appears sooner.",
-          "past_n": "How far back you can page through the results in the pop-up. 21 is a full grand tour; every stage costs room in the attributes, which are already over the recorder's limit.",
+          "past_n": "How far back you can page through the results in the pop-up. 21 is a full grand tour; every stage adds over 400 bytes to the attributes, which are sent to every open dashboard on each update.",
           "levels": "These levels may take the tile and also appear in the pop-up.",
           "levels_popup": "These levels get a button in the pop-up but stay off the tile.",
           "max_other": "0 shows only the displayed race. Every extra race costs requests at cyclingstage and room in the attributes."

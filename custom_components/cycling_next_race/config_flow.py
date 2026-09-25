@@ -144,8 +144,8 @@ class CyclingNextRaceOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_UPCOMING_DAYS, default=huidig[CONF_UPCOMING_DAYS]
                 ): _aantal(MIN_UPCOMING_DAYS, MAX_UPCOMING_DAYS),
-                # 0 zet het terugbladeren uit; elke etappe kost ruimte in de
-                # attributen, en die zitten al tegen de grens van de recorder.
+                # 0 zet het terugbladeren uit; elke etappe kost ruim 400 bytes
+                # in de attributen, die bij elke update naar elk dashboard gaan.
                 # Het maximum is een hele grote ronde: wie de Vuelta van
                 # etappe 1 af wil kunnen nalezen heeft er 21 nodig.
                 vol.Optional(

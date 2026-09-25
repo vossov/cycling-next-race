@@ -27,6 +27,7 @@ import re
 from datetime import date, datetime, time as dtime, timedelta
 
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -1329,7 +1330,13 @@ def _fetch_stage_meta(stage: dict) -> dict:
     # is dat EDT en dus niet onze klok. Zie `_naar_lokale_klok`.
     zone = meta.get("tz", "")
     dag = stage.get("date") or date.today()
-    d["start_time"] = _naar_lokale_klok(meta.get("start_time", ""), zone, dag)
+    # Twee onderdelen op één pagina kunnen elk hun eigen starttijd hebben
+    # ("the women start at 9:19 and the men at 12:45"); dan telt die van
+    # dít onderdeel en niet de eerste die in de tekst staat.
+    per_geslacht = meta.get("start_per_geslacht") or {}
+    start = (per_geslacht.get("v" if stage.get("women") else "m")
+             or meta.get("start_time", ""))
+    d["start_time"] = _naar_lokale_klok(start, zone, dag)
     d["finish_time"] = _naar_lokale_klok(meta.get("finish_time", ""), zone, dag)
     # Een programmatabel noemt de hoogtemeters per onderdeel; die gaan vóór
     # op wat de pagina in lopende tekst zegt. Twee onderdelen kunnen één
@@ -1512,6 +1519,13 @@ def _fetch_stage_names(url, distance=None):
     """Uit de cyclingstage-etappetekst: cols (naam/lengte/%/km-tot-finish) + start/finish.
 
     Geeft terug: (climbs, route) met route = {"departure":.., "arrival":..} of {}.
+
+    De verwachte finishtijd staat hier bewust níét meer in (sinds 0.31.4).
+    Die las alleen "expected to finish around" en rekende de tijdzone niet
+    om, terwijl `parse_etappe_meta` dezelfde zin leest mét "at" en mét de
+    zone. Twee lezingen van één feit: de tegel koos deze, en "Komende dagen"
+    viel bij "at" terug op een schatting — zo kreeg de WK-wegrit 22:36 waar
+    de pagina 21:40 zegt. `_meta_voor` is nu de enige bron.
     """
     if not url:
         return [], {}
@@ -1532,9 +1546,6 @@ def _fetch_stage_names(url, distance=None):
     doc = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", doc, flags=re.S | re.I)
     text = unescape(re.sub(r"<[^>]+>", " ", doc)).replace("\u2019", "'").replace("\u2018", "'")
     text = re.sub(r"[ \t\r\n\u00a0]+", " ", text)
-    fin = re.search(r"expected to finish around\s+(\d{1,2}:\d{2})", text, re.I)
-    if fin:
-        route["finish_time"] = fin.group(1)
     raw = []
     for m in re.finditer(r"(\d+(?:\.\d+)?)[\s\-–]*kilometre", text):
         pm = re.search(r"(\d+(?:\.\d+)?)\s*%", text[m.end():m.end() + 55])
@@ -2093,8 +2104,19 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # opzoeken en de pagina lezen), dus dit hoort niet elke ronde
         # opnieuw; een dag oud is voor een startlijst ruim vers genoeg.
         self._startlist_cache: dict[str, list] = {}
-        # uitslag per etappe van de andere koersen, op stage_url; per dag geleegd
+        # complete uitslag per etappe, op stage_url; per dag geleegd. Sinds
+        # 0.31.4 niet alleen voor de andere koersen maar ook voor de tegel:
+        # de uitslag van gisteren werd daar elke ronde opnieuw opgehaald,
+        # om de vijf minuten zolang er een etappe live was.
         self._other_cache: dict[str, dict] = {}
+        # etappes van een látere dag waarvoor vandaag al geen GPX te vinden
+        # was. Zonder dit kostte zo'n etappe elke ronde twee à drie 404's —
+        # tien etappes in "Komende dagen" zonder profiel, om de vijf minuten
+        # tijdens een live etappe. Per dag geleegd; de etappe van vandaag
+        # komt er nooit in, want daar kan het profiel alsnog verschijnen.
+        self._gpx_mis: set[str] = set()
+        # de dag van de lopende ronde; zie `_later_dan_vandaag`
+        self._vandaag: date | None = None
         self._names_cache: dict[str, list] = {}
         self._prose_cache: dict[str, list] = {}
         # uitslag van een gereden etappe om in terug te bladeren, op
@@ -2152,6 +2174,17 @@ class CyclingCoordinator(DataUpdateCoordinator):
     async def _job(self, fn, *args):
         return await self.hass.async_add_executor_job(fn, *args)
 
+    def _later_dan_vandaag(self, stage: dict) -> bool:
+        """Valt deze etappe op een latere dag dan de lopende ronde?
+
+        Voor zo'n etappe mag een lege uitkomst tot morgen bewaard worden: er
+        is geen uitslag, en een profiel of etappepagina die vanavond alsnog
+        verschijnt is er na middernacht, ruim voor de start. Zonder lopende
+        ronde (een losse aanroep in een test) is het antwoord nee.
+        """
+        dag = stage.get("date")
+        return bool(self._vandaag and dag and dag > self._vandaag)
+
     async def _stages_for(self, event: dict, today: date) -> list[dict]:
         key = event["url"]
         cached = self._stages_cache.get(key)
@@ -2191,13 +2224,19 @@ class CyclingCoordinator(DataUpdateCoordinator):
             return []
 
     async def _sprints_voor(self, stage: dict) -> list:
-        """Tussensprint(en) uit het cyclingstage-tijdschema, per etappe bewaard."""
+        """Tussensprint(en) uit het cyclingstage-tijdschema, per etappe bewaard.
+
+        Tot 0.31.4 ging hier `(race_url, idx, one_day)` naar `_fetch_times`,
+        dat sinds 0.19 één etappe verwacht. De TypeError werd hieronder stil
+        afgevangen: het tijdschema is in al die tijd geen enkele keer
+        opgevraagd, terwijl `times_diag` de adressen liet zien alsof ze
+        geprobeerd waren. Zie tests/test_sprints.py.
+        """
         url = stage["stage_url"]
         if url in self._sprints_cache:
             return self._sprints_cache[url]
         try:
-            sprints = await self._job(_fetch_times, stage["race_url"],
-                                      stage.get("idx"), stage.get("one_day"))
+            sprints = await self._job(_fetch_times, stage)
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Tijdschema mislukt voor %s: %s", url, err)
             return []
@@ -2247,19 +2286,27 @@ class CyclingCoordinator(DataUpdateCoordinator):
         }
 
     async def _stage_uitslag(self, s):
-        """Uitslag + standen van \u00e9\u00e9n etappe van een andere koers.
+        """Uitslag + standen van \u00e9\u00e9n etappe, per dag bewaard zodra hij compleet is.
 
-        Alleen een afgeronde etappe komt in de cache: een etappe die nog
-        bezig is moet elke ronde opnieuw opgehaald worden.
+        Een etappe die nog bezig is moet elke ronde opnieuw opgehaald worden.
+        Een gereden etappe niet: tot 0.31.4 haalde de tegel de uitslag van
+        gisteren elke ronde opnieuw op, en die van vandaag na de finish ook \u2014
+        de hele avond, om het half uur.
+
+        "Compleet" is strenger dan "er staat een uitslag": bij een
+        rittenkoers hoort ook het klassement erbij. Staat de uitslag er al en
+        het klassement nog niet, dan wordt hij de volgende ronde opnieuw
+        gelezen; anders bleef het klassement tot morgen weg. Een eendaagse
+        koers en een onderdeel van een kampioenschap hebben geen klassement.
         """
-        url = s["stage_url"]
-        if url in self._other_cache:
+        url = s.get("stage_url") or ""
+        if url and url in self._other_cache:
             return self._other_cache[url]
         d = await self._job(_fetch_stage, s,
                             self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
-        if not d.get("finished"):
-            return d
-        self._other_cache[url] = d
+        zonder_klassement = s.get("one_day") or s.get("onderdeel")
+        if url and d.get("finished") and (d.get("gc") or zonder_klassement):
+            self._other_cache[url] = d
         return d
 
     async def _race_entry(self, ev, stages, today):
@@ -2432,6 +2479,25 @@ class CyclingCoordinator(DataUpdateCoordinator):
         return self._gpxindex_cache[sleutel]
 
     async def _gpx_van(self, s, n_out):
+        """Hoogteprofiel + cols van één etappe; zie `_gpx_zoek`.
+
+        Onthoudt alleen wat er níét was, en alleen voor een etappe van een
+        latere dag (`_gpx_mis`): die hoeft vandaag niet elke ronde opnieuw
+        langs dezelfde 404's. Wat er wél was bewaren de aanroepers zelf, elk
+        op hun eigen aantal punten.
+        """
+        url = s["stage_url"]
+        # alleen zolang de etappe nog op een latere dag valt: mislukt de
+        # kalender om middernacht, dan worden de dagcaches niet geleegd, en
+        # dan hoort de etappe van vandaag toch opnieuw geprobeerd te worden
+        if url in self._gpx_mis and self._later_dan_vandaag(s):
+            return [], []
+        elev, climbs = await self._gpx_zoek(s, n_out)
+        if not elev and self._later_dan_vandaag(s):
+            self._gpx_mis.add(url)
+        return elev, climbs
+
+    async def _gpx_zoek(self, s, n_out):
         """Hoogteprofiel + cols van één etappe, zonder cache.
 
         Eerst de vaste adressen uit `_gpx_urls`. Die zijn een aanname over de
@@ -2484,8 +2550,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
 
     # 60 punten voor de kleine profieltjes in "Komende dagen"; de getoonde
     # etappe vraagt er expliciet 200. Meer punten kosten alleen ruimte in de
-    # attributen: bij 150 werd de state ruim 37 kB, boven de grens van de
-    # recorder (MAX_STATE_ATTRS_BYTES = 16384).
+    # attributen: bij 150 werd de state ruim 37 kB, en die gaat bij elke
+    # update naar elk geopend dashboard.
     async def _gpx_for(self, s, n_out=60):
         # de cache staat op (etappe, aantal punten): dezelfde etappe wordt
         # eerst als komende dag opgehaald met 60 punten en later, als hij de
@@ -2510,10 +2576,20 @@ class CyclingCoordinator(DataUpdateCoordinator):
         url = stage.get("stage_url") or ""
         if not url:
             return {}
+        bewaard = self._meta_cache.get(url)
+        if bewaard is not None and not bewaard.get("ok") \
+                and not self._later_dan_vandaag(stage):
+            # een lege uitkomst van gisteren voor wat nu vandaag is; zie
+            # hieronder waarom die alleen voor een latere dag mag blijven
+            del self._meta_cache[url]
         if url not in self._meta_cache:
             meta = await self._job(_fetch_stage_meta, stage)
-            if not meta.get("ok"):
-                return meta          # niet bewaren: morgen opnieuw proberen
+            if not meta.get("ok") and not self._later_dan_vandaag(stage):
+                # niet bewaren: een hikje bij cyclingstage hoort de starttijd
+                # van vandaag niet de hele dag weg te halen. Voor een latere
+                # dag wel, tot morgen — anders kost een pagina die er nog niet
+                # is elke ronde een verzoek.
+                return meta
             self._meta_cache[url] = meta
         return self._meta_cache[url]
 
@@ -2557,11 +2633,15 @@ class CyclingCoordinator(DataUpdateCoordinator):
             # de starttijd en de verwachte finish horen erbij — anders staat
             # er bij hen alleen een dag op de badge en bij de tegelkoers ook
             # de tijden. De echte finishtijd van cyclingstage gaat voor op de
-            # schatting.
+            # schatting — en die komt uit de meta, omgerekend naar onze klok
+            # net als de starttijd. Tot 0.31.4 kwam hij uit de etappetekst:
+            # die las alleen "around" en alleen als er cols waren, dus de
+            # WK-wegrit ("finish at 15:40 EDT") kreeg de schatting 22:36 in
+            # plaats van 21:40.
             start_time = meta.get("start_time") or ""
             e = {
                 "start_time": start_time,
-                "finish_est": cs_route.get("finish_time") or _finish_est(
+                "finish_est": meta.get("finish_time") or _finish_est(
                     start_time, dist, meta.get("profile_score"),
                     meta.get("vertical"), meta.get("stage_type")),
                 "departure": meta.get("departure") or cs_route.get("departure") or "",
@@ -2584,7 +2664,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
                                           e.get("finish_est"))
         # de geschatte positie, alleen zolang die etappe rijdt. Buiten dat
         # venster blijft de sleutel weg: elke sleutel kost bytes in de
-        # attributen en die zitten al boven de grens van de recorder.
+        # attributen, en die gaan tijdens een etappe om de vijf minuten naar
+        # elk dashboard.
         if e["show_state"] == "LIVE":
             km, pct, model = _schema_positie(
                 e.get("start_time"), e.get("finish_est"), e.get("distance_km"),
@@ -2627,8 +2708,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         Alleen van de koers op de tegel. Het zou per koersblok kunnen — elke
         rij draagt `race_key`, dus de kaart kan het uit elkaar houden — maar
         dat vermenigvuldigt zowel de verzoeken als de bytes, en de attributen
-        zitten al boven de grens van de recorder. Wie het breder wil, begint
-        daar.
+        wegen al ruim 33 kB per update. Wie het breder wil, begint daar.
 
         De etappe die al als `last_result` in de attributen staat wordt
         overgeslagen; die zou anders dubbel staan.
@@ -2706,8 +2786,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
             "finished": fin, "today_st": vandaag, "future": later,
         }
         if vandaag:
-            td = await self._job(_fetch_stage, vandaag,
-                                 self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
+            # via de dagcache: is de etappe van vandaag gereden en compleet,
+            # dan hoeft zijn uitslag de rest van de avond niet elke ronde
+            # opnieuw
+            td = await self._stage_uitslag(vandaag)
             if td.get("finished"):
                 uit["today_finished"] = True
                 uit["last_fin"], uit["last_fin_data"] = vandaag, td
@@ -2792,6 +2874,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict:
         today = dt_util.now().date()
+        self._vandaag = today
         # Kalender: cache 24h, altijd verversen bij jaarwissel
         if (self._calendar is None or self._calendar_fetched is None
                 or (today - self._calendar_fetched) >= timedelta(days=1)):
@@ -2810,6 +2893,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._sprints_cache.clear()
                 self._startlist_cache.clear()
                 self._other_cache.clear()
+                self._gpx_mis.clear()
                 self._names_cache.clear()
                 self._meta_cache.clear()
                 self._prose_cache.clear()
@@ -2942,11 +3026,19 @@ class CyclingCoordinator(DataUpdateCoordinator):
             return {"state": "Seizoen afgelopen", "attributes": {"show_state": "Klaar"}}
 
         if shown_data is None:
-            shown_data = await self._job(_fetch_stage, shown,
-                                         self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
+            # Een etappe van een latere dag heeft geen uitslag, dus daar valt
+            # niets op te halen: wat de tegel van hem nodig heeft (afstand,
+            # vertrek, aankomst, terrein) staat al in de etappelijst. Tot
+            # 0.31.4 ging hier elke ronde een verzoek uit naar een
+            # uitslagpagina die niet kan bestaan — de hele avond na een
+            # finish, en op elke rustdag.
+            shown_data = (_lege_uitslag(shown) if shown["date"] > today
+                          else await self._job(_fetch_stage, shown,
+                                               self._opt(CONF_RESULT_N),
+                                               self._opt(CONF_GC_N)))
         if last_fin is not None and last_fin_data is None:
-            last_fin_data = await self._job(_fetch_stage, last_fin,
-                                            self._opt(CONF_RESULT_N), self._opt(CONF_GC_N))
+            # gereden, dus per dag te bewaren zodra hij compleet is
+            last_fin_data = await self._stage_uitslag(last_fin)
 
         # Hier stond het naamherstel (de namenkolom van procyclingstats kon
         # verschuiven), het ophalen van de officiële ploegcodes en de
@@ -3004,9 +3096,13 @@ class CyclingCoordinator(DataUpdateCoordinator):
             shown_data["start_time"] = shown_meta.get("start_time") or ""
         if shown_data.get("vertical") is None and shown_meta.get("vertical") is not None:
             shown_data["vertical"] = shown_meta["vertical"]
-        # de verwachte finishtijd: uit de etappetekst als die gelezen is,
-        # anders uit dezelfde meta
-        finish_bron = cs_route.get("finish_time") or shown_meta.get("finish_time") or ""
+        # de verwachte finishtijd, uit dezelfde meta als de starttijd en dus
+        # op dezelfde klok. Hier ging tot 0.31.4 de etappetekst voor, en die
+        # rekende de tijdzone niet om: wie Home Assistant op een andere zone
+        # dan de koers heeft staan, kreeg een omgerekende start en een
+        # onomgerekende finish — bij een koers in EDT met "around" een
+        # finish vóór de start, en daarmee LIVE tot middernacht.
+        finish_bron = shown_meta.get("finish_time") or ""
 
         sd = shown["date"]
         if sd == today and not today_finished:
@@ -3297,6 +3393,17 @@ class CyclingNextRaceSensor(CoordinatorEntity, SensorEntity):
     _attr_name = NAME
     _attr_unique_id = DOMAIN
     _attr_icon = "mdi:bike-fast"
+    # De attributen gaan niet naar de recorder, de status (de koersnaam) wel.
+    #
+    # Ze wegen met de standaardinstellingen ruim 33 kB, en de recorder weigert
+    # alles boven 16 kB mét een waarschuwing in het logboek — bij elke update,
+    # om de vijf minuten tijdens een live etappe. Bewaard werd er dan toch
+    # niets. Dit zijn uitslagen, profielen en tv-tijden en geen meetwaarden:
+    # historie ervan vraagt niemand op, en de kaart krijgt ze gewoon over de
+    # websocket. `MATCH_ALL` en geen lijst, zodat een attribuut dat er later
+    # bij komt er vanzelf ook buiten valt. Bestaat sinds HA 2023.9; hacs.json
+    # vraagt 2024.11. De friendly_name blijft volgens HA altijd bewaard.
+    _unrecorded_attributes = frozenset({MATCH_ALL})
 
     @property
     def native_value(self):

@@ -11,7 +11,7 @@ NAME = "Cycling Next Race"
 # Gelijk aan "version" in manifest.json; hangt achter de kaart-URL zodat de
 # browser na een update de nieuwe versie ophaalt. tests/test_repo.py bewaakt
 # dat de twee niet uiteenlopen.
-VERSION = "0.31.3"
+VERSION = "0.31.4"
 
 # De meegeleverde Lovelace-kaart, door de integratie zelf geregistreerd.
 KAART_BESTAND = "cycling-next-race-card.js"
@@ -69,14 +69,14 @@ NIVEAU_KEUZE: dict[str, str] = {k: v["naam"] for k, v in NIVEAUS.items()}
 DEFAULT_RESULT_N = 10
 DEFAULT_GC_N = 10
 # Eén renner per ploeg. Dat is bewust zuinig: 23 ploegen x 1 is zo'n 1,7 kB
-# in de attributen en die zitten al ruim boven de grens van de recorder.
+# in de attributen, die bij elke update naar elk geopend dashboard gaan.
 # Hoger zetten mag, het kost ongeveer even veel per stap erbij.
 DEFAULT_START_N = 1
 DEFAULT_UPCOMING_N = 10
 # Hoeveel gereden etappes je in de pop-up terug kunt bladeren. Elke etappe
 # kost een verzoek (eenmalig — een gereden uitslag verandert niet meer) en
-# ruim 400 bytes in de attributen, en die zitten al tegen de grens van de
-# recorder aan. Vandaar bescheiden; 0 zet het uit en `MAX_PAST_N` is het
+# ruim 400 bytes in de attributen, die bij elke update naar elk geopend
+# dashboard gaan. Vandaar bescheiden; 0 zet het uit en `MAX_PAST_N` is het
 # maximum voor wie een hele grote ronde wil kunnen terugbladeren.
 DEFAULT_PAST_N = 3
 # Hoeveel renners per teruggebladerde etappe. Korter dan de gewone uitslag:
@@ -139,11 +139,10 @@ MIN_OTHER = 0
 MAX_OTHER_LIMIT = 4
 # Hoe ver je hoogstens kunt terugbladeren. 21 = een hele grote ronde, want
 # dat is wat je bij de Vuelta of de Tour wilt kunnen. Het is bewust geen
-# standaard: elke etappe kost ruim 400 bytes in de attributen en die zitten
-# in de praktijk al boven de 16 kB van de recorder (zie "Omvang van de
-# attributen" in CLAUDE.md). Wie hem hoog zet ruilt de historie van de
-# sensor in voor terugbladeren op het dashboard; de sensor zelf en de kaart
-# blijven het gewoon doen.
+# standaard: elke etappe kost ruim 400 bytes in de attributen, die bij elke
+# update naar elk geopend dashboard gaan (zie "Omvang van de attributen" in
+# CLAUDE.md). De historie kost het sinds 0.31.4 niet meer: de attributen
+# gaan niet naar de recorder.
 MAX_PAST_N = 21
 
 # Niet alleen getallen: `levels` en `levels_popup` zijn lijstjes met

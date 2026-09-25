@@ -31,7 +31,7 @@
           "start_n": "Zolang een koers nog geen uitslag heeft toont de pop-up wie er aan de start staan, per ploeg op rugnummer. Cyclingstage wijst geen kopman aan, dus dit is geen rangorde.",
           "scan_minutes": "Hoe vaak cyclingstage wordt geraadpleegd buiten koersen om.",
           "live_scan_minutes": "Tijdens een live etappe, zodat de uitslag er sneller staat.",
-          "past_n": "Hoe ver je in de pop-up terug kunt bladeren door de uitslagen. 21 is een hele grote ronde; elke etappe kost ruimte in de attributen, die al boven de grens van de recorder zitten.",
+          "past_n": "Hoe ver je in de pop-up terug kunt bladeren door de uitslagen. 21 is een hele grote ronde; elke etappe kost ruim 400 bytes in de attributen, die bij elke update naar elk geopend dashboard gaan.",
           "levels": "Deze niveaus mogen de tegel pakken en staan ook in de pop-up.",
           "levels_popup": "Deze niveaus komen er in de pop-up als knop bij, maar blijven van de tegel af.",
           "max_other": "0 laat alleen de getoonde koers zien. Elke koers erbij kost verzoeken bij cyclingstage en ruimte in de attributen."

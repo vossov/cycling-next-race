@@ -198,13 +198,11 @@ maximaal 21, `0` zet het uit); `past` in `sections` haalt de pijltjes van
 deze kaart af zonder de uitslag zelf weg te halen.
 
 Dat maximum is een hele grote ronde: op 21 kun je de Vuelta of de Tour vanaf
-etappe 1 nalezen. **Dat is een ruil en geen gratis knop.** Elke etappe kost
-ruim 400 bytes in de attributen, en die zitten in de praktijk al boven de
-16 kB die de recorder van Home Assistant bewaart — de sensor en de kaart
-blijven het gewoon doen, maar de recorder legt de attributen dan niet meer
-vast en er is dus geen historie van. Wie die historie wil houden zet hem
-juist laag. De verzoeken bij cyclingstage vallen mee: een gereden uitslag
-verandert niet meer en wordt maar één keer opgehaald.
+etappe 1 nalezen. Elke etappe kost ruim 400 bytes in de attributen, die bij
+elke update naar elk geopend dashboard gaan; naar de recorder gaan ze sinds
+0.31.4 niet meer (zie "De waarschuwing over de attributen" hieronder). De
+verzoeken bij cyclingstage vallen mee: een gereden uitslag verandert niet meer
+en wordt maar één keer opgehaald.
 
 Het geldt voor de koers op de tegel; bij de andere koersen in de pop-up
 staat alleen de laatste uitslag.
@@ -304,7 +302,7 @@ hij vanzelf.
 
 ### De waarschuwing over de attributen
 
-Staat je logboek vol met dit, bij elke update?
+Tot 0.31.4 stond het logboek bij elke update vol met dit:
 
 ```
 State attributes for sensor.cycling_next_race exceed maximum size of
@@ -312,31 +310,23 @@ State attributes for sensor.cycling_next_race exceed maximum size of
 not be stored
 ```
 
-Dat klopt en het is niet stuk. De attributen wegen met de
+Dat klopte en het was niet stuk: de attributen wegen met de
 standaardinstellingen ruim 33 kB — hoogteprofielen, komende etappes,
-uitslagen en klassementen van meerdere koersen. De sensor en de kaart werken
-gewoon: die krijgen de attributen over de websocket. Alleen de **recorder**
-slaat ze niet op, dus er is geen historie van.
+uitslagen en klassementen van meerdere koersen — en de recorder weigert alles
+boven de 16 kB. **Sinds 0.31.4 zegt de sensor zelf dat zijn attributen niet
+naar de recorder hoeven**, en is die melding weg. De status (de naam van de
+koers) komt gewoon in de historie; de kaart krijgt de attributen over de
+websocket en merkt er niets van.
 
-Twee wegen:
+Had je de sensor eerder uit de recorder gehaald om van de melding af te zijn
+(`recorder: exclude: entities: - sensor.cycling_next_race`), dan mag dat
+blijven staan. Haal je het weg, dan krijg je de historie van de status terug.
 
-1. **Laat het zo en haal de waarschuwing weg.** Dit zijn geen meetwaarden
-   waar je een grafiek van trekt, dus die historie mis je niet. In
-   `configuration.yaml`:
-
-   ```yaml
-   recorder:
-     exclude:
-       entities:
-         - sensor.cycling_next_race
-   ```
-
-2. **Knijp de attributen af.** Dat kan onder de 16 kB komen, maar niet met
-   één knop: er is een combinatie voor nodig van *Maximaal aantal komende
-   etappes* op 4, *Aantal koersen naast de getoonde* op 1, *Aantal etappes
-   om terug te bladeren* op 2 én de aantallen renners op 5. Dat is een
-   merkbaar kaler dashboard. `python3 tools/meet_attributen.py` in de
-   repository rekent elke combinatie voor je door.
+Wie de attributen kleiner wil, bijvoorbeeld voor een traag wandpaneel: dat
+kan met *Maximaal aantal komende etappes*, *Aantal koersen naast de
+getoonde*, *Aantal etappes om terug te bladeren* en de aantallen renners.
+`python3 tools/meet_attributen.py` in de repository rekent elke combinatie
+voor je door.
 
 ### Niveaus per kaart
 
@@ -352,10 +342,14 @@ Zo staat bovenaan je dashboard een andere kaart dan verderop:
 
 ```yaml
 - type: custom:cycling-next-race-card
-  levels: ['1']            # bovenaan alleen de mannen-WorldTour
+  levels: ['m']            # bovenaan alleen de mannen
 - type: custom:cycling-next-race-card
-  levels: ['24']           # verderop alleen de vrouwen
+  levels: ['v']            # verderop alleen de vrouwen
 ```
+
+Een kaart die nog de oude nummers van vóór 0.19 draagt (`'1'` en `'26'`
+voor de mannen, `'24'` en `'27'` voor de vrouwen) blijft sinds 0.31.4 gewoon
+werken; daarvoor viel zo'n keuze stil terug op alles.
 
 Twee dingen om te weten:
 

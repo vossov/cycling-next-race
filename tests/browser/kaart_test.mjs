@@ -203,10 +203,15 @@ for (const [naam, a] of Object.entries(gevallen)) {
   if (naam === 'voor de start') {
     // de startlijst vult het gat vóór de eerste uitslag
     if (uitkomst.tekst.indexOf('Aan de start') < 0) problemen.push('geen startlijst getekend');
-    if (uitkomst.tekst.indexOf('176 renners') < 0) problemen.push('de telling ontbreekt');
-    if (uitkomst.tekst.indexOf('(UAD)') < 0) problemen.push('de ploegcode staat niet achter de renner');
-    // het cijfer is de plek op de PCS-ranglijst, geen 1-2-3 van onszelf
-    if (uitkomst.tekst.indexOf('6Vingegaard') < 0) problemen.push('de ranglijstpositie is hernummerd');
+    // Tot 0.31.4 stonden hier de verwachtingen van de procyclingstats-
+    // startlijst (176 renners, ploegcode UAD, ranglijstpositie 6); de data
+    // hierboven is sinds 0.26 die van cyclingstage, dus dit faalde al die tijd
+    // — deze test draait niet in CI.
+    if (uitkomst.tekst.indexOf('184 renners') < 0) problemen.push('de telling ontbreekt');
+    if (uitkomst.tekst.indexOf('(Red Bull-BORA-hansgrohe)') < 0) problemen.push('de ploeg staat niet achter de renner');
+    // het cijfer is het rugnummer, geen 1-2-3 van onszelf
+    if (uitkomst.tekst.indexOf('11Tadej Pogacar') < 0) problemen.push('het rugnummer is hernummerd');
+    if (uitkomst.tekst.indexOf('per ploeg op rugnummer') < 0) problemen.push('er staat niet bij dat het geen rangorde is');
   }
   if (naam === 'volledig' && uitkomst.tekst.indexOf('Aan de start') >= 0)
     problemen.push('startlijst getekend terwijl er een uitslag is');
@@ -655,6 +660,88 @@ for (const geval of zichtbaarheid) {
   else console.log(`ok    ${geval.naam}${uit.wanneer ? ' — "' + uit.wanneer + '"' : ''}`);
 
   if (geval.config.view === 'countdown') await page.screenshot({ path: 'kaart-aftellen.png' });
+}
+
+// ── tekst die over de badge of buiten het profiel loopt ─────────
+//
+// Tot 0.31.4 liep een lange routenaam ("Saint-Paul-Trois-Châteaux →
+// Villard-de-Lans") onder de badge door en buiten de kaart, en een lange
+// eyebrow op de tegel dwars door "Morgen 12:50-17:12" heen. SVG-tekst breekt
+// niet af; de kaart schat de breedte en krimpt of kort in. Hier wordt het
+// echt gemeten, met het lettertype dat deze Chromium heeft — de terugval,
+// en die is breder dan Roboto of het lettertype van iOS.
+{
+  const lang = {
+    ...attrs, show_state: 'Morgen', start_time: '12:50', finish_est: '17:12',
+    eyebrow: 'Etappe 14 · Tour de France Femm… · Dames',
+    departure: 'Saint-Paul-Trois-Châteaux', arrival: 'Villard-de-Lans',
+  };
+  const uit = await page.evaluate(([a]) => {
+    document.getElementById('doel').innerHTML = '';
+    const kaart = document.createElement('cycling-next-race-card');
+    kaart.setConfig({ entity: 'sensor.cycling_next_race', visible_days: 0 });
+    document.getElementById('doel').appendChild(kaart);
+    kaart.hass = { states: { 'sensor.cycling_next_race': {
+      state: 'x', last_updated: 'lang', attributes: a } } };
+    const r = kaart.shadowRoot;
+    r.querySelector('dialog').showModal();
+    const botst = (p, q) => p.x < q.x + q.width && q.x < p.x + p.width &&
+                            p.y < q.y + q.height && q.y < p.y + p.height;
+    // per svg: de badge (de eerste rect met rx=12) tegen elke andere tekst
+    return Array.prototype.map.call(r.querySelectorAll('svg'), (svg, i) => {
+      const badge = svg.querySelector('rect[rx="12"]');
+      const b = badge ? badge.getBBox() : null;
+      // de tekst ín de badge hoort daar juist
+      const eigen = badge ? badge.nextElementSibling : null;
+      const w = svg.viewBox.baseVal.width;
+      const mis = [];
+      svg.querySelectorAll('text').forEach((t) => {
+        const k = t.getBBox();
+        if (k.x + k.width > w - 2) mis.push(`"${t.textContent}" loopt buiten de kaart`);
+        if (b && t !== eigen && botst(k, b)) mis.push(`"${t.textContent}" loopt over de badge`);
+      });
+      return { i, mis };
+    }).filter((x) => x.mis.length);
+  }, [lang]);
+  if (uit.length) {
+    uit.forEach((x) => console.log(`FOUT  lange titels, svg ${x.i}: ${x.mis.join('; ')}`));
+    mislukt++;
+  } else console.log('ok    lange titels — niets over de badge of buiten de kaart');
+}
+
+// ── het label van de schatting naast een col ─────────────────────
+//
+// Het label stond altijd 14 eenheden boven de stip, en de stip staat vaak op
+// een klim — daar rijdt het peloton het langst. Dan liep "≈ SCHATTING" dwars
+// door de colmarkering. De stip schuift hier over het hele profiel.
+{
+  const uit = await page.evaluate(([a]) => {
+    const fout = [];
+    for (let km = 4; km < 168; km += 2) {
+      document.getElementById('doel').innerHTML = '';
+      const kaart = document.createElement('cycling-next-race-card');
+      kaart.setConfig({ entity: 'sensor.cycling_next_race', visible_days: 0 });
+      document.getElementById('doel').appendChild(kaart);
+      kaart.hass = { states: { 'sensor.cycling_next_race': {
+        state: 'x', last_updated: 'col' + km,
+        attributes: { ...a, show_state: 'LIVE', est_km_to_go: km } } } };
+      const r = kaart.shadowRoot;
+      r.querySelector('dialog').showModal();
+      const svg = r.querySelector('.inhoud svg');
+      const label = Array.prototype.find.call(svg.querySelectorAll('text'),
+        (t) => t.textContent.indexOf('SCHATTING') >= 0);
+      if (!label) { fout.push(km + ' km: geen label'); continue; }
+      const k = label.getBBox();
+      const raak = Array.prototype.some.call(svg.querySelectorAll('circle[r="11"]'), (c) => {
+        const q = c.getBBox();
+        return k.x < q.x + q.width && q.x < k.x + k.width && k.y < q.y + q.height && q.y < k.y + k.height;
+      });
+      if (raak) fout.push(km + ' km');
+    }
+    return fout;
+  }, [attrs]);
+  if (uit.length) { console.log(`FOUT  schatting bij een col: label over een col bij ${uit.join(', ')}`); mislukt++; }
+  else console.log('ok    schatting bij een col — het label staat overal vrij');
 }
 
 if (fouten.length) { console.log('\nJS-fouten in de pagina:'); fouten.forEach((f) => console.log('  ' + f)); mislukt++; }

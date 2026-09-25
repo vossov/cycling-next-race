@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.31.3';
+const VERSIE = '0.31.4';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -88,6 +88,13 @@ const NIVEAUS = [
 
 const NIVEAU_SLEUTELS = NIVEAUS.map(function (n) { return n.value; });
 
+/* Wat er in een kaartconfiguratie van vóór 0.19 kan staan: de circuitnummers
+ * van procyclingstats. Gelijk aan OUDE_NIVEAUS in const.py, dat hetzelfde
+ * doet voor de opties van de integratie; tests/test_kaart.py vergelijkt ze.
+ * Zonder deze vertaling viel `levels: ['1']` stil terug op álle niveaus — en
+ * zo stond het tot 0.31.4 ook als voorbeeld in de README. */
+const OUDE_NIVEAUS = { '1': 'm', '26': 'm', '24': 'v', '27': 'v' };
+
 /* De vormgevingen. 'default' is de opmaak die de kaart altijd had; 'ha'
  * volgt de variabelen van het actieve Home Assistant-thema; 'bubble' is een
  * eigen nabootsing van de stijl van Bubble Card — die kaart zelf is er niet
@@ -122,9 +129,12 @@ function secties(waarde) {
  */
 function niveaus(waarde) {
   if (!Array.isArray(waarde)) return NIVEAU_SLEUTELS.slice();
-  const gekozen = waarde.filter(function (n) {
-    return NIVEAU_SLEUTELS.indexOf(String(n)) >= 0;
-  }).map(String);
+  const gekozen = [];
+  waarde.forEach(function (n) {
+    const s = String(n);
+    const nu = Object.prototype.hasOwnProperty.call(OUDE_NIVEAUS, s) ? OUDE_NIVEAUS[s] : s;
+    if (NIVEAU_SLEUTELS.indexOf(nu) >= 0 && gekozen.indexOf(nu) < 0) gekozen.push(nu);
+  });
   return gekozen.length ? gekozen : NIVEAU_SLEUTELS.slice();
 }
 
@@ -594,10 +604,14 @@ function svgTegel(entity) {
   const E=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" xmlns="http://www.w3.org/2000/svg" style="display:block;font-family:-apple-system,Roboto,sans-serif;color:var(--primary-text-color,#E8EEF4)">';
   s+='<defs><linearGradient id="wt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+FIL+'" stop-opacity=".5"/><stop offset="1" stop-color="'+FIL+'" stop-opacity=".03"/></linearGradient></defs>';
-  s+='<text x="'+L+'" y="25" fill="currentColor" font-size="15" font-weight="700">'+E(a.eyebrow||'')+'</text>';
+  const st=(a.show_state||'')+'',lv=st.toUpperCase()=='LIVE',bt=!st?'':lv?('LIVE'+(a.finish_est?'  ·  '+a.finish_est:'')):((st==='Vandaag'||st==='Morgen')&&a.start_time?(st+' '+String(a.start_time).trim()+(a.finish_est?'-'+a.finish_est:'')):st.toUpperCase()),tw=bt.length*8.2+22,px=W-R-tw,ruim=(bt?px-10:W-R)-L;
+  const PAS=(t,f,min,em,ls,ruim)=>{t=String(t||'');const w=g=>t.length*(g*em+ls);while(f>min&&w(f)>ruim)f-=.5;if(w(f)>ruim)t=t.slice(0,Math.max(1,Math.floor(ruim/(f*em+ls))-1))+'…';return [t,f];};
+  const eb=PAS(a.eyebrow,15,12,.53,0,ruim);
+  s+='<text x="'+L+'" y="25" fill="currentColor" font-size="'+eb[1]+'" font-weight="700">'+E(eb[0])+'</text>';
   let b=[Math.round(dist)+' km']; if(a.vertical_m)b.push(Math.round(a.vertical_m)+' hm'); const _w=Number(a.watchability)||0; if(_w)b.push('Watchscore '+_w+'/10');
-  s+='<text x="'+L+'" y="42" fill="currentColor" opacity=".6" font-size="13.5">'+E(b.join('  ·  '))+'</text>';
-  const st=(a.show_state||'')+''; if(st){const lv=st.toUpperCase()=='LIVE',bt=lv?('LIVE'+(a.finish_est?'  ·  '+a.finish_est:'')):((st==='Vandaag'||st==='Morgen')&&a.start_time?(st+' '+String(a.start_time).trim()+(a.finish_est?'-'+a.finish_est:'')):st.toUpperCase()),tw=bt.length*8.2+22,px=W-R-tw; s+='<rect x="'+px.toFixed(1)+'" y="16" width="'+tw.toFixed(1)+'" height="24" rx="12" fill="'+(lv?ACC:'none')+'" stroke="'+(lv?ACC:'currentColor')+'" stroke-opacity="'+(lv?0:.5)+'"/><text x="'+(px+tw/2).toFixed(1)+'" y="32.5" text-anchor="middle" font-size="12.5" font-weight="700" fill="'+(lv?'#fff':'currentColor')+'" opacity="'+(lv?1:.7)+'">'+E(bt)+'</text>';}
+  const mt=PAS(b.join('  ·  '),13.5,11,.48,0,ruim);
+  s+='<text x="'+L+'" y="42" fill="currentColor" opacity=".6" font-size="'+mt[1]+'">'+E(mt[0])+'</text>';
+  if(bt){s+='<rect x="'+px.toFixed(1)+'" y="16" width="'+tw.toFixed(1)+'" height="24" rx="12" fill="'+(lv?ACC:'none')+'" stroke="'+(lv?ACC:'currentColor')+'" stroke-opacity="'+(lv?0:.5)+'"/><text x="'+(px+tw/2).toFixed(1)+'" y="32.5" text-anchor="middle" font-size="12.5" font-weight="700" fill="'+(lv?'#fff':'currentColor')+'" opacity="'+(lv?1:.7)+'">'+E(bt)+'</text>';}
   if(hasEle){
   const xmax=ele[ele.length-1][0]||dist, ys=ele.map(p=>p[1]), emin=Math.min(...ys), emax=Math.max(...ys), rng=Math.max(emax-emin,1);
   const y0=emin-rng*.12, y1=emax+rng*.10;
@@ -628,11 +642,14 @@ function svgDetail(entity) {
   const E=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'), N=x=>x==null?'':String(Math.round(x*10)/10).replace('.',',');
   let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" xmlns="http://www.w3.org/2000/svg" style="display:block;font-family:-apple-system,Roboto,sans-serif;color:var(--primary-text-color,#E8EEF4)">';
   s+='<defs><linearGradient id="wt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+FIL+'" stop-opacity=".55"/><stop offset="1" stop-color="'+FIL+'" stop-opacity=".03"/></linearGradient></defs>';
-  s+='<text x="'+L+'" y="20" fill="currentColor" opacity=".6" font-size="11" font-weight="700" letter-spacing="1.3">'+E((a.eyebrow||'').toUpperCase())+'</text>';
-  s+='<text x="'+L+'" y="45" fill="currentColor" font-size="20" font-weight="700">'+E((a.departure&&a.arrival)?a.departure+' → '+a.arrival:(a.eyebrow||''))+'</text>';
+  const st=(a.show_state||'')+'',lv=st.toUpperCase()=='LIVE',bt=!st?'':lv?('LIVE'+(a.finish_est?'  ·  '+a.finish_est:'')):((st==='Vandaag'||st==='Morgen')&&a.start_time?(st+' '+String(a.start_time).trim()+(a.finish_est?'-'+a.finish_est:'')):st.toUpperCase()),tw=bt.length*8.2+22,px=W-R-tw;
+  const PAS=(t,f,min,em,ls,ruim)=>{t=String(t||'');const w=g=>t.length*(g*em+ls);while(f>min&&w(f)>ruim)f-=.5;if(w(f)>ruim)t=t.slice(0,Math.max(1,Math.floor(ruim/(f*em+ls))-1))+'…';return [t,f];};
+  const eb=PAS((a.eyebrow||'').toUpperCase(),11,9,.64,1.3,(bt?px-10:W-R)-L),kop=PAS((a.departure&&a.arrival)?a.departure+' → '+a.arrival:(a.eyebrow||''),20,14,.53,0,W-R-L);
+  s+='<text x="'+L+'" y="20" fill="currentColor" opacity=".6" font-size="'+eb[1]+'" font-weight="700" letter-spacing="1.3">'+E(eb[0])+'</text>';
+  s+='<text x="'+L+'" y="45" fill="currentColor" font-size="'+kop[1]+'" font-weight="700">'+E(kop[0])+'</text>';
   let b=[Math.round(dist)+' km']; if(a.vertical_m)b.push(Math.round(a.vertical_m)+' hm'); const _w=Number(a.watchability)||0; if(_w)b.push('Watchscore '+_w+'/10');
   s+='<text x="'+L+'" y="65" fill="currentColor" opacity=".6" font-size="13.5">'+E(b.join('  ·  '))+'</text>';
-  const st=(a.show_state||'')+''; if(st){const lv=st.toUpperCase()=='LIVE',bt=lv?('LIVE'+(a.finish_est?'  ·  '+a.finish_est:'')):((st==='Vandaag'||st==='Morgen')&&a.start_time?(st+' '+String(a.start_time).trim()+(a.finish_est?'-'+a.finish_est:'')):st.toUpperCase()),tw=bt.length*8.2+22,px=W-R-tw; s+='<rect x="'+px.toFixed(1)+'" y="16" width="'+tw.toFixed(1)+'" height="24" rx="12" fill="'+(lv?ACC:'none')+'" stroke="'+(lv?ACC:'currentColor')+'" stroke-opacity="'+(lv?0:.5)+'"/><text x="'+(px+tw/2).toFixed(1)+'" y="32.5" text-anchor="middle" font-size="12.5" font-weight="700" fill="'+(lv?'#fff':'currentColor')+'" opacity="'+(lv?1:.7)+'">'+E(bt)+'</text>';}
+  if(bt){s+='<rect x="'+px.toFixed(1)+'" y="4" width="'+tw.toFixed(1)+'" height="24" rx="12" fill="'+(lv?ACC:'none')+'" stroke="'+(lv?ACC:'currentColor')+'" stroke-opacity="'+(lv?0:.5)+'"/><text x="'+(px+tw/2).toFixed(1)+'" y="20.5" text-anchor="middle" font-size="12.5" font-weight="700" fill="'+(lv?'#fff':'currentColor')+'" opacity="'+(lv?1:.7)+'">'+E(bt)+'</text>';}
   if(hasEle){
   const xmax=ele[ele.length-1][0]||dist;
   const ys=ele.map(p=>p[1]), emin=Math.min(...ys), emax=Math.max(...ys), rng=Math.max(emax-emin,1);
@@ -643,7 +660,7 @@ function svgDetail(entity) {
   const eleAt=k=>{if(k<=ele[0][0])return ele[0][1];if(k>=xmax)return ele[ele.length-1][1];for(let i=1;i<ele.length;i++){if(ele[i][0]>=k){const t=(k-ele[i-1][0])/((ele[i][0]-ele[i-1][0])||1);return ele[i-1][1]+t*(ele[i][1]-ele[i-1][1]);}}return ele[ele.length-1][1];};
   (a.sprints||[]).forEach(v=>{const f=Number(v);if(!isFinite(f)||f<=0||f>=xmax)return;const km=xmax-f,sx=X(km).toFixed(1),sy=Y(eleAt(km));s+='<circle cx="'+sx+'" cy="'+sy.toFixed(1)+'" r="4" fill="currentColor" opacity=".85"/><text x="'+sx+'" y="'+(sy-9).toFixed(1)+'" text-anchor="middle" font-size="12" font-weight="700" fill="currentColor" opacity=".85">S</text>';});
   cl.forEach((c,i)=>{const km=xmax-(Number(c.f)||0),cx=X(km).toFixed(1),cy=Y(eleAt(km)).toFixed(1);s+='<circle cx="'+cx+'" cy="'+cy+'" r="11" fill="'+(CAT[c.k]||RID)+'" stroke="#0E1520" stroke-width="1.6"/><text x="'+cx+'" y="'+(Number(cy)+4.5).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="700" fill="#0E1520">'+(i+1)+'</text>';});
-  const lkm=Number(a.live_km_to_go),ekm=Number(a.est_km_to_go),gm=isFinite(lkm)&&lkm>0?lkm:ekm,sch=!(isFinite(lkm)&&lkm>0);if(isFinite(gm)&&gm>0&&gm<xmax){const lx=X(xmax-gm).toFixed(1),ly=Y(eleAt(xmax-gm)).toFixed(1);s+='<line x1="'+lx+'" y1="'+ly+'" x2="'+lx+'" y2="'+fl+'" stroke="'+ACC+'" stroke-width="1.5" stroke-dasharray="2 3" opacity="'+(sch?'.45':'.65')+'"/>';s+=sch?'<circle cx="'+lx+'" cy="'+ly+'" r="6.5" fill="none" stroke="'+ACC+'" stroke-width="2.2" stroke-dasharray="3.4 2.8"/><text x="'+Math.max(L+34,Math.min(W-R-34,Number(lx))).toFixed(1)+'" y="'+(Number(ly)-14).toFixed(1)+'" text-anchor="middle" font-size="10.5" font-weight="700" fill="'+ACC+'" opacity=".9">\u2248 SCHATTING</text>':'<circle cx="'+lx+'" cy="'+ly+'" r="6" fill="'+ACC+'" stroke="#fff" stroke-width="2"><animate attributeName="r" values="6;8.5;6" dur="1.4s" repeatCount="indefinite"/></circle>';}
+  const lkm=Number(a.live_km_to_go),ekm=Number(a.est_km_to_go),gm=isFinite(lkm)&&lkm>0?lkm:ekm,sch=!(isFinite(lkm)&&lkm>0);if(isFinite(gm)&&gm>0&&gm<xmax){const lx=X(xmax-gm).toFixed(1),ly=Y(eleAt(xmax-gm)).toFixed(1),tx=Math.max(L+34,Math.min(W-R-34,Number(lx))),vrij=ty=>!cl.some(c=>{const k=xmax-(Number(c.f)||0),cy=Y(eleAt(k));return Math.abs(X(k)-tx)<48&&cy>ty-22&&cy<ty+14;}),ty=[Number(ly)-14,Number(ly)+24,fl-4].find(vrij)||Number(ly)-14;s+='<line x1="'+lx+'" y1="'+ly+'" x2="'+lx+'" y2="'+fl+'" stroke="'+ACC+'" stroke-width="1.5" stroke-dasharray="2 3" opacity="'+(sch?'.45':'.65')+'"/>';s+=sch?'<circle cx="'+lx+'" cy="'+ly+'" r="6.5" fill="none" stroke="'+ACC+'" stroke-width="2.2" stroke-dasharray="3.4 2.8"/><text x="'+tx.toFixed(1)+'" y="'+ty.toFixed(1)+'" text-anchor="middle" font-size="10.5" font-weight="700" fill="'+ACC+'" opacity=".9">\u2248 SCHATTING</text>':'<circle cx="'+lx+'" cy="'+ly+'" r="6" fill="'+ACC+'" stroke="#fff" stroke-width="2"><animate attributeName="r" values="6;8.5;6" dur="1.4s" repeatCount="indefinite"/></circle>';}
   } else {
   const sc=Number(a.profile_score)||0, vm=Number(a.vertical_m)||0;
   const terr=(sc>=150||vm>=3000)?'Bergrit':(sc>=50||vm>=1500)?'Heuvelachtig':(sc||vm||cl.length)?'Vlakke etappe':'Profiel nog niet bekend';

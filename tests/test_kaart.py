@@ -162,6 +162,24 @@ def test_kaart_kent_dezelfde_niveaus_als_const(const):
         f"kaart en const.py lopen uiteen: {set(gevonden.items()) ^ set(verwacht.items())}")
 
 
+def test_kaart_vertaalt_de_oude_niveaus_net_als_const(const):
+    """`levels: ['1']` uit een kaart van vóór 0.19 betekent de mannen.
+
+    De integratie vertaalde die oude circuitnummers al (`OUDE_NIVEAUS`); de
+    kaart niet, en daar viel zo'n keuze stil terug op álle niveaus. Het
+    voorbeeld in de README gebruikte tot 0.31.4 nog precies die nummers.
+    """
+    tekst = _kaart()
+    regel = re.search(r"const OUDE_NIVEAUS = \{([^}]*)\}", tekst)
+    assert regel, "de kaart kent geen OUDE_NIVEAUS"
+    gevonden = dict(re.findall(r"'(\w+)':\s*'(\w+)'", regel.group(1)))
+    assert gevonden == const.OUDE_NIVEAUS
+    # en de README noemt geen oude nummers meer als voorbeeld
+    readme = (WORTEL / "README.md").read_text(encoding="utf-8")
+    for oud in const.OUDE_NIVEAUS:
+        assert f"levels: ['{oud}']" not in readme, oud
+
+
 def test_manifest_vraagt_de_benodigde_onderdelen():
     """Zonder frontend en http kan de kaart niet geserveerd worden."""
     manifest = json.loads((COMPONENT / "manifest.json").read_text(encoding="utf-8"))

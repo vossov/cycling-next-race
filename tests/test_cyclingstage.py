@@ -231,7 +231,9 @@ def test_de_bestaande_colparser_leest_deze_pagina(wt, monkeypatch):
 
     assert route["departure"] == "Andorra La Vella"
     assert route["arrival"] == "Andorra La Vella"
-    assert route["finish_time"] == "17:30"
+    # de finishtijd leest `parse_etappe_meta`, mét tijdzone; een tweede
+    # lezing hier gaf de tegel een onomgerekende tijd (zie test_tijden.py)
+    assert "finish_time" not in route
     namen = [c["name"] for c in climbs]
     assert namen == ["Port d'Envalira", "Collada de Beixalis",
                      "Col d'Ordino", "Alto de la Comella"]

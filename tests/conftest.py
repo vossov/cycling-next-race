@@ -50,7 +50,8 @@ def _installeer_stubs():
           ConfigFlowResult=dict,
           OptionsFlow=_klasse("OptionsFlow"),
           SOURCE_IMPORT="import")
-    _stub("homeassistant.const", Platform=types.SimpleNamespace(SENSOR="sensor"))
+    _stub("homeassistant.const", Platform=types.SimpleNamespace(SENSOR="sensor"),
+          MATCH_ALL="*")
     _stub("homeassistant.core", HomeAssistant=_klasse("HomeAssistant"))
     helpers = _stub("homeassistant.helpers")
     _stub("homeassistant.helpers.entity_platform", AddEntitiesCallback=object)
