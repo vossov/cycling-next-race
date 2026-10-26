@@ -1972,6 +1972,21 @@ zijn eigen fouten ving het al af, maar `add_extra_js_url` en het lezen van
 het kaartbestand niet, en een dashboardkaart hoort de sensor nooit onderuit
 te halen.
 
+### Een kalender die niet binnenkomt (0.31.5)
+
+`_fetch_calendar` gooit geen uitzondering: lukt de pagina niet, dan geeft het
+`[]` plus een foutmelding terug. Tot 0.31.5 werd dat opgeslagen als kalender,
+mét `_calendar_fetched = today`. Eén hikje bij cyclingstage rond middernacht
+(gemeld op 26 oktober 2026, 00:23) wiste zo de kalender van gisteren, en
+omdat de datum al op vandaag stond kwam er tot de volgende dag geen nieuwe
+poging: de sensor bleef de hele dag onbeschikbaar, met één regel in het log.
+
+Nu telt alleen een kalender mét koersen (of een lege zonder fout) als
+binnengekomen. Anders blijft de vorige staan, schuift de datum niet op en
+probeert de volgende ronde het opnieuw. De dagcaches worden dan ook niet
+geleegd; wat per dag hoort te verlopen leunt op `_vandaag` en niet op dat
+legen. `tests/test_kalenderfout.py`.
+
 ## Diagnose-attributen
 
 Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:

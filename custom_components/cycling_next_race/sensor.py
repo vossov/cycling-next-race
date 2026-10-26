@@ -2872,16 +2872,23 @@ class CyclingCoordinator(DataUpdateCoordinator):
         self._names_diag = diag
         return out
 
+    async def _kalender_ophalen(self, jaar: int) -> tuple[list, dict, list]:
+        """`_fetch_calendar`, met een uitzondering omgezet in een foutmelding."""
+        try:
+            return await self._job(_fetch_calendar, jaar, self._niveaus_alles)
+        except Exception as err:  # noqa: BLE001
+            return [], {}, [str(err)]
+
     async def _async_update_data(self) -> dict:
         today = dt_util.now().date()
         self._vandaag = today
         # Kalender: cache 24h, altijd verversen bij jaarwissel
         if (self._calendar is None or self._calendar_fetched is None
                 or (today - self._calendar_fetched) >= timedelta(days=1)):
-            try:
+            kalender, diag, fouten = await self._kalender_ophalen(today.year)
+            if kalender or not fouten:
                 self._calendar, self._levels_diag, self._kalenderfouten = \
-                    await self._job(_fetch_calendar, today.year,
-                                    self._niveaus_alles)
+                    kalender, diag, fouten
                 self._calendar_fetched = today
                 self._stages_cache.clear()
                 self._upcoming_cache.clear()
@@ -2897,10 +2904,17 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 self._names_cache.clear()
                 self._meta_cache.clear()
                 self._prose_cache.clear()
-            except Exception as err:  # noqa: BLE001
-                if self._calendar is None:
-                    raise UpdateFailed(f"Kalender ophalen mislukt: {err}") from err
-                _LOGGER.warning("Kalender verversen mislukt, oude cache: %s", err)
+            else:
+                # Mislukt: de kalender van gisteren blijft staan en de datum
+                # schuift niet op, zodat de volgende ronde het opnieuw probeert.
+                # Tot 0.31.5 werd een mislukte pagina als lege kalender
+                # opgeslagen mét de datum van vandaag: één hikje om middernacht
+                # en de sensor stond de hele dag op onbeschikbaar.
+                self._kalenderfouten = fouten
+                if self._calendar:
+                    _LOGGER.warning("Kalender verversen mislukt, de vorige "
+                                    "blijft staan: %s",
+                                    "; ".join(dict.fromkeys(fouten)))
 
         if not self._calendar:
             # kwam er van geen enkel niveau een pagina binnen, dan is dat de
