@@ -5,18 +5,25 @@ racecenter-sites van ASO — de egress-proxy blokkeert ze. Elke parser die hier
 gebouwd wordt moet daarom op HTML draaien die met de hand is opgeslagen.
 Deze lijst staat op volgorde van wat het meest oplevert.
 
-## Cyclocross — sinds 0.33 in gebruik, drie pagina's ontbreken
+## ~~Cyclocross — drie pagina's~~ — binnen op 8 november 2026, 's avonds
 
-Op volgorde van belang:
+Rechtstreeks opgehaald (deze sites komen wél door de proxy) en als fixture
+in `tests/fixtures/`, elk met een README:
 
-1. **De kalender van de Superprestige**: `https://www.superprestigecyclocross.be/nl/kalender`
-   (en als dat niets is: `/nl/kalender/2026-2027`). Het adres in de code is
-   niet nagekeken; `cross_diag` op de sensor laat zien of het werkt.
-2. **Een uitslagenpagina van de wereldbeker** na een verreden manche, vermoedelijk
-   `https://www.ucicyclocrossworldcup.com/en/results` — zelfde platform als de
-   Superprestige, dus waarschijnlijk dezelfde opmaak. Ostrava is op 27 november.
-3. **Een manchepagina buiten België of Tsjechië**: Glasgow (13 december) of
-   Benidorm, om de tijdzone en de zenderlijst na te kijken.
+1. **Superprestige-kalender** (`superprestige_kalender_cx_2026-11-08.html`):
+   `/nl/kalender` klopt, `parse_fc_kalender` leest er 8 manches uit.
+2. **Uitslagen wereldbeker** (`ucicxworldcup_uitslagen_cx_2026-11-08.html`):
+   hoefde niet op Ostrava te wachten — de pagina staat er al, met de podia
+   van 2025-2026 en ouder. Zelfde opmaak als de Superprestige, op één ding
+   na: de plaats staat in een `<p>` in plaats van een `<h2>`, waardoor
+   `parse_sp_uitslagen` de plaatsnaam verkeerd leest (test staat als xfail).
+3. **Glasgow én Benidorm** (`ucicxworldcup_manche_cx_{glasgow,benidorm}_…`):
+   programma en land worden goed gelezen. Glasgow schrijft "GMT +1" bij de
+   tijden; zie de README. Zenders staan er nog op geen van beide.
+
+Nog open, pas te halen ná 27 november: de uitslagenpagina mét een manche van
+2026-2027 erop, en een manchepagina mét zenderlijst (Ostrava of Tabor, in de
+week van de cross).
 
 ## Ronde van 8 november 2026 — via Cowork
 

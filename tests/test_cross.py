@@ -1,9 +1,9 @@
 """Cyclocross uit de sites van drie series (0.33).
 
 Alles op de echte pagina's van 8 november 2026 (via Cowork opgehaald, zie
-de README bij elke fixture). De kalenderpagina van de Superprestige
-ontbreekt daarin; die geeft hier een 404, net als het niet-geverifieerde
-adres in het echt zou kunnen doen.
+de README bij elke fixture). De kalenderpagina van de Superprestige, de
+uitslagenpagina van de wereldbeker en de manches in Glasgow en Benidorm
+kwamen er later op de dag bij.
 """
 import asyncio
 import importlib
@@ -22,6 +22,7 @@ def _lees(naam):
 PAGINA_S = {
     "https://www.ucicyclocrossworldcup.com/en/calendar": "ucicxworldcup_kalender_cx_2026-11-08.html",
     "https://www.ucicyclocrossworldcup.com/en/calendar/2026-2027/ostrava": "ucicxworldcup_manche_cx_ostrava_2026-11-08.html",
+    "https://www.superprestigecyclocross.be/nl/kalender": "superprestige_kalender_cx_2026-11-08.html",
     "https://www.superprestigecyclocross.be/nl/kalender/2026-2027/niel": "superprestige_manche_cx_niel_2026-11-08.html",
     "https://www.superprestigecyclocross.be/nl/uitslagen": "superprestige_uitslagen_cx_2026-11-08.html",
     "https://x2otrofee.be/": "x2otrofee_kalender_en_klassement_cx_2026-11-08.html",
@@ -95,6 +96,60 @@ def test_manchepagina_wereldbeker(cx):
     assert info["zenders"] == {}
 
 
+def test_superprestigekalender(cx):
+    # het adres in SP_KALENDER_URL was een aanname; dit is de echte pagina
+    manches = cx.parse_fc_kalender(_lees(PAGINA_S[cx.SP_KALENDER_URL]))
+    assert len(manches) == 8
+    assert manches[0] == {"plaats": "Niel", "datum": date(2026, 11, 11),
+                          "url": "https://www.superprestigecyclocross.be/nl/kalender/2026-2027/niel",
+                          "land": "België"}
+    # de gereden manches staan achteraan, niet op datum
+    assert [m["plaats"] for m in manches][-2:] == ["Overijse", "Middelkerke"]
+
+
+@pytest.mark.parametrize("naam, land, zone, vrouwen, mannen", [
+    ("glasgow", "United Kingdom", "Europe/London", "12:40", "14:10"),
+    ("benidorm", "Spain", "Europe/Madrid", "13:40", "15:10"),
+])
+def test_manches_buiten_belgie_en_tsjechie(cx, naam, land, zone, vrouwen, mannen):
+    info = cx.parse_fc_manche(_lees(f"ucicxworldcup_manche_cx_{naam}_2026-11-08.html"))
+    assert info["land"] == land
+    assert cx.zone_van(info["land"]) == zone
+    assert cx.elite_tijd(info["programma"], vrouwen=True) == vrouwen
+    assert cx.elite_tijd(info["programma"], vrouwen=False) == mannen
+    # vijf weken vooraf staan er nog geen zenders op
+    assert info["zenders"] == {}
+
+
+def test_glasgow_naar_onze_klok(wt):
+    # De pagina zegt "GMT +1", maar Glasgow zit in december op GMT. Als
+    # GMT gelezen komen de tijden uit op 13:40 en 15:10, de vaste tv-tijden
+    # van de andere manches; zie de README bij de fixture.
+    assert wt._iana_naar_lokaal("12:40", "Europe/London", date(2026, 12, 13)) == "13:40"
+    assert wt._iana_naar_lokaal("14:10", "Europe/London", date(2026, 12, 13)) == "15:10"
+
+
+def test_wereldbekeruitslagen_categorieen(cx):
+    # zelfde platform als de Superprestige; de podia worden gelezen
+    manches = cx.parse_sp_uitslagen(_lees("ucicxworldcup_uitslagen_cx_2026-11-08.html"))
+    benidorm = next(m for m in manches if m["datum"] == date(2026, 1, 18))
+    mannen = next(r for t, r in benidorm["categorieen"].items() if cx.is_elite(t, False))
+    assert [r["rider"] for r in mannen] == [
+        "Mathieu van der Poel", "Thibau Nys", "Felipe Orts"]
+    assert mannen[1]["time"] == "+00:28"
+    # zonder plaatsnaam vindt podium() hem dus al
+    assert cx.podium(manches, date(2026, 1, 18), "", vrouwen=True)[0]["rider"] == "Lucinda Brand"
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "de wereldbeker zet de plaats in een <p>, de Superprestige in een <h2>; "
+    "parse_sp_uitslagen knipt op </h2> en de plaats loopt door over de hele manche"))
+def test_wereldbekeruitslagen_plaats(cx):
+    manches = cx.parse_sp_uitslagen(_lees("ucicxworldcup_uitslagen_cx_2026-11-08.html"))
+    assert manches[0]["plaats"] == "Tabor"
+    assert cx.podium(manches, date(2026, 1, 18), "Benidorm", vrouwen=False)
+
+
 def test_superprestige_podium(cx):
     manches = cx.parse_sp_uitslagen(_lees("superprestige_uitslagen_cx_2026-11-08.html"))
     mannen = cx.podium(manches, date(2026, 10, 25), "Overijse", vrouwen=False)
@@ -139,8 +194,10 @@ def test_kalender_geeft_een_koers_per_geslacht(wt, web):
     # alleen dit jaar: Baal (1 januari 2027) hoort bij volgend jaar
     assert all(k["start"].year == 2026 for k in koersen)
     assert "X²O Koppenbergcross" in {k["name"] for k in koersen}
-    # de kalender van de Superprestige ontbreekt in de fixtures
-    assert wt._CX_DIAG["Superprestige"] == 0
+    assert wt._CX_DIAG["Superprestige"] == 8
+    sp = {k["name"] for k in koersen if k.get("serie") == "sp"} or {
+        k["name"] for k in koersen if "Niel" in k["name"]}
+    assert any("Niel" in n for n in sp)
     assert wt._CX_DIAG["Wereldbeker"] == 12
 
 
