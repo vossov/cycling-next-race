@@ -148,6 +148,21 @@ const gevallen = {
     races: [{ key: 'Tour Down Under', label: 'Tour Down Under', race_name: 'Tour Down Under',
       primary: true, women: false, level: 'm', days_until: 1, jersey: '' }],
   },
+  // een cross (0.33): geen profiel, wel een starttijd — de vorm die de
+  // sensor voor Wereldbeker Ostrava bouwde, ingekort
+  cross: {
+    race_name: 'Wereldbeker Ostrava', eyebrow: 'Elite mannen · Wereldbeker Ostrava',
+    show_state: 'LIVE', start_time: '19:45', date: '27 nov', countdown: '🟢 Vandaag',
+    type: 'Veldrit', discipline: 'cross', days_until: 0, level: 'cm', women: false,
+    elevation: [], climbs: [], upcoming: [], is_live: true,
+    races: [
+      { key: 'ostrava-mannen', label: 'Wereldbeker Ostrava', race_name: 'Wereldbeker Ostrava',
+        primary: true, level: 'cm', discipline: 'cross', days_until: 0 },
+      { key: 'ostrava-vrouwen', label: 'Wereldbeker Ostrava · Dames', race_name: 'Wereldbeker Ostrava',
+        level: 'cv', discipline: 'cross', days_until: 0, show_state: 'Vandaag',
+        last_result: [], gc_top: [], channels_detail: [{ name: 'Eurosport 1', time: '', logo: '' }] },
+    ],
+  },
   leeg: { show_state: 'Klaar' },
 };
 
@@ -216,6 +231,12 @@ for (const [naam, a] of Object.entries(gevallen)) {
     if (uitkomst.tekst.indexOf('Start morgen') < 0) problemen.push('de aftelling ontbreekt');
     if (uitkomst.tekst.indexOf('Tour Down Under') < 0) problemen.push('de koersnaam ontbreekt');
     if (uitkomst.verborgen) problemen.push('verborgen, terwijl er een koers aankomt');
+  }
+  if (naam === 'cross') {
+    if (uitkomst.tekst.indexOf('1 km') >= 0) problemen.push('een profiel van 1 km getekend');
+    if (uitkomst.tekst.indexOf('19:45') < 0) problemen.push('de starttijd ontbreekt');
+    if (uitkomst.tekst.indexOf('LIVE') < 0) problemen.push('niet als LIVE getoond');
+    if (uitkomst.tekst.indexOf('Eurosport 1') < 0) problemen.push('de zender van het vrouwenblok ontbreekt');
   }
   if (naam === 'voor de start') {
     // de startlijst vult het gat vóór de eerste uitslag

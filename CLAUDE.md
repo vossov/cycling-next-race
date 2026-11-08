@@ -97,8 +97,9 @@ kaart registreren) en `www/cycling-next-race-card.js` (de Lovelace-kaart).
 
 ### Welke niveaus meedoen (sinds 0.19)
 
-Cyclingstage kent geen UCI-niveaus, dus `NIVEAUS` in `const.py` is nog maar
-twee regels: `"m"` (mannen) en `"v"` (vrouwen). Het geslacht komt uit de
+Cyclingstage kent geen UCI-niveaus, dus `NIVEAUS` in `const.py` had nog maar
+twee regels: `"m"` (mannen) en `"v"` (vrouwen). Sinds 0.33 komen daar `"cm"`
+en `"cv"` bij (cross), met een veld `discipline`; zie "Cyclocross" hieronder. Het geslacht komt uit de
 koersnaam én uit het adres, twee onafhankelijke signalen.
 
 `OUDE_NIVEAUS` vertaalt de circuitnummers die in bestaande installaties
@@ -216,6 +217,90 @@ Zo'n blok geeft hetzelfde beeld als de tegelkoers:
   is, want zo ver kijkt de gids niet vooruit.
 - Het profiel komt uit `upcoming` (zie hieronder), inclusief `start_time`,
   `finish_est` en de tussensprint.
+
+### Cyclocross (0.33)
+
+Gevraagd door de eigenaar op 8 november 2026. De bron is de site van elke
+serie zelf — Superprestige, UCI-wereldbeker, X²O Trofee — want CyclingFlash,
+de enige bron met alle crossen, zit achter een Cloudflare-uitdaging (zie
+"Bronnenonderzoek november 2026"). De eigenaar vroeg of we daar omheen
+konden; nee, en dat blijft nee: een uitdaging is een toegangsregel van de
+beheerder, ook al staat het pad open in robots.txt.
+
+**Opzet.** De parsers staan in `cross.py` (geen Home Assistant erin), het
+ophalen en de vertaling naar koersen in `sensor.py` (`_cx_kalender`,
+`_cx_etappes`, `_cx_uitslag`), aangemeld als bron `"cross"`. De drie
+kalenderpagina's worden in `_fetch_calendar` gelezen, alleen als er een
+crossniveau gekozen is.
+
+**Een manche is twee koersen**, één per geslacht, niveau `cm` of `cv`. Bij
+het WK op de weg is dat één koers met onderdelen, en daardoor ziet een kaart
+die alleen vrouwen toont dat blok niet ("Wat nog een beperking is"); bij
+cross is dat van het begin af anders gedaan. Het adres draagt het geslacht
+als fragment (`…/ostrava#mannen`): mannen en vrouwen delen de manchepagina,
+en het adres is de sleutel van `_stages_cache`. `_race_slug` maakt van zo'n
+adres `ostrava-mannen`; tot 0.33 gaf hij voor elk niet-cyclingstage-adres
+`""`, en dan zouden alle crossen in de kaart één koersblok delen.
+
+**`discipline` houdt de wegkalender zuiver.** Wie alleen "Cross vrouwen"
+kiest, kreeg anders via `wil_vrouwen` de wegkoersen van de vrouwen erbij.
+Zonder wegniveau wordt de cyclingstage-kalender niet eens opgehaald.
+
+**Standaard in de pop-up, niet op de tegel** (`DEFAULT_LEVELS_POPUP`). Via
+`op_tegel or kandidaten` komt een cross dan alleen op de tegel als er geen
+wegkoers in het venster is — in de winter dus wel. Staat cross wél op de
+tegel, dan gaat een wegkoers op dezelfde dag voor (`_keuzesleutel`, het vak
+van de grote ronde: 0 grote ronde, 1 weg, 2 cross). Een bestaande
+installatie die het optiescherm al opsloeg krijgt cross niet vanzelf.
+
+**Wat een cross-etappe draagt:** `bron: "cross"`, `discipline: "cross"`,
+`eigen_pagina: False` (geen pagina voor `_fetch_stage_meta`), de starttijd
+zelf, `onderdeel` ("Elite mannen"), `zenders` (de NLD-regel van de
+manchepagina; `_zenders_voor` neemt die over in plaats van de tv-gids) en
+`live_venster_min`. `_cs_etappe()` houdt hem weg bij de GPX, het
+tijdschema en de startlijst: die bestaan alleen bij cyclingstage, en
+`tests/test_cross.py` controleert dat er geen enkel verzoek naar een
+cyclingstage-pagina gaat.
+
+**LIVE zonder finishtijd.** `_live_nu` gaf zonder finishtijd LIVE tot
+middernacht. Een cross geeft `live_venster_min` (90) mee; daarna is het
+"Gereden" (`_gereden_nu` volgt dezelfde grens). Dat getal wordt nergens als
+tijd getoond — het is een ruime bovengrens, geen voorspelling; een elitecross
+duurt rond het uur.
+
+**Tijdzone.** Een manchepagina noemt geen zone; het is de tijd ter plaatse.
+Het land staat als `alt` bij de vlag, `cross.LAND_ZONE` maakt er een
+IANA-zone van en `_iana_naar_lokaal` rekent om (Glasgow 18:15 → 19:15 hier).
+Een onbekend land laat de tijd staan.
+
+**De kaart** tekent bij `discipline: "cross"` de aftelling, ook in de
+profielweergave (`zonderProfiel`), en laat het profiel in de pop-up weg. De
+aftelling noemt sinds 0.33 de starttijd en zegt LIVE als de badge dat zegt.
+
+| | Superprestige | Wereldbeker | X²O |
+|---|---|---|---|
+| kalender | **niet geverifieerd** (`SP_KALENDER_URL`) | `cross.WB_KALENDER_URL` | voorpagina |
+| starttijd elite | manchepagina | manchepagina | — |
+| zender NL | manchepagina | manchepagina (Ostrava noemde er geen) | — |
+| uitslag | podium van `/nl/uitslagen` | — | — (staat bij elke organisator apart) |
+
+**Wat niet geverifieerd is:**
+
+- **De kalenderpagina van de Superprestige.** Niet opgeslagen; het adres is
+  het Nederlandse equivalent van de wereldbekerpagina op hetzelfde platform.
+  `cross_diag` op de sensor toont het aantal manches per serie — een 0 bij
+  de Superprestige betekent dat dit adres niet werkt. Gevraagd in
+  `docs/gevraagde-paginas.md`.
+- **Een uitslagenpagina van de wereldbeker.** Hetzelfde platform heeft er
+  waarschijnlijk een zoals de Superprestige, maar dat is niet nagekeken; tot
+  die tijd blijft de uitslag leeg en rolt de tegel pas de volgende dag door.
+- **Een manche buiten België en Tsjechië.** Glasgow en Benidorm staan in de
+  kalender; hun manchepagina's zijn niet opgeslagen.
+- Alles in een draaiende Home Assistant.
+
+**Wat het kost:** drie kalenderpagina's per dag, één manchepagina per manche
+die in beeld komt (gedeeld door mannen en vrouwen), en op de dag van een
+Superprestige na de start de uitslagenpagina tot het podium er staat.
 
 ### Een afgelopen koers blijft nog een dag staan (0.30)
 
@@ -2068,7 +2153,7 @@ geen fixture van een half gevulde kalender.
 
 Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:
 `gpx_diag`, `gpx_used`, `times_diag`, `result_diag`, `names_diag`,
-`levels_diag`, `elevation_source`.
+`levels_diag`, `cross_diag`, `elevation_source`.
 
 ## Dashboard
 
@@ -2342,9 +2427,9 @@ vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/c
   afkorting er staat.
 - ~~**Buiten het seizoen staat er niets.**~~ Opgelost in 0.32: zie "Na het
   seizoen: de kalender van volgend jaar".
-- **Cyclocross.** Gevraagd door de eigenaar op 8 november 2026. Zie
-  "Bronnenonderzoek november 2026": de officiële seriesites zijn de
-  kandidaten, CyclingFlash valt af. Nog niet gebouwd.
+- **Cyclocross: drie gaten.** Het kalenderadres van de Superprestige, een
+  uitslag bij de wereldbeker en X²O, en losse crossen buiten de drie series.
+  Zie "Cyclocross (0.33)".
 
 **Wat er aan opgeslagen pagina's nodig is staat in
 `docs/gevraagde-paginas.md`**, op volgorde van wat het meest oplevert. Vul die

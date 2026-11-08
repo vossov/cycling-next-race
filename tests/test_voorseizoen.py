@@ -78,7 +78,8 @@ def test_in_november_staat_de_eerste_koers_van_volgend_jaar_op_de_tegel(
     # alleen de twee kalenderpagina's: een koers zonder adres kost niets, en
     # de routepagina's van de Giro en de Tour van 2027 (die er al zijn)
     # worden niet afgezocht zolang de Tour Down Under eerder is
-    assert len(gevraagd) == 2, gevraagd
+    weg = [u for u in gevraagd if "cyclingstage" in u]
+    assert len(weg) == 2, weg
 
 
 def test_tijdens_het_seizoen_geen_kalender_van_volgend_jaar(wt, monkeypatch):

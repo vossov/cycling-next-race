@@ -51,7 +51,8 @@ def coordinator(wt, monkeypatch):
 def test_zonder_keuze_geldt_de_worldtour(wt, const, coordinator):
     co = coordinator()
     assert co._niveaus_tegel == const.DEFAULT_LEVELS
-    assert co._niveaus_alles == const.DEFAULT_LEVELS
+    # sinds 0.33 staat cross standaard in de pop-up
+    assert co._niveaus_alles == const.DEFAULT_LEVELS + const.DEFAULT_LEVELS_POPUP
 
 
 def test_niveau_alleen_in_de_popup_wordt_wel_opgehaald(wt, const, coordinator):

@@ -22,7 +22,7 @@ const SECTIES = ['profile', 'tv', 'upcoming', 'start', 'result', 'past',
 
 // De niveaus die de kaart aanbiedt, gelijk aan NIVEAUS in const.py. Ook hier
 // met opzet uitgeschreven; tests/test_kaart.py bewaakt de Python-kant.
-const NIVEAUS = ['m', 'v'];
+const NIVEAUS = ['m', 'v', 'cm', 'cv'];
 
 const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
 let mislukt = 0;
@@ -146,7 +146,7 @@ for (const metHaForm of [false, true]) {
           visible_days: 2, details: true,
           sections: ['profile', 'tv', 'upcoming', 'start', 'result', 'past',
                      'gc', 'points', 'kom', 'youth'],
-          levels: ['m', 'v'],
+          levels: ['m', 'v', 'cm', 'cv'],
           title: '',
         });
         let opnieuw = 'ok';

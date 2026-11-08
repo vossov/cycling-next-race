@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.32.0';
+const VERSIE = '0.33.0';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -84,6 +84,8 @@ const SECTIE_SLEUTELS = SECTIES.map(function (s) { return s.key; });
 const NIVEAUS = [
   { value: 'm', label: 'Mannen' },
   { value: 'v', label: 'Vrouwen' },
+  { value: 'cm', label: 'Cross mannen' },
+  { value: 'cv', label: 'Cross vrouwen' },
 ];
 
 const NIVEAU_SLEUTELS = NIVEAUS.map(function (n) { return n.value; });
@@ -328,9 +330,16 @@ function startlijst(rijen, renners, ploegen, opgegeven) {
  */
 function aftelling(a) {
   const naam = a.race_name || a.eyebrow || 'Wielrennen';
-  const wanneer = a.countdown || a.show_state || '';
-  const live = /LIVE/i.test(a.show_state || '') || a.is_live === true;
-  const onder = [a.date, a.type].filter(Boolean).join(' · ');
+  // Rijdt hij nú (de badge zegt LIVE), dan zegt de regel dat ook. `is_live`
+  // telt hier niet mee: dat is waar zolang een ronde loopt, en dan hoort er
+  // "Bezig — dag 14/21" te staan.
+  const nuLive = /LIVE/i.test(a.show_state || '');
+  const wanneer = nuLive ? 'LIVE' : (a.countdown || a.show_state || '');
+  const live = nuLive || a.is_live === true;
+  // de starttijd erbij: bij een cross is dat het belangrijkste dat er te
+  // weten valt, en een profiel is er niet
+  const tijd = a.start_time ? String(a.start_time).trim() : '';
+  const onder = [a.date, tijd, a.type].filter(Boolean).join(' · ');
 
   return `
     <div class="aftel">
@@ -356,6 +365,14 @@ function aftelling(a) {
  * want al zijn gegevens staan al in de gewone attributen. De andere
  * dragen hun eigen uitslag en standen mee; hun hoogteprofiel staat in
  * `upcoming`, waar elke etappe met `race_key` bij een koers hoort. */
+
+/** Heeft deze tegel geen hoogteprofiel om te tekenen?
+ *
+ * Een koers waarvan nog geen etappes bekend zijn (`stages_known: false`, de
+ * kalender van volgend jaar) en een cross (`discipline: 'cross'`). */
+function zonderProfiel(a) {
+  return !!a && (a.stages_known === false || a.discipline === 'cross');
+}
 
 /** De koersen uit de attributen; altijd minstens één. */
 function koersen(a) {
@@ -474,6 +491,8 @@ function tegelAttributen(a, race) {
   // vandaag die al gereden is
   if (race.eyebrow) uit.eyebrow = race.eyebrow;
   if (race.show_state) uit.show_state = race.show_state;
+  // een cross heeft geen profiel; dat staat op het blok
+  if (race.discipline) uit.discipline = race.discipline;
   if (race.days_until === null || race.days_until === undefined) {
     // onbekend is niet hetzelfde als vandaag; laat `visible_days` erbuiten
     delete uit.days_until;
@@ -529,8 +548,11 @@ function koersblok(a, race, meerdere, gekozen, gekozenNiveaus) {
   // tussen wal en schip
   const komend = race.primary || !aan('profile') ? eigen : eigen.slice(1);
   const u = race.primary ? a : race;
-  // nog geen etappes bekend: geen profiel om te tekenen (zie `_teken`)
-  const heeftProfiel = profiel && profiel.stages_known !== false;
+  // nog geen etappes bekend, of een cross: geen profiel om te tekenen (zie
+  // `_teken`). Bij een andere koers staat de discipline op het blok, niet
+  // op de etappe in upcoming.
+  const heeftProfiel = profiel && !zonderProfiel(profiel) &&
+    !(race.discipline === 'cross');
 
   const delen = [
     aan('profile') && heeftProfiel ? svgDetail({ attributes: profiel }) : '',
@@ -1026,10 +1048,11 @@ class CyclingNextRaceCard extends HTMLElement {
 
     const klikbaar = this._config.details;
     // Een koers zonder bekende etappes (de kalender van volgend jaar, in de
-    // winter) heeft geen profiel; svgTegel zou dan "1 km · Profiel nog niet
-    // bekend" tekenen. De aftelling is dan het enige dat klopt.
+    // winter) heeft geen profiel, en een cross ook niet; svgTegel zou dan
+    // "1 km · Profiel nog niet bekend" tekenen. De aftelling is dan het enige
+    // dat klopt.
     const inhoud =
-      this._config.view === 'countdown' || tegelA.stages_known === false
+      this._config.view === 'countdown' || zonderProfiel(tegelA)
         ? aftelling(tegelA)
         : svgTegel({ attributes: tegelA });
     const kop = this._config.title

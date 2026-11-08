@@ -82,14 +82,15 @@ Achter **Configureren** bij de integratie stel je in:
 | Verversen elke (minuten) | 30 |
 | Verversen tijdens een koers (minuten) | 5 |
 | Niveaus op het dashboard | mannen + vrouwen |
-| Niveaus alleen in de pop-up | geen |
+| Niveaus alleen in de pop-up | cross mannen + cross vrouwen |
 | Aantal koersen naast de getoonde in de pop-up | 2 |
 
 Wijzigingen gaan meteen in; de integratie herlaadt zichzelf.
 
 ### Welke niveaus je volgt
 
-Je vinkt aan wie meedoet: **mannen**, **vrouwen**, of allebei.
+Je vinkt aan wie meedoet: **mannen** en **vrouwen** op de weg, en sinds
+0.33 **cross mannen** en **cross vrouwen**.
 
 Dat gebeurt in twee lijstjes. **Niveaus op het dashboard** mogen de tegel
 pakken én staan in de pop-up; standaard zijn dat allebei. **Niveaus alleen in
@@ -99,6 +100,15 @@ Wil je bijvoorbeeld de vrouwenkoersen volgen zonder dat je dashboard
 verandert: zet *Vrouwen* alleen bij het tweede lijstje. Die koersen krijgen
 dan een eigen knop in de pop-up, met uitslag, klassementen, tv-zenders en
 hoogteprofielen, terwijl de tegel de mannen blijft tonen.
+
+Cross staat standaard alleen in de pop-up. Op de tegel komt een cross dan
+alleen als er die dagen geen wegkoers is, en dat is in de winter precies het
+geval. Wil je cross ook in het seizoen op de tegel, zet hem dan bij het eerste
+lijstje; op dezelfde dag gaat een wegkoers nog steeds voor.
+
+> **Een bestaande installatie krijgt cross niet vanzelf.** Heb je het
+> optiescherm al eens opgeslagen, dan staat daar je oude keuze en vink je
+> cross zelf aan.
 
 Lopen er meer koersen tegelijk dan er knoppen passen, dan gaan de niveaus van
 het dashboard voor. Met *Aantal koersen naast de getoonde* bepaal je hoeveel
@@ -127,6 +137,35 @@ knoppen er naast de tegelkoers passen.
 > etappe waar er meer horen te zijn, of geen uitslag — zet dan het
 > debuglogboek van `cycling_next_race` aan; daar staat welke pagina's zijn
 > geprobeerd.
+
+
+### Cyclocross
+
+Sinds 0.33 staan de manches van drie series erin: de **Superprestige**, de
+**UCI-wereldbeker** en de **X²O Trofee**, van hun eigen sites. Losse crossen
+buiten die drie series staan er niet in; daar is geen open bron voor.
+
+Een manche wordt twee koersen, één voor de mannen en één voor de vrouwen, met
+de starttijd van de elitewedstrijd. Wat er per serie te zien is:
+
+| | Superprestige | Wereldbeker | X²O Trofee |
+|---|---|---|---|
+| datum en plaats | ja¹ | ja | ja |
+| starttijd elite | ja | ja | nee |
+| Nederlandse zender | ja | als de manchepagina hem noemt | nee |
+| uitslag | podium (top 3) | nee | nee |
+
+¹ Het kalenderadres van de Superprestige is nog niet nagekeken. Levert het
+niets op, dan staat er bij `cross_diag` op de sensor een 0 bij die serie.
+
+Een cross heeft geen hoogteprofiel. De tegel toont dan de aftelling met de
+starttijd, ook in de profielweergave. Tijdens de wedstrijd staat er LIVE, tot
+anderhalf uur na de start; een finishtijd staat nergens, dus dat venster is
+een ruime grens en geen voorspelling.
+
+De bron die alles van cross heeft (CyclingFlash) laat Home Assistant niet
+binnen: hij zit achter een Cloudflare-controle die alleen echte browsers
+doorlaat. Daar gaat de integratie niet omheen.
 
 ## Dashboard
 
@@ -161,6 +200,7 @@ De sensor wordt vanzelf gevonden.
 Lopen er meerdere koersen tegelijk, dan staan ze in dat detailvenster als
 knoppen naast elkaar; de koers van de tegel staat open en de andere zijn
 één tik ver. Is er maar één koers, dan is er niets extra's te zien.
+
 
 ### Vormgeving
 
@@ -337,6 +377,8 @@ optiescherm van de integratie:
 |---|---|
 | `m` | Mannen |
 | `v` | Vrouwen |
+| `cm` | Cross mannen |
+| `cv` | Cross vrouwen |
 
 Zo staat bovenaan je dashboard een andere kaart dan verderop:
 

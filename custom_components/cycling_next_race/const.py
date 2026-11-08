@@ -11,7 +11,7 @@ NAME = "Cycling Next Race"
 # Gelijk aan "version" in manifest.json; hangt achter de kaart-URL zodat de
 # browser na een update de nieuwe versie ophaalt. tests/test_repo.py bewaakt
 # dat de twee niet uiteenlopen.
-VERSION = "0.32.0"
+VERSION = "0.33.0"
 
 # De meegeleverde Lovelace-kaart, door de integratie zelf geregistreerd.
 KAART_BESTAND = "cycling-next-race-card.js"
@@ -52,9 +52,17 @@ CONF_MAX_OTHER = "max_other"
 # géén UCI-niveaus — "WorldTour" en "ProSeries" komen op de kalenderpagina
 # niet één keer voor. Mannen en vrouwen zijn wél betrouwbaar te scheiden,
 # uit de koersnaam én uit het adres, onafhankelijk van elkaar.
+#
+# Sinds 0.33 ook cyclocross, als eigen discipline: een manche wordt twee
+# kalenderregels, één per geslacht, zodat het niveaufilter op de kaart
+# gewoon werkt (zie "Cyclocross" in CLAUDE.md). `discipline` houdt de
+# cyclingstage-kalender erbuiten: wie "Cross vrouwen" kiest, hoort daar
+# geen wegkoersen van de vrouwen bij te krijgen.
 NIVEAUS: dict[str, dict] = {
-    "m": {"naam": "Mannen", "vrouwen": False, "zeker": True},
-    "v": {"naam": "Vrouwen", "vrouwen": True, "zeker": True},
+    "m": {"naam": "Mannen", "vrouwen": False, "zeker": True, "discipline": "weg"},
+    "v": {"naam": "Vrouwen", "vrouwen": True, "zeker": True, "discipline": "weg"},
+    "cm": {"naam": "Cross mannen", "vrouwen": False, "zeker": True, "discipline": "cross"},
+    "cv": {"naam": "Cross vrouwen", "vrouwen": True, "zeker": True, "discipline": "cross"},
 }
 
 # Wat er in de opslag kan staan van vóór 0.19: de oude circuitnummers.
@@ -88,7 +96,10 @@ DEFAULT_LIVE_SCAN_MINUTES = 5
 # Alleen de WorldTour, en niets dat alleen in de pop-up staat: precies de
 # kalender zoals de integratie hem altijd al liet zien.
 DEFAULT_LEVELS = ["m", "v"]
-DEFAULT_LEVELS_POPUP: list[str] = []
+# Cross staat standaard in de pop-up en niet op de tegel: dan komt hij
+# alleen op de tegel als er die dagen geen wegkoers is (`op_tegel or
+# kandidaten` in sensor.py), en dat is in de winter precies het geval.
+DEFAULT_LEVELS_POPUP: list[str] = ["cm", "cv"]
 DEFAULT_MAX_OTHER = 2
 
 # Grenzen voor het optiescherm. Ruim genoeg om iets zinnigs in te stellen,

@@ -5,6 +5,19 @@ racecenter-sites van ASO — de egress-proxy blokkeert ze. Elke parser die hier
 gebouwd wordt moet daarom op HTML draaien die met de hand is opgeslagen.
 Deze lijst staat op volgorde van wat het meest oplevert.
 
+## Cyclocross — sinds 0.33 in gebruik, drie pagina's ontbreken
+
+Op volgorde van belang:
+
+1. **De kalender van de Superprestige**: `https://www.superprestigecyclocross.be/nl/kalender`
+   (en als dat niets is: `/nl/kalender/2026-2027`). Het adres in de code is
+   niet nagekeken; `cross_diag` op de sensor laat zien of het werkt.
+2. **Een uitslagenpagina van de wereldbeker** na een verreden manche, vermoedelijk
+   `https://www.ucicyclocrossworldcup.com/en/results` — zelfde platform als de
+   Superprestige, dus waarschijnlijk dezelfde opmaak. Ostrava is op 27 november.
+3. **Een manchepagina buiten België of Tsjechië**: Glasgow (13 december) of
+   Benidorm, om de tijdzone en de zenderlijst na te kijken.
+
 ## Ronde van 8 november 2026 — via Cowork
 
 Een groot deel van wat hieronder gevraagd staat is op 8 november binnengekomen

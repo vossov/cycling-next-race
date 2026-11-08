@@ -345,6 +345,15 @@ def _race_slug(url_of_slug: str) -> str:
     tekst = url_of_slug or ""
     if "/" not in tekst:
         return tekst
+    if "cyclingstage.com" not in tekst:
+        # Een adres van een andere bron (een crossserie, sinds 0.33). Dit is
+        # de sleutel waarmee de kaart een koersblok aan zijn etappes in
+        # `upcoming` koppelt; leeg zou alle crossen op één hoop gooien. Het
+        # laatste stuk van het pad plus het fragment (het geslacht) maakt hem
+        # per koers uniek.
+        pad, _, fragment = tekst.partition("#")
+        staart = pad.rstrip("/").rsplit("/", 1)[-1]
+        return re.sub(r"[^a-z0-9]+", "-", f"{staart}-{fragment}".lower()).strip("-")
     m = re.search(r"/(\d{4})[-/]", tekst) or re.search(r"-(\d{4})\b", tekst)
     return cs.slug_van(tekst, int(m.group(1)) if m else 0)
 
@@ -425,7 +434,8 @@ def _minuten(hhmm) -> int | None:
     return hhmm[0] * 60 + hhmm[1] if hhmm else None
 
 
-def _live_nu(sd, today, start_time, finish_time, nu=None) -> bool:
+def _live_nu(sd, today, start_time, finish_time, nu=None,
+             venster: int | None = None) -> bool:
     """Rijdt deze etappe op dit moment?
 
     Alleen op de dag zelf en alleen tussen de starttijd en de verwachte
@@ -446,6 +456,11 @@ def _live_nu(sd, today, start_time, finish_time, nu=None) -> bool:
     eind = _minuten(_parse_start_hhmm(finish_time))
     if eind is not None and eind > begin:
         return minuut <= eind + LIVE_MARGE_MIN
+    # Geen finishtijd, wel een bekende maximale duur (een cross: zie
+    # CX_LIVE_VENSTER_MIN). Zonder die grens stond een cross tot middernacht
+    # op LIVE.
+    if venster:
+        return minuut <= begin + venster
     return True
 
 
@@ -512,7 +527,8 @@ def _km_bij_tijddeel(verdeling, deel: float) -> float:
     return verdeling[-1][0]
 
 
-def _gereden_nu(sd, today, start_time, finish_time, nu=None) -> bool:
+def _gereden_nu(sd, today, start_time, finish_time, nu=None,
+                venster: int | None = None) -> bool:
     """Is deze etappe volgens de klok voorbij, zonder dat er een uitslag is?
 
     Alleen op de dag zelf en alleen als beide tijden bekend zijn. Zonder
@@ -530,9 +546,12 @@ def _gereden_nu(sd, today, start_time, finish_time, nu=None) -> bool:
         return False
     begin = _minuten(_parse_start_hhmm(start_time))
     eind = _minuten(_parse_start_hhmm(finish_time))
+    nu = nu if nu is not None else dt_util.now()
+    if begin is not None and (eind is None or eind <= begin) and venster:
+        # dezelfde grens als in `_live_nu`: voorbij het venster is voorbij
+        return (nu.hour * 60 + nu.minute) > begin + venster
     if begin is None or eind is None or eind <= begin:
         return False
-    nu = nu if nu is not None else dt_util.now()
     return (nu.hour * 60 + nu.minute) > eind + LIVE_MARGE_MIN
 
 
@@ -659,18 +678,22 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
 
     global _LAATSTE_KALENDERFOUT
 
+    gekozen = [n for n in (niveaus or []) if n in NIVEAUS]
+    weg = [n for n in gekozen if NIVEAUS[n].get("discipline", "weg") == "weg"]
     url = cs.KALENDER_URL.format(y=year)
-    html = _haal_html(url, "kalender")
-    if not html:
+    # alleen cross gekozen: dan is de wegkalender niet nodig
+    html = _haal_html(url, "kalender") if weg else ""
+    if weg and not html:
         melding = f"kalenderpagina {url} kwam niet binnen"
         nieuw = melding != _LAATSTE_KALENDERFOUT
         (_LOGGER.warning if nieuw else _LOGGER.debug)("Kalender: %s", melding)
         _LAATSTE_KALENDERFOUT = melding
         return [], {}, [melding]
 
-    alles = cs.parse_kalender(html, year)
-    gekozen = [n for n in (niveaus or []) if n in NIVEAUS]
-    wil_vrouwen = {NIVEAUS[n]["vrouwen"] for n in gekozen}
+    alles = cs.parse_kalender(html, year) if html else []
+    # alleen de wegniveaus: wie "Cross vrouwen" kiest hoort hier geen
+    # wegkoersen van de vrouwen bij te krijgen
+    wil_vrouwen = {NIVEAUS[n]["vrouwen"] for n in weg}
 
     koersen, telling = [], {}
     for n in gekozen:
@@ -711,6 +734,19 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
     for k in bronnen.extra_koersen(year, gekozen):
         koersen.append(k)
         naam = NIVEAUS.get(str(k.get("level", "")), {}).get("naam")
+        if naam in telling:
+            telling[naam] += 1
+
+    # Cyclocross: de drie series (sinds 0.33). Een serie die niet binnenkomt
+    # kost alleen zijn eigen manches; de wegkalender blijft staan.
+    try:
+        crossen = _cx_kalender(year, gekozen)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Crosskalender %s mislukt: %s", year, err)
+        crossen = []
+    for k in crossen:
+        koersen.append(k)
+        naam = NIVEAUS[k["level"]]["naam"]
         if naam in telling:
             telling[naam] += 1
 
@@ -1214,6 +1250,219 @@ bronnen.registreer(bronnen.Bron(
 ))
 
 
+def _cs_etappe(stage_of_koers: dict) -> bool:
+    """Komt deze etappe of koers van cyclingstage?
+
+    De GPX, het tijdschema, de etappetekst en de startlijst bestaan alleen
+    daar. Voor een cross vragen die functies anders pagina's op die niet
+    kunnen bestaan.
+    """
+    return str(stage_of_koers.get("bron") or bronnen.STANDAARD) == bronnen.STANDAARD
+
+
+# ── Cyclocross (sinds 0.33) ──────────────────────────────────────────
+#
+# De parsers staan in cross.py; hier het ophalen en de vertaling naar
+# koersen en etappes. Zie "Cyclocross" in CLAUDE.md.
+
+# Elke pagina van een serie hoogstens één keer per dag: de kalender van de
+# serie, en de manchepagina die de mannen en de vrouwen delen.
+_CX_DAG: dict[str, tuple] = {}
+# Hoeveel manches elke serie opleverde bij de laatste kalender; komt als
+# `cross_diag` in de attributen. Een 0 bij de Superprestige wijst naar het
+# niet-geverifieerde kalenderadres (zie `SP_KALENDER_URL` in cross.py).
+_CX_DIAG: dict[str, int] = {}
+# Hoe lang een cross na de start als LIVE geldt. Geen finishtijd: die staat
+# nergens. Een elitecross duurt volgens het UCI-reglement rond het uur; dit
+# is alleen het venster voor de badge, het wordt nergens als tijd getoond.
+CX_LIVE_VENSTER_MIN = 90
+
+
+def _cx_pagina(url: str, wat: str, vers: bool = False) -> str:
+    """Een pagina van een crossserie; per dag bewaard, een lege niet."""
+    sleutel = (url or "").split("#", 1)[0]
+    if not sleutel:
+        return ""
+    vandaag = dt_util.now().date()
+    bewaard = _CX_DAG.get(sleutel)
+    if bewaard and bewaard[0] == vandaag and not vers:
+        return bewaard[1]
+    html = _haal_html(sleutel, wat)
+    if html:
+        _CX_DAG[sleutel] = (vandaag, html)
+    elif bewaard and bewaard[0] == vandaag:
+        return bewaard[1]
+    return html
+
+
+def _iana_naar_lokaal(tijd: str, zone: str, dag) -> str:
+    """"18:15" in Europe/London → "19:15" hier. Onbekende zone: onveranderd.
+
+    Een manchepagina noemt geen tijdzone; het is de tijd ter plaatse. Het
+    land staat bij de vlag, en `cross.LAND_ZONE` maakt daar een zone van.
+    """
+    from zoneinfo import ZoneInfo
+
+    m = re.match(r"\s*(\d{1,2}):(\d{2})", tijd or "")
+    if not m or not zone or not dag:
+        return tijd or ""
+    try:
+        middag = datetime.combine(dag, dtime(12, 0))
+        bron = middag.replace(tzinfo=ZoneInfo(zone)).utcoffset()
+        zone_ha = getattr(dt_util, "DEFAULT_TIME_ZONE", None)
+        hier = (middag.replace(tzinfo=zone_ha) if zone_ha is not None
+                else middag.astimezone()).utcoffset()
+    except Exception:  # noqa: BLE001
+        return tijd
+    if bron is None or hier is None:
+        return tijd
+    minuten = (int(m.group(1)) * 60 + int(m.group(2))
+               + round((hier - bron).total_seconds() / 60)) % (24 * 60)
+    return f"{minuten // 60}:{minuten % 60:02d}"
+
+
+def _cx_kalender(jaar: int, niveaus) -> list[dict]:
+    """De manches van de drie series in dit jaar, als koersen.
+
+    Een manche wordt één koers per gekozen geslacht. Een kampioenschap op
+    de weg is één koers met onderdelen, en daardoor ziet een kaart die
+    alleen vrouwen toont het WK-blok niet (zie "Wat nog een beperking is"
+    in CLAUDE.md); bij cross is dat van het begin af anders gedaan.
+
+    Het adres draagt het geslacht als fragment. Mannen en vrouwen delen de
+    manchepagina, en het adres is de sleutel van `_stages_cache`.
+    """
+    from . import cross as cx
+
+    wil = sorted({bool(NIVEAUS[n]["vrouwen"]) for n in (niveaus or [])
+                  if NIVEAUS.get(n, {}).get("discipline") == "cross"})
+    if not wil:
+        return []
+    manches, gezien = [], set()
+    for serie, url, lees in (("sp", cx.SP_KALENDER_URL, cx.parse_fc_kalender),
+                             ("wb", cx.WB_KALENDER_URL, cx.parse_fc_kalender),
+                             ("x2o", cx.X2O_KALENDER_URL, cx.parse_x2o_kalender)):
+        try:
+            gevonden = lees(_cx_pagina(url, f"kalender {cx.SERIES[serie]}"))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Crosskalender %s mislukt: %s", serie, err)
+            gevonden = []
+        _CX_DIAG[cx.SERIES[serie]] = len(gevonden)
+        if not gevonden:
+            _LOGGER.debug("Crosskalender %s: geen manches op %s", serie, url)
+        for m in gevonden:
+            if m["datum"].year != jaar:
+                continue
+            # één cross kan in twee series tellen; dan de eerste
+            sleutel = (m["datum"], (m.get("plaats") or "").lower())
+            if sleutel in gezien:
+                continue
+            gezien.add(sleutel)
+            naam = (f"X²O {m['naam']}" if serie == "x2o"
+                    else f"{cx.SERIES[serie]} {m['plaats']}")
+            # X²O linkt naar de site van de organisator; die wordt niet
+            # opgehaald, en een lege link mag de koers niet adresloos maken
+            adres = (m.get("url") if serie != "x2o" else "") or \
+                f"{cx.X2O_KALENDER_URL}#{m['datum'].isoformat()}"
+            for vrouwen in wil:
+                manches.append({
+                    "name": naam,
+                    "start": m["datum"], "end": m["datum"],
+                    "women": vrouwen,
+                    "level": "cv" if vrouwen else "cm",
+                    "bron": "cross",
+                    "discipline": "cross",
+                    "url": f"{adres.split('#')[0]}#{'vrouwen' if vrouwen else 'mannen'}"
+                           + (f"-{m['datum'].isoformat()}" if serie == "x2o" else ""),
+                    "slug": "",
+                    "serie": serie,
+                    "plaats": m.get("plaats") or "",
+                    "land": m.get("land") or ("België" if serie != "wb" else ""),
+                    "manche_url": m.get("url") if serie != "x2o" else "",
+                })
+    return manches
+
+
+def _cx_etappes(koers: dict) -> list[dict]:
+    """Eén "etappe" per koers: de elitewedstrijd van dat geslacht.
+
+    De starttijd en de Nederlandse zender komen van de manchepagina (alleen
+    Superprestige en wereldbeker; X²O heeft er geen). Afstand, profiel en
+    hoogtemeters staan nergens en blijven leeg.
+    """
+    from . import cross as cx
+
+    vrouwen = bool(koers.get("women"))
+    start, zenders = "", []
+    if koers.get("manche_url"):
+        info = cx.parse_fc_manche(_cx_pagina(koers["manche_url"], "manchepagina"))
+        zone = cx.zone_van(info.get("land") or koers.get("land"))
+        start = _iana_naar_lokaal(cx.elite_tijd(info["programma"], vrouwen),
+                                  zone, koers["start"])
+        nl = info["zenders"].get("NLD", "")
+        # "Play Sports & Pickx+ Sports" zijn twee zenders
+        zenders = [{"name": z.strip(), "time": "", "logo": ""}
+                   for z in re.split(r"\s*&\s*|\s*,\s*", nl) if z.strip()]
+    return [{
+        "date": koers["start"], "stage_url": koers["url"],
+        "profile_icon": "", "name": koers["name"], "idx": None,
+        "one_day": True, "race_url": koers["url"], "race_name": koers["name"],
+        "race_slug": "", "women": vrouwen,
+        "level": str(koers.get("level", "")),
+        "distance_km": None, "stage_type": "",
+        "departure": koers.get("plaats") or "", "arrival": "",
+        # geen pagina die `_fetch_stage_meta` hoort te lezen
+        "eigen_pagina": False,
+        "start_time": start,
+        "live_venster_min": CX_LIVE_VENSTER_MIN,
+        "zenders": zenders,
+        "onderdeel": "Elite vrouwen" if vrouwen else "Elite mannen",
+        "discipline": "cross",
+        "serie": koers.get("serie", ""),
+        "plaats": koers.get("plaats", ""),
+    }]
+
+
+def _cx_uitslag(stage: dict, result_n: int = DEFAULT_RESULT_N,
+                gc_n: int = DEFAULT_GC_N) -> dict:
+    """Het elitepodium, alleen bij de Superprestige.
+
+    De wereldbeker en X²O hebben geen uitslagenpagina die beproefd is; die
+    blijven leeg. Een podium dat er nog niet staat wordt op de dag zelf,
+    na de start, elke ronde opnieuw gezocht — het verschijnt kort na de
+    finish.
+    """
+    from . import cross as cx
+
+    data = _lege_uitslag(stage)
+    data["start_time"] = stage.get("start_time") or ""
+    if stage.get("serie") != "sp":
+        return data
+    dag = stage.get("date")
+    html = _cx_pagina(cx.SP_UITSLAGEN_URL, "uitslagen Superprestige")
+    rijen = cx.podium(cx.parse_sp_uitslagen(html), dag, stage.get("plaats", ""),
+                      bool(stage.get("women")))
+    nu = dt_util.now()
+    begin = _minuten(_parse_start_hhmm(stage.get("start_time")))
+    if (not rijen and dag == nu.date() and begin is not None
+            and nu.hour * 60 + nu.minute >= begin):
+        html = _cx_pagina(cx.SP_UITSLAGEN_URL, "uitslagen Superprestige", vers=True)
+        rijen = cx.podium(cx.parse_sp_uitslagen(html), dag,
+                          stage.get("plaats", ""), bool(stage.get("women")))
+    data["ok"] = bool(html)
+    data["results"] = rijen[:result_n]
+    data["finished"] = bool(rijen)
+    data["result_url"] = cx.SP_UITSLAGEN_URL if rijen else ""
+    return data
+
+
+bronnen.registreer(bronnen.Bron(
+    naam="cross",
+    etappes=_cx_etappes,
+    uitslag=_cx_uitslag,
+))
+
+
 def _event_stages(event: dict) -> list[dict]:
     """De etappelijst van een koers, bij de bron die hem bedient."""
     bron = bronnen.bron_van(event)
@@ -1287,7 +1536,7 @@ def _etappe_label(stage: dict, kort: int = 0) -> str:
 
 
 def _show_state_for(sd: date, today: date, start_time: str = "",
-                    finish_time: str = "") -> str:
+                    finish_time: str = "", venster: int | None = None) -> str:
     """De badge van een etappe: LIVE, Vandaag, Morgen of de dag zelf.
 
     Met een starttijd erbij wordt "Vandaag" LIVE zodra de koers rijdt — dat
@@ -1296,7 +1545,8 @@ def _show_state_for(sd: date, today: date, start_time: str = "",
     het "Vandaag": dan weten we het niet.
     """
     if sd == today:
-        return "LIVE" if _live_nu(sd, today, start_time, finish_time) else "Vandaag"
+        return ("LIVE" if _live_nu(sd, today, start_time, finish_time,
+                                   venster=venster) else "Vandaag")
     if sd == today + timedelta(days=1):
         return "Morgen"
     return f"{DAYS_NL[sd.weekday()]} {_fmt_nl(sd)}"
@@ -1326,7 +1576,8 @@ def _fetch_stage_meta(stage: dict) -> dict:
         "vertical": _int(stage.get("vertical_m")),
         "profile_score": None,
         "stage_type": stage.get("stage_type") or "",
-        "start_time": "",
+        # een bron zonder etappepagina (cross) geeft de starttijd zelf mee
+        "start_time": stage.get("start_time") or "",
     }
     if not stage.get("eigen_pagina", True):
         # Een onderdeel van een kampioenschap heeft geen eigen pagina: zijn
@@ -2215,8 +2466,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
                          f"{_fmt_nl(ev['start'])} – {_fmt_nl(ev['end'])}"),
                 "countdown": _aftel_tekst(ev, today),
                 "days_until": dagen,
-                "type": ("Monument" if slug in MONUMENTS else
+                "type": ("Veldrit" if ev.get("discipline") == "cross"
+                         else "Monument" if slug in MONUMENTS else
                          "Eendaagse koers" if eendaags else "Etappekoers"),
+                "discipline": ev.get("discipline") or "weg",
                 "women": bool(ev.get("women")),
                 "level": str(ev.get("level", "")),
                 "stages_known": False,
@@ -2289,7 +2542,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         voor de koersen in de pop-up, en daar zou een mislukte scrape
         anders het hele koersblok kosten.
         """
-        if stage is None or (stage["date"] - today).days > 6:
+        if stage is None:
+            return []
+        if stage.get("zenders") is not None:
+            # de bron noemt ze zelf (de manchepagina van een cross)
+            return list(stage["zenders"])
+        if (stage["date"] - today).days > 6:
             return []          # de tv-gids toont ~6 dagen vooruit
         try:
             html = await self._tv_gids(today)
@@ -2310,6 +2568,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
         opgevraagd, terwijl `times_diag` de adressen liet zien alsof ze
         geprobeerd waren. Zie tests/test_sprints.py.
         """
+        if not _cs_etappe(stage):
+            return []
         url = stage["stage_url"]
         if url in self._sprints_cache:
             return self._sprints_cache[url]
@@ -2340,7 +2600,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         leeg = {"startlist_top": [], "startlist_riders": 0,
                 "startlist_teams": 0, "startlist_out": 0}
         url = event.get("url") or ""
-        if not url:
+        if not url or not _cs_etappe(event):
             return leeg
         if url not in self._startlist_cache:
             try:
@@ -2407,6 +2667,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             # laat zich per dashboardkaart op niveaus instellen en heeft
             # hiermee genoeg om zelf te kiezen wat hij toont.
             "level": str(ev.get("level", "")),
+            "discipline": ev.get("discipline") or "weg",
             # kleur van de leiderstrui voor de knop in de pop-up; leeg als
             # die niet vaststaat, dan houdt de knop de accentkleur
             "jersey": _leiderstrui(ev["url"]),
@@ -2457,7 +2718,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
             _tijden = self._upcoming_cache.get(toon["stage_url"]) or {}
             entry["show_state"] = _show_state_for(
                 toon["date"], today, _tijden.get("start_time"),
-                _tijden.get("finish_est"))
+                _tijden.get("finish_est"), venster=toon.get("live_venster_min"))
             entry["days_until"] = max(0, (toon["date"] - today).days)
             entry["eyebrow"] = (_etappe_label(toon, 26) if toon.get("one_day")
                                 or toon.get("onderdeel")
@@ -2531,8 +2792,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         belangrijkste is; andersom mag een ontbrekend profiel nog steeds de
         doorslag geven tussen twee koersen die verder gelijk staan.
         """
+        # een wegkoers gaat voor een cross op dezelfde dag; dat is een
+        # waarde in hetzelfde vak, zodat de sleutel even lang blijft
+        # (`k[:6]` in `_async_update_data`)
         return (nxt["date"],
-                0 if _is_grote_ronde(ev.get("url", "")) else 1,
+                2 if ev.get("discipline") == "cross"
+                else 0 if _is_grote_ronde(ev.get("url", "")) else 1,
                 self._gpx_rang(nxt),
                 1 if ev.get("women") else 0,
                 i)
@@ -2565,6 +2830,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
         op hun eigen aantal punten.
         """
         url = s["stage_url"]
+        if not _cs_etappe(s):
+            return [], []       # een cross heeft geen GPX
         # alleen zolang de etappe nog op een latere dag valt: mislukt de
         # kalender om middernacht, dan worden de dagcaches niet geleegd, en
         # dan hoort de etappe van vandaag toch opnieuw geprobeerd te worden
@@ -2739,7 +3006,8 @@ class CyclingCoordinator(DataUpdateCoordinator):
         sd = s["date"]
         e["date"] = sd.isoformat()
         e["show_state"] = _show_state_for(sd, today, e.get("start_time"),
-                                          e.get("finish_est"))
+                                          e.get("finish_est"),
+                                          venster=s.get("live_venster_min"))
         # de geschatte positie, alleen zolang die etappe rijdt. Buiten dat
         # venster blijft de sleutel weg: elke sleutel kost bytes in de
         # attributen, en die gaan tijdens een etappe om de vijf minuten naar
@@ -3197,6 +3465,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
              "race_name": shown["race_name"],
              "women": bool(shown.get("women")),
              "level": str(shown.get("level", "")),
+             "discipline": shown.get("discipline") or "weg",
              "jersey": _leiderstrui(shown["race_url"])},
             andere_koersen, today)
 
@@ -3226,10 +3495,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         if sd == today and not today_finished:
             # `finish_est` staat verderop pas; de verwachte finishtijd van
             # cyclingstage is wat hier telt en die hebben we al
-            if _live_nu(sd, today, shown_data.get("start_time"), finish_bron):
+            venster = shown.get("live_venster_min")
+            if _live_nu(sd, today, shown_data.get("start_time"), finish_bron,
+                        venster=venster):
                 show_state = "LIVE"
             elif _gereden_nu(sd, today, shown_data.get("start_time"),
-                             finish_bron):
+                             finish_bron, venster=venster):
                 # gefinisht volgens de klok, maar er is geen uitslag: dat is
                 # iets anders dan "vandaag" en hoort niet als zoiets te lezen
                 show_state = "Gereden"
@@ -3373,6 +3644,10 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 # aantal koersen per gekozen niveau; 0 verraadt een
                 # circuitnummer dat niet klopt
                 "levels_diag": self._levels_diag,
+                # manches per crossserie bij de laatste kalender; een 0 bij
+                # de Superprestige wijst naar zijn kalenderadres, dat niet
+                # geverifieerd is (cross.py)
+                "cross_diag": dict(_CX_DIAG),
                 # ── spoiler (alleen tonen in de pop-up!) ──
                 "last_result": last_result,
                 # eerder gereden etappes om in terug te bladeren
@@ -3389,8 +3664,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
                 **startlijst,
                 # ── backward-compat ──
                 "race_name": cur["name"],
-                "type": ("Monument" if is_monument else "Eendaagse koers"
+                "type": ("Veldrit" if shown.get("discipline") == "cross"
+                         else "Monument" if is_monument else "Eendaagse koers"
                          if one_day else "Etappekoers"),
+                # "cross" laat de kaart de aftelling tekenen in plaats van
+                # een hoogteprofiel: dat is er bij een cross niet
+                "discipline": shown.get("discipline") or "weg",
                 "date": date_display,
                 "countdown": countdown,
                 "stage_today": old_stage_info,
