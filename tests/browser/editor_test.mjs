@@ -12,7 +12,7 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 
 const KAART = new URL('../../custom_components/cycling_next_race/www/cycling-next-race-card.js', import.meta.url).pathname;
-const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = process.env.CHROMIUM || undefined;
 
 // De onderdelen van het detailvenster, in de volgorde waarin de kaart ze
 // zet. Hier met opzet uitgeschreven: een wijziging in de kaart hoort hier
@@ -24,7 +24,7 @@ const SECTIES = ['profile', 'tv', 'upcoming', 'start', 'result', 'past',
 // met opzet uitgeschreven; tests/test_kaart.py bewaakt de Python-kant.
 const NIVEAUS = ['m', 'v'];
 
-const browser = await chromium.launch({ executablePath: CHROME });
+const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
 let mislukt = 0;
 
 for (const metHaForm of [false, true]) {

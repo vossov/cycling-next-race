@@ -138,6 +138,16 @@ const gevallen = {
   'oude sensor': zonderKoerslijst,
   'voor de start': voorDeStart,
   'alleen tegel': { show_state: 'Morgen', days_until: 1, eyebrow: 'Ronde van Polen', distance_km: 180 },
+  // de winter (0.32): de kalender van volgend jaar, nog zonder routes —
+  // precies de vorm die `_aankondiging` in sensor.py teruggeeft
+  aankondiging: {
+    race_name: 'Tour Down Under', eyebrow: 'Tour Down Under', show_state: 'di 19 jan',
+    date: '19 jan – 24 jan', countdown: 'Start morgen', days_until: 1,
+    type: 'Etappekoers', women: false, level: 'm', stages_known: false,
+    is_live: false, upcoming: [], levels_diag: {},
+    races: [{ key: 'Tour Down Under', label: 'Tour Down Under', race_name: 'Tour Down Under',
+      primary: true, women: false, level: 'm', days_until: 1, jersey: '' }],
+  },
   leeg: { show_state: 'Klaar' },
 };
 
@@ -152,7 +162,7 @@ const zichtbaarheid = [
   { naam: 'aftelweergave zonder grens', config: { view: 'countdown' }, dagen: 40, zichtbaar: true },
 ];
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const page = await browser.newPage({ viewport: { width: 520, height: 900 } });
 
 const fouten = [];
@@ -200,6 +210,13 @@ for (const [naam, a] of Object.entries(gevallen)) {
   if (naam === 'leeg' && !uitkomst.verborgen) problemen.push('had zich moeten verbergen');
   if (naam !== 'leeg' && uitkomst.svgs === 0) problemen.push('geen enkele svg getekend');
   if (naam === 'volledig' && uitkomst.secties < 6) problemen.push(`te weinig secties: ${uitkomst.secties}`);
+  if (naam === 'aankondiging') {
+    // geen profiel: anders stond er "1 km · Profiel nog niet bekend"
+    if (uitkomst.tekst.indexOf('1 km') >= 0) problemen.push('een profiel van 1 km getekend');
+    if (uitkomst.tekst.indexOf('Start morgen') < 0) problemen.push('de aftelling ontbreekt');
+    if (uitkomst.tekst.indexOf('Tour Down Under') < 0) problemen.push('de koersnaam ontbreekt');
+    if (uitkomst.verborgen) problemen.push('verborgen, terwijl er een koers aankomt');
+  }
   if (naam === 'voor de start') {
     // de startlijst vult het gat vóór de eerste uitslag
     if (uitkomst.tekst.indexOf('Aan de start') < 0) problemen.push('geen startlijst getekend');

@@ -1268,6 +1268,11 @@ Op 7 september 2026 opgehaald door de eigenaar (de proxy hier laat ze niet
 door) en letterlijk bewaard in `docs/robots/`. Deze controle was er nooit
 geweest, terwijl FirstCycling er wél op is afgewezen — dat was een gat.
 
+**Bijgewerkt op 8 november 2026:** wielerflits weert ClaudeBot nu met name
+(`Disallow: /`). Voor de integratie zelf, met een eigen user-agent, verandert
+er niets — de `*`-groep raakt de tv-gids nog steeds niet. Zie
+`docs/robots/README.md`.
+
 **Wielerflits: in orde.** De `User-agent: *`-groep noemt een lijst paden
 (`/wp-admin/`, feeds, archief, URL's met parameters) en `Disallow: /` staat
 er niet bij. De tv-gids op `/nieuws/wielrennen-op-tv/` valt onder geen enkele
@@ -1359,6 +1364,38 @@ zich op de letter beroept, hoort zich ook aan de rest van de omgangsvormen
 te houden.
 
 De bestanden staan in `docs/robots/`, met per bron wat er precies staat.
+
+### Bronnenonderzoek november 2026
+
+Op 8 november 2026 via Cowork uitgevoerd (de cloudomgeving hier kan de
+sites niet bereiken). Rapport en voorstellen staan in
+`docs/bronnenonderzoek-2026-11/`, de robots.txt-bestanden in `docs/robots/`,
+en de fixtures van de bronnen die bruikbaar bleken in `tests/fixtures/`. De
+fixtures van CyclingFlash, TNT Sports, Eurosport, UCI, Velora en Wikipedia
+zitten **niet** in de repo (samen ruim 15 MB, en geen van die bronnen wordt
+gebruikt); ze staan in de zip van die dag.
+
+| bron | uitkomst |
+|---|---|
+| **wielerflits, sporza** | weren ClaudeBot nu met name (`Disallow: /`). Voor de integratie, met een eigen user-agent, verandert er niets; voor ontwikkelwerk wel: fixtures komen weer met de hand |
+| **CyclingFlash** | inhoudelijk de rijkste (kalender per UCI-klasse, cross, uitslagen, starttijden in UTC, tv-gids als JSON, kalender 2027). **Maar curl kreeg een Cloudflare-uitdaging (403)**, alleen een echte browser kwam erdoor. Dat is precies het procyclingstats-scenario van augustus 2026; niet op bouwen tot een test vanuit Home Assistant het tegendeel laat zien |
+| **Superprestige, UCI-wereldbeker, X²O** | officiële seriesites, met curl bereikbaar, robots.txt in orde. Kalender, programma met starttijd per categorie, zenders per land (Superprestige), podium. De kandidaten voor cross |
+| **Domestique Cycling** | wegkalender met geslacht en UCI-klasse als eigen kolom, volledige uitslagen; met curl bereikbaar. Kandidaat-terugval voor koersen die cyclingstage niet heeft |
+| **TNT Sports / Eurosport** | alleen winnaars op de kalenderpagina; de rest via GraphQL. Crosspagina leeg |
+| **ASO racecenter** | etappes, tijdschema met tussensprint en weer, profiel-CSV met officiële colcategorie. Elk API-adres draagt een `?xdt=`-token; of het zonder werkt is niet getest |
+| procyclingstats, firstcycling, cyclocross24 | robots.txt sluit ClaudeBot uit |
+
+Twee dingen voor bestaande code, nog niet verwerkt:
+
+- **Het tijdschema van cyclingstage is een JPG**, gelinkt vanaf de
+  etappepagina (`/images/giro-italy/2026/stage-14-times.jpg`, titel
+  "timings"). Daarmee is `stage-{n}-times.htm` ook voor de Giro weerlegd en
+  kunnen `_fetch_times`, `_parse_times`, `times_url` en `sprints` eruit (zie
+  "cyclingstage.com" hieronder). De tussensprint uit de etappetekst halen is
+  geen alternatief: bij Giro-etappe 14 noemt de tekst km 116, en volgens de
+  cronotabella is dat de Red Bull-kilometer; de echte sprint ligt op km 53,9.
+- **De klassementspagina's van cyclingstage zijn gevuld** (top 5 plus leider
+  per etappe), net als de uitvallerspagina. Fixtures van de Vuelta liggen er.
 
 ### FirstCycling is uitgesloten (robots.txt)
 
@@ -1672,7 +1709,9 @@ niet bereiken**. Verifieer daarom zo:
 - De browsertests (`tests/browser/*.mjs`) draaien **niet** in CI. Lokaal:
   `npm install --no-save acorn` en Playwright bereikbaar maken — in de
   ontwikkelomgeving met `ln -s /opt/node22/lib/node_modules/playwright
-  node_modules/playwright` (beide in `.gitignore`). `kaart_test.mjs` faalde
+  node_modules/playwright` (beide in `.gitignore`). Chromium zoekt
+  Playwright zelf; een ander pad geef je mee met `CHROMIUM=/pad/naar/chrome`
+  (tot 0.32 stond er een vast pad in dat niet meer bestond). `kaart_test.mjs` faalde
   van 0.26 tot 0.31.4 op verouderde verwachtingen (de PCS-startlijst) zonder
   dat iemand het zag; draai hem na elke kaartwijziging.
 - Verzoeken tellen: `python3 tools/meet_verzoeken.py` (zie "Verzoeken per
@@ -1987,6 +2026,44 @@ probeert de volgende ronde het opnieuw. De dagcaches worden dan ook niet
 geleegd; wat per dag hoort te verlopen leunt op `_vandaag` en niet op dat
 legen. `tests/test_kalenderfout.py`.
 
+### Na het seizoen: de kalender van volgend jaar (0.32)
+
+Na Parijs-Tours (11 oktober) stond er "Seizoen afgelopen" en verborg de
+kaart zich — ook de aftelweergave, waarvan de README beweerde dat hij bleef
+staan. Op 8 november 2026 had cyclingstage de kalender van 2027 al, op
+precies het adres dat `KALENDER_URL` bouwt: 44 koersen met naam en datum,
+maar alleen de drie grote rondes met een routeadres.
+
+Drie dingen samen:
+
+- **Een koers zonder adres blijft in de kalender**, met `url: ""`. Tot 0.32
+  gooide `_fetch_calendar` hem weg. Op 1 januari zou dat erger zijn
+  geweest dan een lege tegel: zonder één koers met adres werd de kalender
+  leeg en ging de sensor op onbeschikbaar. In de kalender van 2026 zat geen
+  enkele koers zonder adres, dus tijdens het seizoen verandert er niets.
+  `_stages_for` geeft bij een leeg adres meteen `[]` — anders werd `""` als
+  etappe-adres van een eendaagse koers doorgegeven.
+- **Is er dit jaar niets meer te rijden, dan ook de kalender van volgend
+  jaar.** In hetzelfde blok als de gewone kalender, dus één keer per dag.
+  Mislukt die pagina, dan blijft het bij dit jaar en is het morgen weer
+  proberen.
+- **`_aankondiging`**: de eerstvolgende koers als tegel zonder etappes —
+  naam, datum, aftelling, en `stages_known: False`. De kaart tekent dan de
+  aftelling, ook in de profielweergave, want `svgTegel` zou "1 km · Profiel
+  nog niet bekend" tekenen. In de profielweergave staat `visible_days`
+  standaard op 2, dus daar komt hij pas twee dagen vóór de koers in beeld.
+
+**Het doorrollen stopt bij een koers zonder adres.** Anders sloeg het de
+Tour Down Under (januari, geen route) over en belandde de Giro van mei op de
+tegel, omdat die al een routepagina had — en kostte het zoeken elke ronde een
+verzoek per grote ronde. `tests/test_voorseizoen.py` draait op de echte
+kalenderpagina en telt dat er precies twee verzoeken uitgaan.
+
+**Wat niet beproefd is:** het moment waarop de eerste route van het nieuwe
+jaar verschijnt. Dan heeft die koers een adres en etappes, en hoort de
+gewone tegel het over te nemen; dat volgt uit de bestaande code, maar er is
+geen fixture van een half gevulde kalender.
+
 ## Diagnose-attributen
 
 Deze zitten er puur om problemen op te sporen en mogen weg zodra het stabiel is:
@@ -2263,10 +2340,11 @@ vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/c
   Tour Down Under of de UAE Tour, dan blijven de tijden onomgerekend en staat
   LIVE uren verkeerd. Toevoegen zodra een echte pagina laat zien welke
   afkorting er staat.
-- **Buiten het seizoen staat er niets.** Na Parijs-Tours (11 oktober) geeft
-  de sensor "Seizoen afgelopen" en verbergt de kaart zich, ook de
-  aftelweergave, tot de kalender van het nieuwe jaar er op 1 januari is. Een
-  kalender voor 2027 bestond op 25 september 2026 nog niet bij cyclingstage.
+- ~~**Buiten het seizoen staat er niets.**~~ Opgelost in 0.32: zie "Na het
+  seizoen: de kalender van volgend jaar".
+- **Cyclocross.** Gevraagd door de eigenaar op 8 november 2026. Zie
+  "Bronnenonderzoek november 2026": de officiële seriesites zijn de
+  kandidaten, CyclingFlash valt af. Nog niet gebouwd.
 
 **Wat er aan opgeslagen pagina's nodig is staat in
 `docs/gevraagde-paginas.md`**, op volgorde van wat het meest oplevert. Vul die

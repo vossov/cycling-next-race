@@ -47,7 +47,7 @@
  * kunnen zien — Home Assistant meldt bij de integratie de versie van de
  * Python-kant, terwijl je browser een oudere kaart uit de cache kan
  * draaien. Zonder nummer in de kaart zelf is dat niet vast te stellen. */
-const VERSIE = '0.31.5';
+const VERSIE = '0.32.0';
 
 const CAT = { HC: '#E4572E', 1: '#F2A03D', 2: '#EBD24A', 3: '#7FB069', 4: '#5FA8A0' };
 
@@ -529,10 +529,12 @@ function koersblok(a, race, meerdere, gekozen, gekozenNiveaus) {
   // tussen wal en schip
   const komend = race.primary || !aan('profile') ? eigen : eigen.slice(1);
   const u = race.primary ? a : race;
+  // nog geen etappes bekend: geen profiel om te tekenen (zie `_teken`)
+  const heeftProfiel = profiel && profiel.stages_known !== false;
 
   const delen = [
-    aan('profile') && profiel ? svgDetail({ attributes: profiel }) : '',
-    aan('profile') && profiel ? schattingsregel(profiel) : '',
+    aan('profile') && heeftProfiel ? svgDetail({ attributes: profiel }) : '',
+    aan('profile') && heeftProfiel ? schattingsregel(profiel) : '',
     // elke koers zijn eigen zenders; een sensor van vóór `races` heeft ze
     // alleen bovenaan staan, en dan blijft het bij de tegelkoers
     aan('tv') ? zenders(race.primary ? a.channels_detail : u.channels_detail) : '',
@@ -1023,8 +1025,11 @@ class CyclingNextRaceCard extends HTMLElement {
     }
 
     const klikbaar = this._config.details;
+    // Een koers zonder bekende etappes (de kalender van volgend jaar, in de
+    // winter) heeft geen profiel; svgTegel zou dan "1 km · Profiel nog niet
+    // bekend" tekenen. De aftelling is dan het enige dat klopt.
     const inhoud =
-      this._config.view === 'countdown'
+      this._config.view === 'countdown' || tegelA.stages_known === false
         ? aftelling(tegelA)
         : svgTegel({ attributes: tegelA });
     const kop = this._config.title

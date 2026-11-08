@@ -51,10 +51,13 @@ def test_mislukte_verversing_houdt_de_oude_kalender(wt, monkeypatch):
 
 @pytest.mark.parametrize("fout", [([], {}, [FOUT]), RuntimeError("time-out")])
 def test_eerste_ronde_mislukt_en_de_volgende_probeert_opnieuw(wt, monkeypatch, fout):
-    c = _co(wt, monkeypatch, [fout, ([KOERS], {}, [])])
+    # de derde: Paris-Tours is voorbij, dus sinds 0.32 ook de kalender van
+    # volgend jaar — die is er hier (nog) niet
+    c = _co(wt, monkeypatch, [fout, ([KOERS], {}, []),
+                              ([], {}, ["kalender 2027 kwam niet binnen"])])
     with pytest.raises(wt.UpdateFailed):
         _draai(c)
     assert c._calendar_fetched is None
     assert _draai(c)["state"] == "Seizoen afgelopen"
-    assert c.verzoeken == 2
+    assert c.verzoeken == 3
     assert c._calendar_fetched == VANDAAG

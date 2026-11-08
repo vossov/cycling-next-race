@@ -322,6 +322,18 @@ def _fmt_nl(d: date) -> str:
     return f"{d.day} {MONTHS_NL[d.month]}"
 
 
+def _aftel_tekst(koers: dict, today: date) -> str:
+    """Hoe lang het nog duurt tot een koers, of hoe ver hij is."""
+    eendaags = koers["start"] == koers["end"]
+    if koers["start"] <= today <= koers["end"]:
+        if eendaags:
+            return "🟢 Vandaag"
+        return (f"🟢 Bezig — dag {(today - koers['start']).days + 1}/"
+                f"{(koers['end'] - koers['start']).days + 1}")
+    d = (koers["start"] - today).days
+    return "Start morgen" if d == 1 else f"Over {d} dagen"
+
+
 def _race_slug(url_of_slug: str) -> str:
     """De cyclingstage-slug van een koers.
 
@@ -667,15 +679,22 @@ def _fetch_calendar(year: int, niveaus: list[str]) -> tuple[list[dict], dict, li
         if k["women"] not in wil_vrouwen:
             continue
         slug = cs.slug_van(k["route_url"] or k["url"], year)
+        # Een koers zonder bruikbaar adres blijft sinds 0.32 in de kalender,
+        # met een leeg `url`. Zo staat de kalender van volgend jaar erin
+        # zodra cyclingstage hem publiceert: datums en namen, maar nog geen
+        # routes. Tot 0.32 werden zulke koersen weggegooid, en dan bleef er
+        # van november tot de eerste route niets over. Zonder adres zijn er
+        # geen etappes (`_stages_for` geeft dan meteen een lege lijst), dus
+        # zo'n koers kan alleen als aankondiging op de tegel komen.
         if not slug:
-            _LOGGER.debug("Koers zonder bruikbaar adres overgeslagen: %s", k["name"])
-            continue
+            _LOGGER.debug("Koers zonder bruikbaar adres (nog geen route): %s",
+                          k["name"])
         niveau = "v" if k["women"] else "m"
         koersen.append({
             "name": k["name"],
             # de routepagina is waar de etappelijst vandaan komt; de slug
             # bedient de GPX, het tijdschema en de overzichtspagina
-            "url": k["route_url"] or k["url"],
+            "url": (k["route_url"] or k["url"]) if slug else "",
             "slug": slug,
             "start": k["start"],
             "end": k["end"],
@@ -2163,6 +2182,60 @@ class CyclingCoordinator(DataUpdateCoordinator):
         # we niet uit; dat zou de tegel leeg laten
         return not niveau or niveau in self._niveaus_tegel
 
+    def _aankondiging(self, today: date) -> dict | None:
+        """De eerstvolgende koers, ook als er nog geen etappes van bekend zijn.
+
+        Dit is de tegel voor de winter (sinds 0.32). De kalender van volgend
+        jaar staat dan al bij cyclingstage, maar zonder routes: er is een
+        naam en een datum, en verder niets. Dat is precies wat er dan op de
+        tegel komt — de aftelling, geen profiel, geen uitslag. `stages_known`
+        zegt de kaart dat hij hier geen hoogteprofiel moet tekenen; zonder
+        die vlag stond er "1 km · Profiel nog niet bekend", alsof de koers
+        één kilometer was.
+
+        Geen koers meer in de kalender: `None`, en dan blijft het "Seizoen
+        afgelopen".
+        """
+        komend = [r for r in (self._calendar or []) if r["end"] >= today]
+        if not komend:
+            return None
+        ev = next((r for r in komend if self._mag_op_tegel(r)), komend[0])
+        eendaags = ev["start"] == ev["end"]
+        dagen = max(0, (ev["start"] - today).days)
+        dames = bool(ev.get("women")) and not _noemt_dames(ev["name"])
+        slug = ev.get("slug") or ""
+        self.update_interval = self._scan_interval
+        return {
+            "state": ev["name"],
+            "attributes": {
+                "race_name": ev["name"],
+                "eyebrow": ev["name"],
+                "show_state": f"{DAYS_NL[ev['start'].weekday()]} {_fmt_nl(ev['start'])}",
+                "date": (_fmt_nl(ev["start"]) if eendaags else
+                         f"{_fmt_nl(ev['start'])} – {_fmt_nl(ev['end'])}"),
+                "countdown": _aftel_tekst(ev, today),
+                "days_until": dagen,
+                "type": ("Monument" if slug in MONUMENTS else
+                         "Eendaagse koers" if eendaags else "Etappekoers"),
+                "women": bool(ev.get("women")),
+                "level": str(ev.get("level", "")),
+                "stages_known": False,
+                "is_live": False,
+                "upcoming": [],
+                "levels_diag": self._levels_diag,
+                "races": [{
+                    "key": slug or ev["name"],
+                    "label": _short_race(ev["name"], 24) + (" · Dames" if dames else ""),
+                    "race_name": ev["name"],
+                    "primary": True,
+                    "women": bool(ev.get("women")),
+                    "level": str(ev.get("level", "")),
+                    "days_until": dagen,
+                    "jersey": "",
+                }],
+            },
+        }
+
     @property
     def _scan_interval(self) -> timedelta:
         return timedelta(minutes=self._opt(CONF_SCAN_MINUTES))
@@ -2186,7 +2259,12 @@ class CyclingCoordinator(DataUpdateCoordinator):
         return bool(self._vandaag and dag and dag > self._vandaag)
 
     async def _stages_for(self, event: dict, today: date) -> list[dict]:
-        key = event["url"]
+        key = event.get("url") or ""
+        if not key:
+            # nog geen route bekend (zie `_fetch_calendar`): er valt niets op
+            # te halen, en een leeg adres zou anders als etappe-adres van een
+            # eendaagse koers doorgegeven worden
+            return []
         cached = self._stages_cache.get(key)
         if cached and cached[0] == today:
             return cached[1]
@@ -2886,6 +2964,21 @@ class CyclingCoordinator(DataUpdateCoordinator):
         if (self._calendar is None or self._calendar_fetched is None
                 or (today - self._calendar_fetched) >= timedelta(days=1)):
             kalender, diag, fouten = await self._kalender_ophalen(today.year)
+            if (kalender or not fouten) and not any(
+                    r["end"] >= today for r in kalender):
+                # Het seizoen is voorbij (na Parijs-Tours, half oktober). Dan
+                # ook de kalender van volgend jaar: cyclingstage zet die al in
+                # het najaar online, eerst met alleen namen en datums. Een
+                # mislukte pagina kost hier niets — dan blijft het bij dit
+                # jaar, en morgen weer.
+                volgend, _diag, vfouten = await self._kalender_ophalen(
+                    today.year + 1)
+                if volgend:
+                    kalender = sorted(kalender + volgend,
+                                      key=lambda x: (x["start"], x["women"]))
+                elif vfouten:
+                    _LOGGER.debug("Kalender %s nog niet beschikbaar: %s",
+                                  today.year + 1, "; ".join(vfouten))
             if kalender or not fouten:
                 self._calendar, self._levels_diag, self._kalenderfouten = \
                     kalender, diag, fouten
@@ -3009,6 +3102,15 @@ class CyclingCoordinator(DataUpdateCoordinator):
                     continue
                 if not self._mag_op_tegel(volgende):
                     continue
+                if not volgende.get("url"):
+                    # De eerstvolgende koers heeft nog geen route (de
+                    # kalender van volgend jaar, in de winter). Dan hoort
+                    # híj op de tegel, als aankondiging — niet een koers
+                    # van maanden later die toevallig al een routepagina
+                    # heeft (de Giro van 2027 stond er in november 2026
+                    # al). Doorzoeken kostte bovendien elke ronde een
+                    # verzoek per grote ronde.
+                    break
                 nstages = await self._stages_for(volgende, today)
                 if not nstages:
                     continue
@@ -3037,7 +3139,9 @@ class CyclingCoordinator(DataUpdateCoordinator):
         future = keuze["future"]
 
         if shown is None:
-            return {"state": "Seizoen afgelopen", "attributes": {"show_state": "Klaar"}}
+            return (self._aankondiging(today)
+                    or {"state": "Seizoen afgelopen",
+                        "attributes": {"show_state": "Klaar"}})
 
         if shown_data is None:
             # Een etappe van een latere dag heeft geen uitslag, dus daar valt
@@ -3184,14 +3288,7 @@ class CyclingCoordinator(DataUpdateCoordinator):
         cur_live = cur["start"] <= today <= cur["end"]
         one_day = cur["start"] == cur["end"]
         is_monument = _race_slug(cur["url"]) in MONUMENTS
-        if cur_live and not one_day:
-            countdown = (f"🟢 Bezig — dag {(today - cur['start']).days + 1}/"
-                         f"{(cur['end'] - cur['start']).days + 1}")
-        elif cur_live:
-            countdown = "🟢 Vandaag"
-        else:
-            d = (cur["start"] - today).days
-            countdown = "Start morgen" if d == 1 else f"Over {d} dagen"
+        countdown = _aftel_tekst(cur, today)
         terrain = ""
         old_stage_info = ""
         old_stars = 3 if is_monument else 2

@@ -421,8 +421,10 @@ visible_days: 7
 
 **Een aftelregel die er altijd staat.** Deze weergave is compact: de
 koersnaam, de datum en hoeveel dagen het nog duurt — of `Bezig — dag 14/21`
-tijdens een ronde. Ook buiten het seizoen blijft hij staan, zodat je met een
-tik de uitslag van de laatste koers kunt bekijken:
+tijdens een ronde. Ook na het seizoen blijft hij staan: dan telt hij af naar
+de eerste koers van volgend jaar, zodra cyclingstage die kalender online
+heeft (in 2026 was dat begin november). Een profiel of uitslag is er dan nog
+niet, alleen de naam en de datum:
 
 ```yaml
 type: custom:cycling-next-race-card
