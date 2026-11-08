@@ -25,6 +25,7 @@ PAGINA_S = {
     "https://www.superprestigecyclocross.be/nl/kalender": "superprestige_kalender_cx_2026-11-08.html",
     "https://www.superprestigecyclocross.be/nl/kalender/2026-2027/niel": "superprestige_manche_cx_niel_2026-11-08.html",
     "https://www.superprestigecyclocross.be/nl/uitslagen": "superprestige_uitslagen_cx_2026-11-08.html",
+    "https://www.ucicyclocrossworldcup.com/en/results": "ucicxworldcup_uitslagen_cx_2026-11-08.html",
     "https://x2otrofee.be/": "x2otrofee_kalender_en_klassement_cx_2026-11-08.html",
     "https://www.cyclingstage.com/uci/cycling-calendar-2026/": "cyclingstage_kalender_2026.html",
     "https://www.cyclingstage.com/uci/cycling-calendar-2027/": "cyclingstage_kalender_2027_2026-11-08.html",
@@ -141,13 +142,26 @@ def test_wereldbekeruitslagen_categorieen(cx):
     assert cx.podium(manches, date(2026, 1, 18), "", vrouwen=True)[0]["rider"] == "Lucinda Brand"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "de wereldbeker zet de plaats in een <p>, de Superprestige in een <h2>; "
-    "parse_sp_uitslagen knipt op </h2> en de plaats loopt door over de hele manche"))
 def test_wereldbekeruitslagen_plaats(cx):
+    """De wereldbeker zet de plaats in een <p>, de Superprestige in een <h2>.
+
+    Tot 0.33.1 knipte de parser op </h2>, en liep de plaats bij de
+    wereldbeker door over de hele manche (dit stond hier als xfail).
+    """
     manches = cx.parse_sp_uitslagen(_lees("ucicxworldcup_uitslagen_cx_2026-11-08.html"))
     assert manches[0]["plaats"] == "Tabor"
     assert cx.podium(manches, date(2026, 1, 18), "Benidorm", vrouwen=False)
+    # en de Superprestige leest nog steeds goed
+    sp = cx.parse_sp_uitslagen(_lees("superprestige_uitslagen_cx_2026-11-08.html"))
+    assert sp[0]["plaats"] == "Overijse"
+
+
+def test_plaatsnaam_met_en_zonder_accent(cx):
+    """De kalender schrijft "Tábor", de uitslagenpagina "Tabor"."""
+    manches = cx.parse_sp_uitslagen(_lees("ucicxworldcup_uitslagen_cx_2026-11-08.html"))
+    mannen = cx.podium(manches, date(2025, 11, 23), "Tábor", vrouwen=False)
+    assert [r["rider"] for r in mannen] == [
+        "Thibau Nys", "Laurens Sweeck", "Joris Nieuwenhuis"]
 
 
 def test_superprestige_podium(cx):
@@ -250,8 +264,29 @@ def test_uitslag_superprestige(wt, web, monkeypatch):
     assert uit["gc"] == []
 
 
-def test_uitslag_wereldbeker_blijft_leeg(wt, web):
+def test_uitslag_wereldbeker(wt, web, monkeypatch):
+    _klok(wt, monkeypatch, datetime(2026, 11, 8, 12, 0))
+    etappe = {"date": date(2026, 1, 18), "serie": "wb", "plaats": "Benidorm",
+              "women": True, "start_time": "11:00", "bron": "cross"}
+    uit = wt._cx_uitslag(etappe, 10, 10)
+    assert uit["finished"] is True
+    assert uit["results"][0]["rider"] == "Lucinda Brand"
+    assert uit["result_url"] == "https://www.ucicyclocrossworldcup.com/en/results"
+
+
+def test_uitslag_wereldbeker_die_er_nog_niet_is(wt, web, monkeypatch):
+    # Ostrava, de avond zelf, vóór de start: niet gevonden en niet opnieuw
+    # gezocht (dat gebeurt pas na de start)
+    _klok(wt, monkeypatch, datetime(2026, 11, 27, 17, 0))
     uit = wt._cx_uitslag({"date": date(2026, 11, 27), "serie": "wb",
+                          "plaats": "Ostrava", "women": False,
+                          "start_time": "19:45", "bron": "cross"}, 10, 10)
+    assert uit["results"] == [] and not uit["finished"]
+    assert web.count("https://www.ucicyclocrossworldcup.com/en/results") == 1
+
+
+def test_uitslag_x2o_blijft_leeg(wt, web):
+    uit = wt._cx_uitslag({"date": date(2026, 11, 15), "serie": "x2o",
                           "women": False, "bron": "cross"}, 10, 10)
     assert uit["results"] == [] and not uit["finished"]
     assert not web   # er is geen pagina om te lezen, dus ook geen verzoek

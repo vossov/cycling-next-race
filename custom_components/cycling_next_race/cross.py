@@ -23,19 +23,20 @@ from __future__ import annotations
 
 import html as _html
 import re
+import unicodedata
 from datetime import date
 
 SP_BASIS = "https://www.superprestigecyclocross.be"
-# NIET GEVERIFIEERD. De kalenderpagina van de Superprestige is op 8 november
-# 2026 niet opgeslagen; wel de pagina van één manche en de uitslagen. Dit
-# adres is het Nederlandse equivalent van de wereldbekerpagina `/en/calendar`
-# op hetzelfde platform, en elke manche hangt eronder
-# (`/nl/kalender/2026-2027/niel`). Werkt hij niet, dan levert de
-# Superprestige nul manches op; `cross_diag` in de attributen laat dat zien.
+# Nagekeken op 8 november 2026 (`superprestige_kalender_cx_2026-11-08.html`):
+# acht manches, dezelfde opmaak als de wereldbekerkalender.
 SP_KALENDER_URL = SP_BASIS + "/nl/kalender"
 SP_UITSLAGEN_URL = SP_BASIS + "/nl/uitslagen"
 WB_BASIS = "https://www.ucicyclocrossworldcup.com"
 WB_KALENDER_URL = WB_BASIS + "/en/calendar"
+# Dezelfde opmaak als de uitslagen van de Superprestige, op één verschil na:
+# de plaats staat in een <p> in plaats van een <h2>
+# (`ucicxworldcup_uitslagen_cx_2026-11-08.html`).
+WB_UITSLAGEN_URL = WB_BASIS + "/en/results"
 X2O_KALENDER_URL = "https://x2otrofee.be/"
 
 SERIES = {
@@ -85,6 +86,17 @@ def _datum_kort(tekst: str) -> date | None:
         return date(2000 + int(m.group(3)), int(m.group(2)), int(m.group(1)))
     except ValueError:
         return None
+
+
+def _plaatssleutel(plaats: str) -> str:
+    """"Tábor" en "Tabor" zijn dezelfde plaats.
+
+    De kalender van de wereldbeker schrijft de plaatsnaam met accent, de
+    uitslagenpagina zonder. Zonder deze vergelijking vond `podium` de
+    uitslag van Tábor nooit.
+    """
+    t = unicodedata.normalize("NFKD", plaats or "")
+    return "".join(c for c in t if not unicodedata.combining(c)).strip().lower()
 
 
 def zone_van(land: str) -> str:
@@ -202,6 +214,8 @@ _PODIUMREGEL = re.compile(r"^(\d{1,3})\.\s+(.+?)\s+\(([A-Z]{3})\)$")
 def parse_sp_uitslagen(html: str) -> list[dict]:
     """Alle manches op de uitslagenpagina, met per categorie het podium.
 
+    Leest de Superprestige én de wereldbeker: hetzelfde platform.
+
     De pagina toont meerdere seizoenen onder elkaar (Overijse staat er als
     `25/10/26`, `26/10/25` en `27/10/24`); de datum houdt ze uit elkaar.
     Per categorie een `<h3>Elite Mannen :</h3>` met een lijst van drie:
@@ -213,7 +227,10 @@ def parse_sp_uitslagen(html: str) -> list[dict]:
     uit = []
     delen = re.split(r'class="accordion--uitslagen-location">', html or "")[1:]
     for deel in delen:
-        plaats = _kaal(deel.split("</h2>", 1)[0])
+        # tot de eerste tag: de Superprestige sluit af met </h2>, de
+        # wereldbeker met </p>. Op "</h2>" knippen liet de plaats bij de
+        # wereldbeker doorlopen over de hele manche.
+        plaats = _kaal(deel.split("<", 1)[0])
         datum = _datum_kort(
             (re.search(r'accordion--uitslagen-date">([^<]+)<', deel) or [None, ""])[1])
         if not datum:
@@ -242,7 +259,7 @@ def podium(manches: list[dict], datum: date, plaats: str, vrouwen: bool) -> list
     for m in manches or []:
         if m["datum"] != datum:
             continue
-        if plaats and m["plaats"] and m["plaats"].lower() != plaats.lower():
+        if plaats and m["plaats"] and _plaatssleutel(m["plaats"]) != _plaatssleutel(plaats):
             continue
         for titel, rijen in m["categorieen"].items():
             if is_elite(titel, vrouwen):

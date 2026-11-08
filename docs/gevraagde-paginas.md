@@ -16,7 +16,8 @@ in `tests/fixtures/`, elk met een README:
    hoefde niet op Ostrava te wachten — de pagina staat er al, met de podia
    van 2025-2026 en ouder. Zelfde opmaak als de Superprestige, op één ding
    na: de plaats staat in een `<p>` in plaats van een `<h2>`, waardoor
-   `parse_sp_uitslagen` de plaatsnaam verkeerd leest (test staat als xfail).
+   `parse_sp_uitslagen` de plaatsnaam verkeerd las. Gerepareerd en
+   aangesloten in 0.33.1, samen met "Tábor"/"Tabor".
 3. **Glasgow én Benidorm** (`ucicxworldcup_manche_cx_{glasgow,benidorm}_…`):
    programma en land worden goed gelezen. Glasgow schrijft "GMT +1" bij de
    tijden; zie de README. Zenders staan er nog op geen van beide.

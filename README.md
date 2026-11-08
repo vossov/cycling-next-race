@@ -150,13 +150,13 @@ de starttijd van de elitewedstrijd. Wat er per serie te zien is:
 
 | | Superprestige | Wereldbeker | X²O Trofee |
 |---|---|---|---|
-| datum en plaats | ja¹ | ja | ja |
+| datum en plaats | ja | ja | ja |
 | starttijd elite | ja | ja | nee |
 | Nederlandse zender | ja | als de manchepagina hem noemt | nee |
-| uitslag | podium (top 3) | nee | nee |
+| uitslag | podium (top 3) | podium (top 3) | nee |
 
-¹ Het kalenderadres van de Superprestige is nog niet nagekeken. Levert het
-niets op, dan staat er bij `cross_diag` op de sensor een 0 bij die serie.
+`cross_diag` op de sensor laat zien hoeveel manches elke serie opleverde; een
+0 betekent dat die kalenderpagina niet binnenkwam of van opmaak veranderd is.
 
 Een cross heeft geen hoogteprofiel. De tegel toont dan de aftelling met de
 starttijd, ook in de profielweergave. Tijdens de wedstrijd staat er LIVE, tot

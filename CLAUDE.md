@@ -282,22 +282,25 @@ aftelling noemt sinds 0.33 de starttijd en zegt LIVE als de badge dat zegt.
 | kalender | `SP_KALENDER_URL` (sinds 8 nov. nagekeken) | `cross.WB_KALENDER_URL` | voorpagina |
 | starttijd elite | manchepagina | manchepagina | — |
 | zender NL | manchepagina | manchepagina (Ostrava noemde er geen) | — |
-| uitslag | podium van `/nl/uitslagen` | — (pagina bestaat, nog niet aangesloten) | — (staat bij elke organisator apart) |
+| uitslag | podium van `/nl/uitslagen` | podium van `/en/results` (sinds 0.33.1) | — (staat bij elke organisator apart) |
 
 **Wat niet geverifieerd is:**
 
 - ~~De kalenderpagina van de Superprestige.~~ Op 8 november 's avonds
-  opgeslagen: `/nl/kalender` klopt, 8 manches. Het commentaar "NIET
-  GEVERIFIEERD" bij `SP_KALENDER_URL` in `cross.py` is daarmee achterhaald;
-  het gaat eruit bij de volgende codewijziging (die het nummer ophoogt).
-- **De uitslag van de wereldbeker is niet aangesloten**, maar de pagina is
-  er (`/en/results`, fixture `ucicxworldcup_uitslagen_cx_2026-11-08.html`)
-  en heeft dezelfde opmaak als die van de Superprestige — behalve dat de
-  plaats in een `<p>` staat in plaats van een `<h2>`. `parse_sp_uitslagen`
-  knipt op `</h2>` en krijgt dan de hele manche als plaatsnaam, dus
-  `podium()` met een plaats vindt niets (`test_wereldbekeruitslagen_plaats`
-  staat als strikte xfail). De pagina toont nog geen manche van 2026-2027;
-  of die er na Ostrava in dezelfde vorm bovenaan komt is niet gezien.
+  opgeslagen: `/nl/kalender` klopt, 8 manches. Het commentaar in
+  `cross.py` is in 0.33.1 bijgewerkt.
+- **De uitslag van de wereldbeker (0.33.1).** De pagina (`/en/results`,
+  fixture `ucicxworldcup_uitslagen_cx_2026-11-08.html`) heeft dezelfde
+  opmaak als die van de Superprestige, behalve dat de plaats in een `<p>`
+  staat in plaats van een `<h2>`. `parse_sp_uitslagen` knipte op `</h2>` en
+  kreeg bij de wereldbeker de hele manche als plaatsnaam; nu knipt hij op de
+  eerste tag. Daarbij kwam een tweede valkuil boven: de kalender schrijft
+  "Tábor", de uitslagenpagina "Tabor". `podium` vergelijkt daarom zonder
+  accenten (`_plaatssleutel`). **Niet gezien:** een manche van 2026-2027 op
+  die pagina — die komt er pas na Ostrava (27 november). Komt hij er in een
+  andere vorm, dan blijft de uitslag leeg en rolt de tegel pas de volgende
+  dag door, zoals vóór 0.33.1. De landcode is bij de wereldbeker `ned`, bij
+  de Superprestige `nld`; dat is wat de sites schrijven.
 - **Glasgow schrijft "GMT +1"** bij zijn programma (12:40 en 14:10), terwijl
   Glasgow in december op GMT zit. Gelezen als GMT, wat `LAND_ZONE` doet, komt
   het uit op 13:40 en 15:10 bij ons — de vaste tv-tijden van de andere
@@ -309,7 +312,9 @@ aftelling noemt sinds 0.33 de starttijd en zegt LIVE als de badge dat zegt.
 
 **Wat het kost:** drie kalenderpagina's per dag, één manchepagina per manche
 die in beeld komt (gedeeld door mannen en vrouwen), en op de dag van een
-Superprestige na de start de uitslagenpagina tot het podium er staat.
+Superprestige- of wereldbekermanche na de start de uitslagenpagina tot het
+podium er staat. Die pagina is bij de wereldbeker ruim 1,2 MB (alle
+seizoenen); dat is één verzoek per ronde op een wedstrijddag.
 
 ### Een afgelopen koers blijft nog een dag staan (0.30)
 
@@ -2436,9 +2441,10 @@ vóór die afspraak, via `git log -L 14,14:custom_components/cycling_next_race/c
   afkorting er staat.
 - ~~**Buiten het seizoen staat er niets.**~~ Opgelost in 0.32: zie "Na het
   seizoen: de kalender van volgend jaar".
-- **Cyclocross: twee gaten.** Een uitslag bij de wereldbeker (pagina en
-  fixture zijn er, de aansluiting nog niet) en X²O, en losse crossen buiten
-  de drie series.
+- **Cyclocross: twee gaten.** Een uitslag bij X²O (die staat bij elke
+  organisator apart), en losse crossen buiten de drie series. De uitslag
+  van de wereldbeker is aangesloten in 0.33.1 maar nog niet gezien met een
+  manche van dit seizoen.
   Zie "Cyclocross (0.33)".
 
 **Wat er aan opgeslagen pagina's nodig is staat in

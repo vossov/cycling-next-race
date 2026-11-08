@@ -1425,34 +1425,37 @@ def _cx_etappes(koers: dict) -> list[dict]:
 
 def _cx_uitslag(stage: dict, result_n: int = DEFAULT_RESULT_N,
                 gc_n: int = DEFAULT_GC_N) -> dict:
-    """Het elitepodium, alleen bij de Superprestige.
+    """Het elitepodium, bij de Superprestige en de wereldbeker.
 
-    De wereldbeker en X²O hebben geen uitslagenpagina die beproefd is; die
-    blijven leeg. Een podium dat er nog niet staat wordt op de dag zelf,
-    na de start, elke ronde opnieuw gezocht — het verschijnt kort na de
-    finish.
+    Die twee delen een platform en een uitslagenpagina-opmaak. X²O heeft
+    geen eigen uitslagen (die staan bij elke organisator apart) en blijft
+    leeg. Een podium dat er nog niet staat wordt op de dag zelf, na de
+    start, elke ronde opnieuw gezocht — het verschijnt kort na de finish.
     """
     from . import cross as cx
 
     data = _lege_uitslag(stage)
     data["start_time"] = stage.get("start_time") or ""
-    if stage.get("serie") != "sp":
+    adres = {"sp": cx.SP_UITSLAGEN_URL,
+             "wb": cx.WB_UITSLAGEN_URL}.get(stage.get("serie") or "")
+    if not adres:
         return data
+    wat = f"uitslagen {cx.SERIES[stage['serie']]}"
     dag = stage.get("date")
-    html = _cx_pagina(cx.SP_UITSLAGEN_URL, "uitslagen Superprestige")
+    html = _cx_pagina(adres, wat)
     rijen = cx.podium(cx.parse_sp_uitslagen(html), dag, stage.get("plaats", ""),
                       bool(stage.get("women")))
     nu = dt_util.now()
     begin = _minuten(_parse_start_hhmm(stage.get("start_time")))
     if (not rijen and dag == nu.date() and begin is not None
             and nu.hour * 60 + nu.minute >= begin):
-        html = _cx_pagina(cx.SP_UITSLAGEN_URL, "uitslagen Superprestige", vers=True)
+        html = _cx_pagina(adres, wat, vers=True)
         rijen = cx.podium(cx.parse_sp_uitslagen(html), dag,
                           stage.get("plaats", ""), bool(stage.get("women")))
     data["ok"] = bool(html)
     data["results"] = rijen[:result_n]
     data["finished"] = bool(rijen)
-    data["result_url"] = cx.SP_UITSLAGEN_URL if rijen else ""
+    data["result_url"] = adres if rijen else ""
     return data
 
 
