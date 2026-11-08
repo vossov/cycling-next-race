@@ -1,0 +1,80 @@
+User-Agent: *
+Allow: *
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /calendar/*?*country=
+Disallow: /calendar/*?*classification=
+
+User-Agent: ClaudeBot
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /calendar/*?*country=
+Disallow: /calendar/*?*classification=
+Crawl-delay: 10
+
+User-Agent: GPTBot
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /calendar/*?*country=
+Disallow: /calendar/*?*classification=
+Crawl-delay: 10
+
+User-Agent: Google-Extended
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /calendar/*?*country=
+Disallow: /calendar/*?*classification=
+Crawl-delay: 10
+
+User-Agent: PerplexityBot
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /calendar/*?*country=
+Disallow: /calendar/*?*classification=
+Crawl-delay: 10
+
+User-Agent: FacebookBot
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /calendar/*?*country=
+Disallow: /calendar/*?*classification=
+Crawl-delay: 10
+
+User-Agent: Amazonbot
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /calendar/*?*country=
+Disallow: /calendar/*?*classification=
+Crawl-delay: 10
+
+User-Agent: Baiduspider
+Disallow: /
+
+User-Agent: Baiduspider-render
+Disallow: /
+
+Sitemap: https://cyclingflash.com/sitemap_index.xml
+Sitemap: https://cyclingflash.com/en-rss.xml
+Sitemap: https://cyclingflash.com/hi/sitemap_index.xml
+Sitemap: https://cyclingflash.com/hi-rss.xml

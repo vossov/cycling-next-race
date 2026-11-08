@@ -1,0 +1,5 @@
+Sitemap: https://www.ucicyclocrossworldcup.com/fr/sitemap.xml
+Sitemap: https://www.ucicyclocrossworldcup.com/nl/sitemap.xml
+Sitemap: https://www.ucicyclocrossworldcup.com/en/sitemap.xml
+User-agent: *
+Disallow: /public/

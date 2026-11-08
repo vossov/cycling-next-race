@@ -1,0 +1,83 @@
+User-Agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /draft/
+Disallow: /go/
+Disallow: /preview/
+
+User-Agent: GPTBot
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /draft/
+Disallow: /go/
+Disallow: /preview/
+Crawl-delay: 2
+
+User-Agent: ChatGPT-User
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /draft/
+Disallow: /go/
+Disallow: /preview/
+Crawl-delay: 2
+
+User-Agent: Claude-Web
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /draft/
+Disallow: /go/
+Disallow: /preview/
+Crawl-delay: 2
+
+User-Agent: Anthropic-AI
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /draft/
+Disallow: /go/
+Disallow: /preview/
+Crawl-delay: 2
+
+User-Agent: CCBot
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /draft/
+Disallow: /go/
+Disallow: /preview/
+Crawl-delay: 2
+
+User-Agent: PerplexityBot
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /draft/
+Disallow: /go/
+Disallow: /preview/
+Crawl-delay: 2
+
+User-Agent: Google-Extended
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /draft/
+Disallow: /go/
+Disallow: /preview/
+Crawl-delay: 2
+
+User-Agent: Bingbot
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /draft/
+Disallow: /go/
+Disallow: /preview/
+Crawl-delay: 1
+
+Host: https://veloracycling.com
+Sitemap: https://veloracycling.com/sitemap.xml
+Sitemap: https://veloracycling.com/news-sitemap.xml

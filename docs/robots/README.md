@@ -1,4 +1,27 @@
-# robots.txt van de bronnen, zoals opgehaald op 7 september 2026
+# robots.txt van de bronnen
+
+Eerste ronde op 7 september 2026 (door de eigenaar geplakt), tweede ronde
+op 8 november 2026 (opgehaald via Cowork, met curl en een browser). De
+bestanden met een hostnaam als naam (`www.…`, `sporza.be.txt`, …) komen uit
+die tweede ronde; het rapport staat in `docs/bronnenonderzoek-2026-11/`.
+
+## Wat er op 8 november 2026 veranderd was
+
+**Wielerflits weert ClaudeBot nu met name** (`User-Agent: ClaudeBot` /
+`Disallow: /`, naast GPTBot, CCBot, Google-Extended en andere). Op 7
+september stond ClaudeBot er niet in. `wielerflits.nl.txt` is bijgewerkt;
+de oude versie staat in de git-geschiedenis.
+
+- **Voor de integratie verandert er niets.** Die heeft een eigen
+  user-agent (`CyclingNextRace/…`), en voor `User-Agent: *` valt
+  `/nieuws/wielrennen-op-tv/` onder geen enkele regel.
+- **Voor ontwikkelwerk met Claude wel.** Claude haalt wielerflits niet meer
+  op. Een nieuwe fixture van de tv-gids komt dus met de hand.
+
+Sporza (`sporza.be.txt`), cyclocross24 en procyclingstats (ook
+`Claude-User`) weren ClaudeBot op dezelfde manier. Cyclingstage is niet
+veranderd (alleen witruimte).
+
 
 Door de eigenaar opgehaald en hier geplakt: de proxy in de
 ontwikkelomgeving laat deze sites niet door. De analyse staat in CLAUDE.md

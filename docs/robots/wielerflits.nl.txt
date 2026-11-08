@@ -1,5 +1,13 @@
-# https://www.wielerflits.nl/robots.txt — opgehaald 7 september 2026
-User-agent: *
+# https://www.wielerflits.nl/robots.txt — opgehaald 8 november 2026 (curl, via Cowork)
+User-Agent: *
+Allow: *
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /wielerkalender/*?*country=
+Disallow: /wielerkalender/*?*classification=
 Disallow: /wp-admin/
 Disallow: /rss.php
 Disallow: /rss-channel
@@ -12,21 +20,131 @@ Disallow: /ocean-json/
 Disallow: /*?*utm_source=
 Disallow: /*?amp
 Disallow: /*?comment_id=
-Disallow: /*?amp
 Disallow: /*?action
 Disallow: /*?cat_name
 Disallow: /*?login
+Disallow: /login
 Disallow: /*?search
 Disallow: /?_gl=
-User-agent: ia_archiver
+Disallow: /*?s=
+
+User-Agent: ia_archiver
 Disallow: /
 Crawl-delay: 5
 
-User-agent: Googlebot-News
+User-Agent: Googlebot-News
 Allow: /*?amp
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /wielerkalender/*?*country=
+Disallow: /wielerkalender/*?*classification=
+Disallow: /wp-admin/
+Disallow: /rss.php
+Disallow: /rss-channel
+Disallow: /feed.rss
+Disallow: /niet-ok/*
+Disallow: /404.php
+Disallow: /standalone/*
+Disallow: /archief/*
+Disallow: /ocean-json/
+Disallow: /*?*utm_source=
+Disallow: /*?amp
+Disallow: /*?comment_id=
+Disallow: /*?action
+Disallow: /*?cat_name
+Disallow: /*?login
+Disallow: /login
+Disallow: /*?search
+Disallow: /?_gl=
+Disallow: /*?s=
 
-User-agent: GPTBot
+User-Agent: GPTBot
 Disallow: /
 
-User-agent: CCBot
+User-Agent: CCBot
 Disallow: /
+
+User-Agent: ClaudeBot
+Disallow: /
+
+User-Agent: Google-Extended
+Disallow: /
+
+User-Agent: Applebot-Extended
+Disallow: /
+
+User-Agent: meta-externalagent
+Disallow: /
+
+User-Agent: Bytespider
+Disallow: /
+
+User-Agent: FacebookBot
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /wielerkalender/*?*country=
+Disallow: /wielerkalender/*?*classification=
+Disallow: /wp-admin/
+Disallow: /rss.php
+Disallow: /rss-channel
+Disallow: /feed.rss
+Disallow: /niet-ok/*
+Disallow: /404.php
+Disallow: /standalone/*
+Disallow: /archief/*
+Disallow: /ocean-json/
+Disallow: /*?*utm_source=
+Disallow: /*?amp
+Disallow: /*?comment_id=
+Disallow: /*?action
+Disallow: /*?cat_name
+Disallow: /*?login
+Disallow: /login
+Disallow: /*?search
+Disallow: /?_gl=
+Disallow: /*?s=
+Crawl-delay: 10
+
+User-Agent: Amazonbot
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /wielerkalender/*?*country=
+Disallow: /wielerkalender/*?*classification=
+Disallow: /wp-admin/
+Disallow: /rss.php
+Disallow: /rss-channel
+Disallow: /feed.rss
+Disallow: /niet-ok/*
+Disallow: /404.php
+Disallow: /standalone/*
+Disallow: /archief/*
+Disallow: /ocean-json/
+Disallow: /*?*utm_source=
+Disallow: /*?amp
+Disallow: /*?comment_id=
+Disallow: /*?action
+Disallow: /*?cat_name
+Disallow: /*?login
+Disallow: /login
+Disallow: /*?search
+Disallow: /?_gl=
+Disallow: /*?s=
+Crawl-delay: 10
+
+User-Agent: Baiduspider
+Disallow: /
+
+User-Agent: Baiduspider-render
+Disallow: /
+
+Sitemap: https://www.wielerflits.nl/sitemap_index.xml
+Sitemap: https://www.wielerflits.nl/feed/

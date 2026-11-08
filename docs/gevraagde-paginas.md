@@ -5,6 +5,26 @@ racecenter-sites van ASO — de egress-proxy blokkeert ze. Elke parser die hier
 gebouwd wordt moet daarom op HTML draaien die met de hand is opgeslagen.
 Deze lijst staat op volgorde van wat het meest oplevert.
 
+## Ronde van 8 november 2026 — via Cowork
+
+Een groot deel van wat hieronder gevraagd staat is op 8 november binnengekomen
+(`docs/bronnenonderzoek-2026-11/`). Kort:
+
+- **WK-wegrit vrouwen:** eigen GPX, `route-women.gpx`
+  (`cyclingstage_wk_2026_route_wegrit_vrouwen_2026-11-08.html`).
+- **Tijdschema (2.2):** bestaat, maar als **JPG** (`stage-14-times.jpg`, de
+  RCS-cronotabella), gelinkt vanaf de etappepagina. `stage-{n}-times.htm`
+  is daarmee weerlegd voor de Giro; alleen met OCR leesbaar.
+- **Tour of Britain (3.1/3.4):** de etappe- en uitslagadressen geven een 404,
+  en de koerspagina linkt nergens naar. Cyclingstage heeft daar geen uitslag.
+- **Klassementen (4.4) en uitvallers (4.3):** staan er nu, top 5 plus
+  leider per etappe; fixtures van de Vuelta liggen er.
+- **Kalender 2027:** bestaat al, nog zonder routes (behalve de grote
+  rondes). Wordt sinds 0.32 gebruikt.
+
+Wat er níét kwam: wielerflits en sporza weren ClaudeBot sinds kort, dus een
+nieuwe tv-gids-fixture moet weer met de hand.
+
 ## ~~De WK-pagina van nu~~ — binnen op 20 september 2026
 
 Die staat als `cyclingstage_wk_2026_montreal.html` in `tests/fixtures/`, en

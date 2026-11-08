@@ -1,0 +1,149 @@
+User-Agent: *
+Allow: *
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /wielerkalender/*?*country=
+Disallow: /wielerkalender/*?*classification=
+Disallow: /wp-admin/
+Disallow: /rss.php
+Disallow: /rss-channel
+Disallow: /feed.rss
+Disallow: /niet-ok/*
+Disallow: /404.php
+Disallow: /standalone/*
+Disallow: /archief/*
+Disallow: /ocean-json/
+Disallow: /*?*utm_source=
+Disallow: /*?amp
+Disallow: /*?comment_id=
+Disallow: /*?action
+Disallow: /*?cat_name
+Disallow: /*?login
+Disallow: /login
+Disallow: /*?search
+Disallow: /?_gl=
+Disallow: /*?s=
+
+User-Agent: ia_archiver
+Disallow: /
+Crawl-delay: 5
+
+User-Agent: Googlebot-News
+Allow: /*?amp
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /wielerkalender/*?*country=
+Disallow: /wielerkalender/*?*classification=
+Disallow: /wp-admin/
+Disallow: /rss.php
+Disallow: /rss-channel
+Disallow: /feed.rss
+Disallow: /niet-ok/*
+Disallow: /404.php
+Disallow: /standalone/*
+Disallow: /archief/*
+Disallow: /ocean-json/
+Disallow: /*?*utm_source=
+Disallow: /*?amp
+Disallow: /*?comment_id=
+Disallow: /*?action
+Disallow: /*?cat_name
+Disallow: /*?login
+Disallow: /login
+Disallow: /*?search
+Disallow: /?_gl=
+Disallow: /*?s=
+
+User-Agent: GPTBot
+Disallow: /
+
+User-Agent: CCBot
+Disallow: /
+
+User-Agent: ClaudeBot
+Disallow: /
+
+User-Agent: Google-Extended
+Disallow: /
+
+User-Agent: Applebot-Extended
+Disallow: /
+
+User-Agent: meta-externalagent
+Disallow: /
+
+User-Agent: Bytespider
+Disallow: /
+
+User-Agent: FacebookBot
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /wielerkalender/*?*country=
+Disallow: /wielerkalender/*?*classification=
+Disallow: /wp-admin/
+Disallow: /rss.php
+Disallow: /rss-channel
+Disallow: /feed.rss
+Disallow: /niet-ok/*
+Disallow: /404.php
+Disallow: /standalone/*
+Disallow: /archief/*
+Disallow: /ocean-json/
+Disallow: /*?*utm_source=
+Disallow: /*?amp
+Disallow: /*?comment_id=
+Disallow: /*?action
+Disallow: /*?cat_name
+Disallow: /*?login
+Disallow: /login
+Disallow: /*?search
+Disallow: /?_gl=
+Disallow: /*?s=
+Crawl-delay: 10
+
+User-Agent: Amazonbot
+Disallow: /embed/
+Disallow: /oidc/
+Disallow: /api/bff/
+Disallow: /api/auth/
+Disallow: /api/webhooks/
+Disallow: /wielerkalender/*?*country=
+Disallow: /wielerkalender/*?*classification=
+Disallow: /wp-admin/
+Disallow: /rss.php
+Disallow: /rss-channel
+Disallow: /feed.rss
+Disallow: /niet-ok/*
+Disallow: /404.php
+Disallow: /standalone/*
+Disallow: /archief/*
+Disallow: /ocean-json/
+Disallow: /*?*utm_source=
+Disallow: /*?amp
+Disallow: /*?comment_id=
+Disallow: /*?action
+Disallow: /*?cat_name
+Disallow: /*?login
+Disallow: /login
+Disallow: /*?search
+Disallow: /?_gl=
+Disallow: /*?s=
+Crawl-delay: 10
+
+User-Agent: Baiduspider
+Disallow: /
+
+User-Agent: Baiduspider-render
+Disallow: /
+
+Sitemap: https://www.wielerflits.be/sitemap_index.xml
+Sitemap: https://www.wielerflits.be/feed/

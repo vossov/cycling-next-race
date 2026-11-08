@@ -1,0 +1,5 @@
+Sitemap: https://www.superprestigecyclocross.be/nl/sitemap.xml
+Sitemap: https://www.superprestigecyclocross.be/fr/sitemap.xml
+Sitemap: https://www.superprestigecyclocross.be/en/sitemap.xml
+User-agent: *
+Disallow: /public/
